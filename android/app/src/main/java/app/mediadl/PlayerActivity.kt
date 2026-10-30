@@ -83,6 +83,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var holdLast = 0L
     private var holdFrom = Mode.Hidden
     private var holdResume = false
+    private var holdOrigin = 0L // where you were before skipping or scrubbing: Back returns here
+    private var holdSeeked = false // a skip's press had already moved the film when the hold began
+    private var holding = false // the key is down right now; the strip stays after it comes up
     private var seekedTo = -1L // a skip's first press lands at once; later presses add to it
 
     private val current get() = queue.firstOrNull { it.optString("id") == currentId }
@@ -109,7 +112,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     /** Moves the held position, faster the longer it's held: 1, then 3, then 8 minutes of film per second. */
     private val holdTick = object : Runnable {
         override fun run() {
-            if (st.mode != Mode.Scrub) return
+            if (st.mode != Mode.Scrub || !holding) return
             val now = System.currentTimeMillis()
             val rate = when (now - holdStart) {
                 in 0 until 1500 -> 60L
@@ -124,6 +127,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private val hideSeek = Runnable { if (st.mode == Mode.Seek && st.scrub == null) st.mode = Mode.Hidden }
     private val commit = Runnable { commitScrub() }
     private val clearNote = Runnable { st.note = null }
+    private val clearSkipped = Runnable { st.skipped = 0 }
 
     private fun refresh() {
         st.pos = player.currentPosition
@@ -180,42 +184,79 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.playing = player.playWhenReady
     }
 
-    /** A press of Left/Right: skips with nothing on screen. Presses in quick succession add up. */
+    /** A press of Left/Right: skips, with only a small mark on screen. Presses in quick succession add up. */
     private fun tapSkip(dir: Int) {
         val first = st.scrub == null
-        val to = ((st.scrub ?: player.currentPosition) + dir * 10_000L).coerceIn(0, maxOf(0, st.dur - 1000))
+        if (first) holdOrigin = player.currentPosition
+        val from = st.scrub ?: player.currentPosition
+        val to = (from + dir * 10_000L).coerceIn(0, maxOf(0, st.dur - 1000))
         st.scrub = to
-        if (first) { seekNear(to); seekedTo = to }
+        if (st.mode == Mode.Hidden) {
+            st.skipped += ((to - from) / 1000).toInt() // what the film really moved, near its start or end
+            ui.removeCallbacks(clearSkipped)
+            ui.postDelayed(clearSkipped, 1000)
+        }
+        if (first) { seekExact(to); seekedTo = to }
         ui.removeCallbacks(commit)
         ui.removeCallbacks(autoHide)
         ui.postDelayed(commit, 350)
     }
 
-    /** Left/Right held: the film holds still and the picture strip takes over until the key comes up. */
+    /**
+     * Left/Right held: the film holds still and the picture strip takes over. It stays after the key
+     * comes up, so you can go back and forth: Left/Right step, a hold scrubs, OK lands and plays, Back cancels.
+     */
     private fun startHold(dir: Int, key: Int) {
+        ui.removeCallbacks(clearSkipped)
+        st.skipped = 0
         ui.removeCallbacks(commit)
         ui.removeCallbacks(autoHide)
-        holdKey = key
-        holdDir = dir
         holdFrom = st.mode
         holdResume = player.playWhenReady
-        holdStart = System.currentTimeMillis()
-        holdLast = holdStart
+        holdSeeked = st.scrub != null
+        if (!holdSeeked) holdOrigin = player.currentPosition
         seekedTo = -1
         st.scrub = st.scrub ?: player.currentPosition
         player.playWhenReady = false
         st.mode = Mode.Scrub
         view.subtitleView?.visibility = android.view.View.INVISIBLE
         st.thumbs?.ensure()
+        runHold(dir, key)
+    }
+
+    private fun runHold(dir: Int, key: Int) {
+        holdKey = key
+        holdDir = dir
+        holdStart = System.currentTimeMillis()
+        holdLast = holdStart
+        holding = true
+        ui.removeCallbacks(holdTick)
         ui.post(holdTick)
     }
 
-    private fun endHold(land: Boolean) {
+    private fun stopHold() {
+        holding = false
         ui.removeCallbacks(holdTick)
+    }
+
+    /** OK: land there and play. */
+    private fun landHold() {
+        stopHold()
+        view.subtitleView?.visibility = android.view.View.VISIBLE
+        st.focusMenu = false
+        st.mode = Mode.Hidden
+        commitScrub()
+        player.playWhenReady = true
+    }
+
+    /** Back: as if nothing happened. */
+    private fun cancelHold() {
+        stopHold()
         view.subtitleView?.visibility = android.view.View.VISIBLE
         st.focusMenu = false
         st.mode = holdFrom
-        if (land) commitScrub() else st.scrub = null
+        st.scrub = null
+        if (holdSeeked) seekExact(holdOrigin)
         if (holdResume) player.playWhenReady = true
         poke()
     }
@@ -240,24 +281,16 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun commitScrub() {
         ui.removeCallbacks(commit)
         val to = st.scrub ?: return
-        if (to != seekedTo) seekNear(to)
+        if (to != seekedTo) seekExact(to)
         seekedTo = -1
         st.scrub = null
         refresh()
         if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1500) else poke()
     }
 
-    /**
-     * Lands on a keyframe (no decoding up to the exact frame), but never on one
-     * that undoes more than half the jump: plain "closest keyframe" with WEB-DLs'
-     * ~10 s keyframe gaps could put a +10 s skip behind where you were, which
-     * also falls outside the buffer and reloads from mint.
-     */
-    private fun seekNear(to: Long) {
-        val half = abs(to - player.currentPosition) * 500 // µs
-        player.setSeekParameters(
-            if (to >= player.currentPosition) SeekParameters(half, Long.MAX_VALUE) else SeekParameters(Long.MAX_VALUE, half),
-        )
+    /** Lands on the exact frame asked for: the decoder runs up to it from the keyframe before, unseen. */
+    private fun seekExact(to: Long) {
+        player.setSeekParameters(SeekParameters.EXACT)
         player.seekTo(to)
     }
 
@@ -270,7 +303,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun takeOffer() {
         when (st.offer?.kind) {
-            "intro" -> current?.optJSONObject("intro")?.let { seekNear((it.optDouble("end") * 1000).toLong()) }
+            "intro" -> current?.optJSONObject("intro")?.let { seekExact((it.optDouble("end") * 1000).toLong()) }
             "next" -> {
                 send(currentId, 0, 0, ended = true)
                 finishedCurrent = true
@@ -350,7 +383,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             val dur = j.optJSONObject("info")?.optDouble("dur", 0.0) ?: 0.0
             TrackOption(
                 "${j.optInt("episode")}. ${j.optString("title")}",
-                listOfNotNull("Season ${j.optInt("season")}", dur.takeIf { it > 0 }?.let { mins((it * 1000).toLong()) }).joinToString(", "),
+                dur.takeIf { it > 0 }?.let { mins((it * 1000).toLong()) } ?: "",
                 j.optString("id") == currentId,
                 Api.img(j.optJSONObject("meta")?.optString("still")?.ifEmpty { null }, "w500"),
             ) {
@@ -534,13 +567,15 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         player.trackSelectionParameters = b.build()
     }
 
+    /** "English": the language, in the TV's own words. A file's raw track title is only the last resort. */
     private fun langName(code: String?, label: String?): String {
         val name = code?.takeIf { it.isNotEmpty() && it != "und" }
             ?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.getDefault()) }
             ?.takeIf { it.isNotEmpty() && it != code }
-        return name ?: label?.takeIf { it.isNotEmpty() } ?: "Unknown"
+        return name ?: label?.substringBefore('|')?.trim()?.takeIf { it.isNotEmpty() } ?: "Unknown"
     }
 
+    /** "Dolby Digital+ 5.1": what it is, never a file's raw track title. */
     private fun audioDetail(f: Format): String {
         val codec = when (f.sampleMimeType) {
             MimeTypes.AUDIO_E_AC3_JOC -> "Dolby Atmos"
@@ -560,23 +595,25 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
         val ch = when (f.channelCount) {
             Format.NO_VALUE -> ""
-            1 -> "mono"
-            2 -> "stereo"
+            1 -> "Mono"
+            2 -> "Stereo"
             6 -> "5.1"
             8 -> "7.1"
             else -> "${f.channelCount} ch"
         }
-        return listOfNotNull(
-            listOf(codec, ch).filter { it.isNotEmpty() }.joinToString(" ").ifEmpty { null },
-            f.label?.takeIf { it.isNotEmpty() && it != langName(f.language, null) },
-        ).joinToString(" · ")
+        val commentary = "Commentary".takeIf { f.label?.contains("commentary", ignoreCase = true) == true }
+        return listOfNotNull(commentary, listOf(codec, ch).filter { it.isNotEmpty() }.joinToString(" ").ifEmpty { null }).joinToString(" · ")
     }
 
-    private fun textDetail(f: Format): String = listOfNotNull(
-        f.label?.takeIf { it.isNotEmpty() && it != langName(f.language, null) },
-        "Forced".takeIf { f.selectionFlags and C.SELECTION_FLAG_FORCED != 0 },
-        "SDH".takeIf { f.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0 },
-    ).distinct().joinToString(" · ")
+    /** "SDH", "Forced": only what tells two subtitle tracks apart. */
+    private fun textDetail(f: Format): String {
+        val label = f.label.orEmpty()
+        return listOfNotNull(
+            "Forced".takeIf { f.selectionFlags and C.SELECTION_FLAG_FORCED != 0 || label.contains("forced", ignoreCase = true) },
+            "SDH".takeIf { f.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0 || Regex("""(?i)\b(sdh|cc|hi)\b""").containsMatchIn(label) },
+            "Commentary".takeIf { label.contains("commentary", ignoreCase = true) },
+        ).joinToString(" · ")
+    }
 
     // ---------- media items ----------
 
@@ -702,7 +739,34 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     // ---------- remote control ----------
 
+    /** -1 or 1 for the keys that move through the film, else 0. */
+    private fun skipDir(keyCode: Int) = when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> -1
+        KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> 1
+        else -> 0
+    }
+
+    /** The strip is up: Left/Right step, a hold scrubs, OK lands and plays, Back cancels. Nothing else counts. */
+    private fun scrubKeys(event: KeyEvent) {
+        val down = event.action == KeyEvent.ACTION_DOWN
+        val first = down && event.repeatCount == 0
+        val dir = skipDir(event.keyCode)
+        when {
+            dir != 0 -> when {
+                first -> st.scrub = ((st.scrub ?: player.currentPosition) + dir * 10_000L).coerceIn(0, maxOf(0, st.dur - 1000))
+                down -> if (!holding) runHold(dir, event.keyCode)
+                event.keyCode == holdKey -> stopHold()
+            }
+            event.keyCode == KeyEvent.KEYCODE_BACK -> if (event.action == KeyEvent.ACTION_UP) cancelHold()
+            event.keyCode in listOf(
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_HEADSETHOOK,
+            ) -> if (first) landHold()
+        }
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (tv && st.mode == Mode.Scrub) { scrubKeys(event); return true }
         val down = event.action == KeyEvent.ACTION_DOWN
         val first = down && event.repeatCount == 0
         // media keys do the same thing whatever is on screen
@@ -715,20 +779,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             KeyEvent.KEYCODE_MEDIA_NEXT -> { if (first) next(); return true }
         }
         if (tv) {
-            // holding: nothing else counts until that key comes up (Back cancels)
-            if (st.mode == Mode.Scrub) {
-                if (event.action == KeyEvent.ACTION_UP) when (event.keyCode) {
-                    holdKey -> endHold(land = true)
-                    KeyEvent.KEYCODE_BACK -> endHold(land = false)
-                }
-                return true
-            }
             // a press skips, a hold scrubs: with nothing on screen, on the bar, or from the remote's own keys
-            val dir = when (event.keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> -1
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> 1
-                else -> 0
-            }
+            val dir = skipDir(event.keyCode)
             val isDpad = event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
             val free = st.error == null && st.sheet == null && (st.mode != Mode.Full || st.barFocused || !isDpad)
             if (dir != 0 && free) {
@@ -820,7 +872,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 CompositionLocalProvider(LocalTv provides tv) {
                     AppTheme {
                         DeviceOverlay(st, this@PlayerActivity, tv, onChrome = { up ->
-                            view.subtitleView?.setBottomPaddingFraction(if (up) 0.36f else 0.09f)
+                            // moved as a whole: image subtitles (PGS) ignore padding
+                            view.subtitleView?.let { sv -> sv.animate().translationY(if (up) -0.28f * sv.height else 0f).setDuration(Motion.FadeInMs.toLong()).start() }
                         })
                     }
                 }

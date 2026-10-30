@@ -39,6 +39,8 @@ data class Item(
 
     val poster get() = Api.img(meta?.poster, "w342")
     val backdrop get() = Api.img(meta?.backdrop, "w1280")
+    /** The picture across a whole title page: full size, because 1280 px stretched over the screen goes soft. */
+    val banner get() = Api.img(meta?.backdrop, "original")
     val logo get() = Api.img(meta?.logo, "w500")
     /** 16:9 picture for wide cards: an episode's still, else the backdrop. */
     val wide get() = Api.img(meta?.still?.ifEmpty { null }, "w780") ?: Api.img(meta?.backdrop, "w780")

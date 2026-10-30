@@ -5,4 +5,6 @@
 
 Third-party:
 - Montserrat, SIL Open Font License 1.1, Copyright 2024 The Montserrat.Git Project Authors. Used only to draw the banner.
-- Phosphor Icons, MIT License, Copyright (c) 2023 Phosphor Icons. `AppIcons.kt` holds the paths of the icons we use, generated from @phosphor-icons/core 2.1.1.
+- Fluent UI System Icons, MIT License, Copyright (c) 2020 Microsoft Corporation. Every icon on the TV.
+- Solar icons, CC BY 4.0, by 480 Design. Some of the phone app's icons.
+- Phosphor Icons, MIT License, Copyright (c) 2023 Phosphor Icons. The phone app's outline icons.

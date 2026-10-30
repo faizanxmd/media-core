@@ -3,6 +3,6 @@
     <!-- the O of the Media Core wordmark: a ring around a solid core -->
     <path android:strokeColor="#FFF4F5F8" android:strokeWidth="8.3"
         android:pathData="M28.15,54a25.85,25.85 0 1,0 51.7,0a25.85,25.85 0 1,0 -51.7,0" />
-    <path android:fillColor="#FFF4F5F8"
+    <path android:fillColor="#FF1E3AB8"
         android:pathData="M45.25,54a8.75,8.75 0 1,0 17.5,0a8.75,8.75 0 1,0 -17.5,0" />
 </vector>

@@ -2,16 +2,10 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 font_path, out = sys.argv[1], sys.argv[2]
 S = 4; W, H = 640*S, 360*S
-BG_EDGE = (8, 10, 18); BG_MID = (15, 19, 36)
-bg = Image.new('RGB', (160, 90))
-for y in range(90):
-    for x in range(160):
-        dx, dy = (x-80)/80, (y-45)/45
-        t = max(0, 1-(dx*dx+dy*dy)*0.9)
-        bg.putpixel((x, y), tuple(int(a+(b-a)*t) for a, b in zip(BG_EDGE, BG_MID)))
-im = bg.resize((W, H), Image.BICUBIC)
+BLACK = (14, 16, 20)
+im = Image.new('RGB', (W, H), BLACK)
 d = ImageDraw.Draw(im)
-INK = (244, 245, 248)
+INK = (244, 245, 248); ACCENT = (30, 58, 184)
 def font(size, w):
     f = ImageFont.truetype(font_path, size); f.set_variation_by_axes([w]); return f
 def ink(f, c):  # left edge and width of the letter's actual ink, from the pen position
@@ -42,9 +36,9 @@ letter('C')
 cy = base_b - cap_h/2; r = ring/2; cx = x + r
 d.ellipse((cx-r, cy-r, cx+r, cy+r), fill=INK)
 inner = r - st
-d.ellipse((cx-inner, cy-inner, cx+inner, cy+inner), fill=im.getpixel((int(cx), int(cy-r-6*S))))
+d.ellipse((cx-inner, cy-inner, cx+inner, cy+inner), fill=BLACK)
 core = st*1.05
-d.ellipse((cx-core, cy-core, cx+core, cy+core), fill=INK)
+d.ellipse((cx-core, cy-core, cx+core, cy+core), fill=ACCENT)
 x += ring + tr
 letter('R'); letter('E')
 im.resize((640, 360), Image.LANCZOS).save(out, optimize=True)

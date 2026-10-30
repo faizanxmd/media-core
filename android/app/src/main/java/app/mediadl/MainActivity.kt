@@ -72,7 +72,7 @@ class Nav {
 
     /** Sidebar / bottom bar: Home is always underneath, so Back from a tab lands on Home. */
     fun go(t: Tab) {
-        if (t != tab) contentFocus = null
+        if (t != tab) { contentFocus = null; gridFocus.remove("search") }
         stack.clear()
         stack.add(Screen.Home)
         when (t) {

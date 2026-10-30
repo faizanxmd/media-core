@@ -8,25 +8,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 
-/** The TV app's screens: pages under a row of tabs; title pages cover everything. */
+/** The TV app's screens, each one canvas: the tabs are part of the page and scroll away with it; title pages have none. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
     CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec()) { // every list scrolls alike
-        Box(Modifier.fillMaxSize().background(Bg)) {
+        Box(Modifier.fillMaxSize().background(Base)) {
             BackHandler(enabled = nav.stack.size > 1) { nav.back() }
-            when (val s = nav.stack.last()) {
-                is Screen.Detail -> DetailScreen(nav, s.id)
-                else -> {
-                    when (s) {
-                        Screen.Films -> LibraryScreen(nav, shows = false)
-                        Screen.Shows -> LibraryScreen(nav, shows = true)
-                        Screen.Search -> SearchScreen(nav)
-                        else -> HomeScreen(nav, onUpdate = onUpdate)
-                    }
-                    TopTabs(nav.tab, nav::go, nav.update != null, onUpdate, nav.railFocus) { nav.contentFocus }
+            val s = nav.stack.last()
+            key(s) {
+                when (s) {
+                    is Screen.Detail -> DetailScreen(nav, s.id) // fades itself in, once its picture is ready
+                    Screen.Films -> FadeIn { LibraryScreen(nav, shows = false, onUpdate = onUpdate) }
+                    Screen.Shows -> FadeIn { LibraryScreen(nav, shows = true, onUpdate = onUpdate) }
+                    Screen.Search -> FadeIn { SearchScreen(nav, onUpdate) }
+                    else -> FadeIn { HomeScreen(nav, onUpdate = onUpdate) }
                 }
             }
         }

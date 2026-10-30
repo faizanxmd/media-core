@@ -1,15 +1,15 @@
 package app.mediadl
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -24,28 +24,30 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.imageLoader
+import coil3.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,13 +105,27 @@ suspend fun Nav.loadHome(cache: java.io.File) {
     }
 }
 
-/** Where the rows start: under the hero, which shows whatever card has focus. */
-private val RowsTop = 294.dp
+/** Home's poster size: a focused row with its title fits, the next row's title shows whole, and its posters peek in below. */
+private val HomePoster = 100.dp
+private val HomeWide = 190.dp
 
-/** Poster size and row gap on Home: a focused poster row with its title fits, and the next row's title shows whole below it (the row's own padding is the gap). */
-private val HomePoster = 115.dp
-private val RowGap = 0.dp
+/**
+ * How far down a focused row's cards sit: a margin, then the row's title. The margin is smaller than the stage's
+ * bottom gap, so the first row leaves the stage's empty edge on screen, and with it the stage and tabs ready to return to.
+ */
+private val RowPivot = 20.dp + RowTitleHeight
 
+/** Scrolling on Home: a focused row rises to the top of the screen; the featured title's own button moves nothing. */
+@OptIn(ExperimentalFoundationApi::class)
+private class HomeSpec(private val pivotPx: Float, private val onStage: () -> Boolean) : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+        if (onStage()) 0f else offset - pivotPx
+}
+
+/**
+ * The featured title up top, which stays put while you browse. Moving down, it scrolls away and the rows
+ * take over. The page never redraws for each title, and the posters speak for themselves.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
@@ -138,22 +154,44 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         return
     }
 
-    // only the hero reads this, so a press redraws the hero and two cards rather than every row
-    val focusedId = remember { mutableStateOf(nav.homeFocus?.substringAfter('/') ?: (home.cont + home.recent).firstOrNull()?.id) }
+    val focusedRow = remember { mutableStateOf(nav.homeFocus?.substringBefore('/')) }
+    val featured = remember(home) { (home.cont + home.recent + home.shows + home.movies).firstOrNull() }
+    val stageFr = remember { FocusRequester() }
+    val onStage = remember { booleanArrayOf(nav.homeFocus == null || nav.homeFocus == "stage") }
 
     LaunchedEffect(Unit) {
         delay(60)
-        val target = nav.homeFocus?.let { requesters[it] } ?: requesters.values.firstOrNull()
-        runCatching { target?.requestFocus() }.onFailure { runCatching { requesters.values.firstOrNull()?.requestFocus() } }
+        val target = nav.homeFocus?.let { if (it == "stage") stageFr else requesters[it] } ?: stageFr
+        runCatching { target.requestFocus() }.onFailure { runCatching { stageFr.requestFocus() } }
+    }
+
+    // down in the rows the tabs have scrolled away: Back returns to the top before it leaves the app
+    val scrolled by remember { derivedStateOf { nav.homeList.firstVisibleItemIndex > 0 || nav.homeList.firstVisibleItemScrollOffset > 0 } }
+    BackHandler(enabled = scrolled) {
+        onStage[0] = true
+        nav.homeFocus = "stage"
+        scope.launch {
+            nav.homeList.animateScrollToItem(0)
+            withFrameNanos { }
+            runCatching { stageFr.requestFocus() }
+        }
+    }
+
+    // the page a focused title would open, decoded ahead so it arrives whole; only once the remote has settled
+    val preload = remember { arrayOfNulls<Job>(1) }
+    val preloadSoon = { it: Item ->
+        preload[0]?.cancel()
+        preload[0] = scope.launch {
+            delay(Motion.SettleMs.toLong())
+            it.banner?.let { url -> ctx.imageLoader.enqueue(ImageRequest.Builder(ctx).data(url).size(1920, 1080).build()) }
+        }
+        Unit
     }
 
     Box(Modifier.fillMaxSize()) {
-        HomeHero(home, focusedId)
-
         val density = LocalDensity.current
         val rowSpec = rememberMinimalSpec()
-        // the focused card sits a title's height down, so its row's title stays on screen
-        val listSpec = remember(density) { PivotSpec(density.run { RowTitleHeight.toPx() }) }
+        val listSpec = remember(density) { HomeSpec(density.run { RowPivot.toPx() }) { onStage[0] } }
         val topRow = when {
             home.cont.isNotEmpty() -> "continue"
             home.recent.isNotEmpty() -> "recent"
@@ -163,30 +201,42 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         CompositionLocalProvider(LocalBringIntoViewSpec provides listSpec) {
             LazyColumn(
                 state = nav.homeList,
-                modifier = Modifier.padding(top = RowsTop).fillMaxSize(),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 300.dp),
-                verticalArrangement = Arrangement.spacedBy(RowGap),
             ) {
+                item("stage") {
+                    Column {
+                        PageTabs(nav, onUpdate)
+                        if (featured != null) FeaturedStage(featured, home.shows, stageFr, nav) {
+                            onStage[0] = true
+                            nav.homeFocus = "stage"
+                            nav.contentFocus = stageFr
+                            focusedRow.value = null
+                            preloadSoon(home.shows.firstOrNull { s -> s.id == featured.showId } ?: featured)
+                            scope.launch { nav.homeList.animateScrollToItem(0) }
+                        }
+                    }
+                }
                 fun row(key: String, title: String, list: List<Item>, wide: Boolean) {
                     if (list.isEmpty()) return
                     item(key) {
                         CompositionLocalProvider(LocalBringIntoViewSpec provides rowSpec) {
                             Column {
-                                RowTitle(title, Modifier.padding(start = 40.dp))
+                                HomeRowTitle(title, key, focusedRow)
                                 LazyRow(
                                     state = nav.rowStates.getOrPut(key) { LazyListState() },
-                                    contentPadding = PaddingValues(horizontal = 40.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                                    contentPadding = PaddingValues(start = Side, end = Side, top = 12.dp, bottom = SectionGap),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     modifier = Modifier.layoutOffset((-12).dp),
                                 ) {
                                     itemsIndexed(list, key = { _, it -> it.id }) { i, it ->
                                         val k = "$key/${it.id}"
                                         val fr = requesters.getOrPut(k) { FocusRequester() }
-                                        val onFocus = { nav.homeFocus = k; nav.contentFocus = fr; focusedId.value = it.id }
+                                        val onFocus = { onStage[0] = false; nav.homeFocus = k; nav.contentFocus = fr; focusedRow.value = key; preloadSoon(it) }
                                         val click = { openItem(ctx, scope, nav, it, resume = key == "continue") }
-                                        // Up from the top row lands on the current tab, not whichever tab is nearest
-                                        val mod = Modifier.rowEnds(i, list.size).then(if (key == topRow) Modifier.focusProperties { up = nav.railFocus } else Modifier)
-                                        if (wide) WideCard(it, 205.dp, click, mod, onFocus, fr)
+                                        // Up from the top row goes to the featured title's button, not whatever is nearest
+                                        val mod = Modifier.rowEnds(i, list.size).then(if (key == topRow) Modifier.focusProperties { up = stageFr } else Modifier)
+                                        if (wide) WideCard(it, HomeWide, click, mod, onFocus, fr)
                                         else PosterCard(it, HomePoster, click, mod, onFocus, fr)
                                     }
                                 }
@@ -199,22 +249,49 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                 row("shows", "Shows", home.shows, wide = false)
                 row("movies", "Films", home.movies, wide = false)
                 if (home.movies.isEmpty() && home.shows.isEmpty()) item("empty") {
-                    Text("Nothing in the library yet. Add links at mint:8780.", color = Mut, fontSize = 14.5.sp, modifier = Modifier.padding(start = 40.dp))
+                    Text("Nothing in the library yet. Add links at mint:8780.", style = Type.Body, color = Muted, modifier = Modifier.padding(start = Side))
                 }
             }
         }
     }
 }
 
-/** The backdrop and text for the focused card; they change once the scroll has landed, so the two never compete for frames. */
+/** The same top as a title page, for the title you're most likely to want next. */
 @Composable
-private fun BoxScope.HomeHero(home: Home, focusedId: androidx.compose.runtime.State<String?>) {
-    val items = remember(home) { (home.cont + home.recent + home.shows + home.movies).associateBy { it.id } }
-    val hero = focusedId.value?.let(items::get) ?: (home.cont + home.recent + home.movies + home.shows).firstOrNull()
-    var shown by remember { mutableStateOf(hero) }
-    LaunchedEffect(hero?.id) { delay(if (shown == null) 0 else Motion.SettleMs.toLong()); shown = hero }
-    MaskedBackdrop(shown?.let { Api.img(it.meta?.backdrop?.ifEmpty { null }, "w1280") })
-    shown?.let { Hero(it, home, Modifier.padding(start = 40.dp).width(440.dp).height(RowsTop - 21.dp)) }
+private fun FeaturedStage(it: Item, shows: List<Item>, fr: FocusRequester, nav: Nav, onFocus: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val show = if (it.isEpisode) shows.firstOrNull { s -> s.id == it.showId } else null
+    val base = show ?: it
+    Stage(Api.img(it.meta?.backdrop?.ifEmpty { null } ?: base.meta?.backdrop?.ifEmpty { null }, "w1280")) {
+        TitleMark(it.logo ?: show?.logo, it.showTitle)
+        val facts = listOfNotNull(
+            base.displayYear.takeIf { y -> y > 0 }?.toString(),
+            base.meta?.genres?.firstOrNull(),
+            (base.meta?.cert ?: it.meta?.cert)?.ifEmpty { null },
+        )
+        if (facts.isNotEmpty()) Text(facts.joinToString(" · "), style = Type.Meta, color = Muted, modifier = Modifier.padding(top = 12.dp))
+        if (it.isEpisode) Text("S${it.season}, E${it.episode} · ${it.title}", style = Type.Label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
+        (it.meta?.overview ?: base.meta?.overview)?.takeIf { o -> o.isNotEmpty() }?.let { o ->
+            Text(o, style = Type.Body, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = if (it.isEpisode) 4.dp else 12.dp))
+        }
+        Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val resumable = it.pos > 0 && !it.watched && it.durMs > it.pos
+            PlayCapsule(
+                if (resumable) hm(it.durMs - it.pos) else "Play",
+                Modifier.focusProperties { up = nav.railFocus }, focusRequester = fr, onFocus = onFocus,
+            ) { openItem(ctx, scope, nav, it, resume = true) }
+            ToolButton(AppIcons.Info, "More about this", Modifier.focusProperties { up = nav.railFocus }, onFocus = onFocus) {
+                nav.open(Screen.Detail(it.showId.ifEmpty { it.id }))
+            }
+        }
+    }
+}
+
+/** The focused row's title is bright and the others quiet. On its own, so a press redraws only the two that change. */
+@Composable
+private fun HomeRowTitle(title: String, key: String, focusedRow: androidx.compose.runtime.State<String?>) {
+    RowTitle(title, Modifier.padding(start = Side), color = if (focusedRow.value == key) Ink else Muted)
 }
 
 /** Moves content up by [dy] and gives the space back: the row's padding (room for a lifted card) tucks under its title. */
@@ -223,48 +300,6 @@ private fun Modifier.layoutOffset(dy: Dp): Modifier = layout { m, c ->
     val d = dy.roundToPx()
     layout(p.width, (p.height + d).coerceAtLeast(0)) { p.place(0, d) }
 }
-
-/** Logo, one short line of facts, where you are, two lines of story, when it ends. */
-@Composable
-private fun Hero(it: Item, home: Home, modifier: Modifier) {
-    val ctx = LocalContext.current
-    val show = if (it.isEpisode) home.shows.firstOrNull { s -> s.id == it.showId } else null
-    val base = show ?: it
-    // laid out from the top, under the tabs: the logo stays put whatever the text below it
-    Column(modifier.padding(top = 60.dp)) {
-        Box(Modifier.height(85.dp).width(280.dp), contentAlignment = Alignment.BottomStart) {
-            val logo = it.logo ?: show?.logo
-            if (logo != null) AsyncImage(logo, it.showTitle, Modifier.fillMaxSize(), contentScale = ContentScale.Fit, alignment = Alignment.BottomStart)
-            else Text(it.showTitle, fontSize = 30.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.height(12.dp))
-        val facts = listOfNotNull(
-            base.displayYear.takeIf { y -> y > 0 }?.toString(),
-            base.meta?.genres?.firstOrNull(),
-            (base.meta?.cert ?: it.meta?.cert)?.ifEmpty { null },
-        )
-        if (facts.isNotEmpty()) Text(facts.joinToString("  ·  "), color = Color80, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
-        if (it.isEpisode) {
-            Text("S${it.season}, E${it.episode}  ${it.title}", fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp))
-        }
-        (it.meta?.overview ?: base.meta?.overview)?.takeIf { o -> o.isNotEmpty() }?.let { o ->
-            Text(o, color = Color76, fontSize = 14.5.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
-        }
-        val left = when {
-            it.isShow -> 0L
-            it.pos > 0 && it.durMs > it.pos -> it.durMs - it.pos
-            it.durMs > 0 -> it.durMs
-            else -> (it.meta?.runtime ?: 0) * 60000L
-        }
-        if (left > 0) Row(Modifier.padding(top = 9.dp)) {
-            Text("Ends at ", color = Faint, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
-            Text(endsAt(ctx, left), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-private val Color80 = Color(0xCCFFFFFF)
-private val Color76 = Color(0xC2FFFFFF)
 
 /** "22:42" (or "10:42 PM", per the TV's setting): now plus what's left. */
 fun endsAt(ctx: Context, leftMs: Long): String =
@@ -291,9 +326,12 @@ suspend fun playEpisode(ctx: Context, ep: Item, fromStart: Boolean = false) {
 /** Every episode in viewing order (the server already puts specials last). */
 fun episodeQueue(show: Item): List<Item> = show.seasons.flatMap { it.episodes }
 
+/** Shows only if the wait is real: a page that arrives quickly never flashes a ring first. */
 @Composable
 fun Loading() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    var show by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(500); show = true }
+    if (show) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         LoadingRing()
     }
 }
@@ -301,17 +339,14 @@ fun Loading() {
 @Composable
 fun ErrorView(msg: String, onRetry: () -> Unit, extra: @Composable () -> Unit = {}) {
     val fr = remember { FocusRequester() }
-    Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().padding(Side), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Can't reach mint", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "At home: check that mint is on.\nAway from home: open the Tailscale app and connect.",
-                color = Mut, fontSize = 14.5.sp, lineHeight = 20.sp,
-            )
-            if (msg != "Can't reach mint") Text(msg, color = Faint, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
-            Spacer(Modifier.height(20.dp))
-            CircleButton(AppIcons.Refresh, "Try again", focusRequester = fr, onClick = onRetry)
+            Text("Can't reach mint", style = Type.Title)
+            Spacer(Modifier.height(12.dp))
+            Text("At home: check that mint is on.\nAway from home: open the Tailscale app and connect.", style = Type.Body, color = Muted)
+            if (msg != "Can't reach mint") Text(msg, style = Type.Caption, color = Muted, modifier = Modifier.padding(top = 8.dp))
+            Spacer(Modifier.height(24.dp))
+            ToolButton(AppIcons.Refresh, "Try again", focusRequester = fr, onClick = onRetry)
             Spacer(Modifier.height(24.dp))
             extra()
         }

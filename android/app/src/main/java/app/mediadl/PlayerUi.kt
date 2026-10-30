@@ -1,7 +1,6 @@
 package app.mediadl
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -16,6 +15,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,7 +34,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,7 +52,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -72,20 +71,19 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 /**
- * Hidden: just the picture (a tap on Left/Right skips with nothing on screen).
- * Scrub: Left/Right held, the picture strip (TV). Seek: a thin bar while skipping (phone).
+ * Hidden: just the picture (a tap on Left/Right skips, with only a small mark).
+ * Scrub: the picture strip (TV), from a hold of Left/Right until OK or Back. Seek: a thin bar while skipping (phone).
  * Full: title, bar and controls (paused, or asked for with Up/Down).
  */
 enum class Mode { Hidden, Seek, Scrub, Full }
@@ -103,6 +101,7 @@ class PlayerState {
     var dur by mutableLongStateOf(0L)
     var scrub by mutableStateOf<Long?>(null) // where you'll land while still pressing Left/Right
     var scrubFrom by mutableLongStateOf(0L) // where that skip started, so "+10s" doesn't drift as the film plays
+    var skipped by mutableIntStateOf(0) // seconds the last few taps of Left/Right add up to; shows the small mark
     var speed by mutableStateOf(1f)
     var title by mutableStateOf("")
     var sub by mutableStateOf("") // year, or "S1, E2 · Its title"
@@ -158,15 +157,13 @@ fun chapterAt(chs: List<Chapter>, ms: Long): String? =
 fun speedLabel(s: Float) = (if (s == s.toInt().toFloat()) "${s.toInt()}" else "$s") + "×"
 
 
-private val Dim70 = Color(0xB3FFFFFF)
-
-/** Side margin and the height of the controls row, shared by everything anchored to them. */
-private val Side = 40.dp
-private val BottomGap = 28.dp
-private val CtlHeight = 40.dp
+/** The bottom margin and the height of the controls row, shared by everything anchored to them. */
+private val BottomGap = 24.dp
+private val CtlHeight = 44.dp
+private val CtlIcon = 24.dp
 
 /** Which menu is open above the controls (the activity only knows "a sheet is open"). */
-private enum class Menu { Speed, Audio, Subtitles, Chapters, Episodes }
+private enum class Menu { Speed, Audio, Subtitles, Episodes }
 
 private val Speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 
@@ -178,20 +175,22 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
     Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { a.tapped() }) }) {
         // the second before the first frame: artwork and title, not a black screen
         AnimatedVisibility(!st.firstFrame && st.error == null, enter = fadeIn(tween(0)), exit = fadeOut(tween(Motion.BackdropMs))) {
-            Box(Modifier.fillMaxSize().background(Bg)) {
+            Box(Modifier.fillMaxSize().background(Base)) {
                 st.cover?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x59000000), Color(0xE6000000)))))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Base.copy(alpha = 0.35f), Base.copy(alpha = 0.9f)))))
                 Row(Modifier.align(Alignment.BottomStart).padding(Side), verticalAlignment = Alignment.CenterVertically) {
                     LoadingRing(size = 20.dp)
                     Spacer(Modifier.width(14.dp))
                     Column {
-                        Text(st.title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (st.sub.isNotEmpty()) Text(st.sub, color = Dim70, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(st.title, style = Type.Heading, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (st.sub.isNotEmpty()) Text(st.sub, style = Type.Meta, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         }
         QuietLoading(st.firstFrame && st.buffering && st.error == null && !scrubbing, Modifier.align(Alignment.Center))
+
+        SkipMark(st.skipped)
 
         AnimatedVisibility(scrubbing, enter = fadeIn(tween(Motion.FadeInMs)), exit = fadeOut(tween(Motion.FadeOutMs))) { ScrubView(st) }
         AnimatedVisibility(full, enter = fadeIn(tween(Motion.FadeInMs)), exit = fadeOut(tween(Motion.FadeOutMs))) { Full(st, a, tv) }
@@ -207,13 +206,34 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
         val note = st.note
         if (note != null && st.mode == Mode.Hidden) {
             Text(
-                note, fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 30.dp)
-                    .clip(RoundedCornerShape(20.dp)).background(Surface).padding(horizontal = 16.dp, vertical = 9.dp),
+                note, style = Type.Meta,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 32.dp)
+                    .clip(CardShape).background(Raised).padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
 
         st.error?.let { ErrorCard(it, a) }
+    }
+}
+
+/** After a tap of Left/Right: two arrows and the seconds, small, on the side you went. Stays still while taps add up. */
+@Composable
+private fun BoxScope.SkipMark(seconds: Int) {
+    val last = remember { intArrayOf(0) }
+    if (seconds != 0) last[0] = seconds
+    AnimatedVisibility(
+        seconds != 0,
+        modifier = Modifier.align(if (last[0] > 0) Alignment.CenterEnd else Alignment.CenterStart).padding(horizontal = Side),
+        enter = fadeIn(tween(Motion.FadeInMs)), exit = fadeOut(tween(Motion.FadeOutMs)),
+    ) {
+        Row(
+            Modifier.background(Base.copy(alpha = 0.72f), CardShape).padding(start = 8.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(if (last[0] > 0) AppIcons.SkipAhead else AppIcons.SkipBack, null, tint = Ink, modifier = Modifier.size(24.dp))
+            Text("${abs(last[0])}", style = Type.Label.figures())
+        }
     }
 }
 
@@ -227,9 +247,6 @@ private fun QuietLoading(on: Boolean, modifier: Modifier) {
     }
     if (on && show) LoadingRing(modifier)
 }
-
-// a style passed to Text replaces the theme's, so it must name its own colour (or the text turns black)
-private val Shadowed = TextStyle(fontFamily = Inter, color = Ink, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), blurRadius = 10f))
 
 // ---------- holding Left/Right: the picture strip ----------
 
@@ -245,7 +262,7 @@ private fun ScrubView(st: PlayerState) {
     val store = st.thumbs
     // new pictures only when the position crosses a 10 s step, however fast the time runs
     val step by remember { derivedStateOf { (st.scrub ?: st.pos) / 10_000 } }
-    Box(Modifier.fillMaxSize().background(Color(0xB8000000))) {
+    Box(Modifier.fillMaxSize().background(Base.copy(alpha = 0.72f))) {
         val strip = store != null && store.ready
         if (strip) {
             val here = step * 10_000
@@ -256,36 +273,30 @@ private fun ScrubView(st: PlayerState) {
             ) {
                 StripPicture(store!!, base - 2 * StripStepMs, st.dur, Modifier.width(128.dp))
                 StripPicture(store, base - StripStepMs, st.dur, Modifier.width(128.dp))
-                StripPicture(store, here, st.dur, Modifier.width(320.dp).border(2.dp, Color.White, RoundedCornerShape(10.dp)), big = true)
+                StripPicture(store, here, st.dur, Modifier.width(320.dp).border(FocusLine, Ink, CardShape), big = true)
                 StripPicture(store, base + StripStepMs, st.dur, Modifier.width(128.dp))
                 StripPicture(store, base + 2 * StripStepMs, st.dur, Modifier.width(128.dp))
             }
         }
         ScrubTime(st, Modifier.align(Alignment.BottomCenter).padding(bottom = 46.dp))
-        Timeline(st, Modifier.align(Alignment.BottomStart).padding(start = Side, end = Side, bottom = BottomGap), 8.dp)
+        Timeline(st, Modifier.align(Alignment.BottomStart).padding(start = Side, end = Side, bottom = 28.dp), 8.dp)
     }
 }
 
 /** On its own, so the running clock redraws only itself and not the strip. */
 @Composable
 private fun ScrubTime(st: PlayerState, modifier: Modifier) {
-    val at = st.scrub ?: st.pos
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        chapterAt(st.chapters, at)?.let {
-            Text(it, color = Color(0xCCFFFFFF), fontSize = 12.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Shadowed)
-        }
-        Text(clock(at), fontSize = 20.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, style = Shadowed)
-    }
+    Text(clock(st.scrub ?: st.pos), style = Type.Title.figures(), modifier = modifier)
 }
 
 @Composable
 private fun StripPicture(store: ThumbStore, ms: Long, dur: Long, modifier: Modifier, big: Boolean = false) {
-    val shape = RoundedCornerShape(if (big) 10.dp else 7.dp)
+    val shape = CardShape
     val inFilm = ms in 0..dur
     Box(
         modifier.aspectRatio(16f / 9f)
             .graphicsLayer { alpha = if (inFilm) (if (big) 1f else 0.6f) else 0f }
-            .clip(shape).background(Surface2),
+            .clip(shape).background(Raised),
     ) {
         if (inFilm) ThumbPicture(store, ms)
     }
@@ -301,30 +312,19 @@ private fun ThumbPicture(store: ThumbStore, ms: Long) {
 
 // ---------- paused, or asked for: title, bar, controls ----------
 
-/** The progress line, cut where chapters begin. Reads the position while drawing, so it never recomposes. */
+/** The progress line: flat, white and square-ended. Reads the position while drawing, so it never recomposes. */
 @Composable
 private fun Timeline(st: PlayerState, modifier: Modifier, thick: Dp) {
     val h by animateDpAsState(thick, tween(Motion.FocusMs), label = "bar")
-    val cuts = remember(st.chapters, st.dur) {
-        if (st.dur <= 0 || st.chapters.size > 40) emptyList()
-        else st.chapters.map { it.start.toFloat() / st.dur }.filter { it in 0.005f..0.995f }
-    }
     Canvas(modifier.fillMaxWidth().height(18.dp)) {
         val dur = st.dur.coerceAtLeast(1).toFloat()
         val at = (st.scrub ?: st.pos) / dur * size.width
         val buf = st.buffered / dur * size.width
         val px = h.toPx()
         val y = (size.height - px) / 2
-        val r = CornerRadius(px / 2)
-        val gap = 2.dp.toPx()
-        var x = 0f
-        for (cut in cuts + 1f) {
-            val end = cut * size.width - if (cut < 1f) gap else 0f
-            drawRoundRect(Color(0x4DFFFFFF), Offset(x, y), Size((end - x).coerceAtLeast(0f), px), r)
-            if (buf > x) drawRoundRect(Color(0x2EFFFFFF), Offset(x, y), Size((minOf(buf, end) - x).coerceAtLeast(0f), px), r)
-            if (at > x) drawRoundRect(Color.White, Offset(x, y), Size((minOf(at, end) - x).coerceAtLeast(0f), px), r)
-            x = cut * size.width
-        }
+        drawRect(Ink.copy(alpha = 0.28f), Offset(0f, y), Size(size.width, px))
+        drawRect(Ink.copy(alpha = 0.18f), Offset(0f, y), Size(buf.coerceIn(0f, size.width), px))
+        drawRect(Ink, Offset(0f, y), Size(at.coerceIn(0f, size.width), px))
     }
 }
 
@@ -340,12 +340,11 @@ private fun Full(st: PlayerState, a: PlayerActions, tv: Boolean) {
         add(Ctl(AppIcons.Audio, "Audio", { menu = Menu.Audio; a.openSheet(Sheet.Tracks) }))
         add(Ctl(AppIcons.Subtitles, "Subtitles", { menu = Menu.Subtitles; a.openSheet(Sheet.Tracks) }))
         add(Ctl(AppIcons.Speed, "Speed", { menu = Menu.Speed; a.openSheet(Sheet.Tracks) }, chip = if (st.speed != 1f) speedLabel(st.speed) else null))
-        if (st.chapters.size > 1) add(Ctl(AppIcons.Chapters, "Chapters", { menu = Menu.Chapters; a.openSheet(Sheet.Chapters) }))
         if (st.episodes.size > 1) add(Ctl(AppIcons.Episodes, "Episodes", { menu = Menu.Episodes; a.openSheet(Sheet.Episodes) }))
         if (st.hasNext) add(Ctl(AppIcons.SkipNext, "Next episode", a::next))
     }
     val frs = remember(ctls.size) { List(ctls.size) { FocusRequester() } }
-    val xs = remember(ctls.size) { FloatArray(ctls.size) } // where each button starts: its menu opens from there
+    val ends = remember(ctls.size) { FloatArray(ctls.size) } // where each button ends: its menu lines up with it and grows leftward
 
     LaunchedEffect(Unit) {
         if (!tv) return@LaunchedEffect
@@ -365,58 +364,57 @@ private fun Full(st: PlayerState, a: PlayerActions, tv: Boolean) {
     }
 
     val open = menu.takeIf { st.sheet != null }
-    val picturesOpen = open == Menu.Chapters || open == Menu.Episodes
+    val picturesOpen = open == Menu.Episodes
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(260.dp).background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Color(0x59000000), 1f to Color(0xB8000000))))
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(280.dp).background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Base.copy(alpha = 0.5f), 1f to Base.copy(alpha = 0.94f))))
 
-        // kept in place under the picture menus, so focus can come back to them
+        // kept in place under the picture menu, so focus can come back to it
         Column(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = Side, end = Side, bottom = BottomGap)
                 .graphicsLayer { alpha = if (picturesOpen) 0f else 1f },
         ) {
             val logo = st.logo
-            if (logo != null) AsyncImage(logo, st.title, Modifier.height(58.dp).widthIn(max = 280.dp), contentScale = ContentScale.Fit, alignment = Alignment.BottomStart)
-            else Text(st.title, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Shadowed)
-            val sub = listOfNotNull(st.sub.ifEmpty { null }, chapterAt(st.chapters, st.pos)).joinToString("  ·  ")
-            if (sub.isNotEmpty()) Text(sub, color = Color(0xD9FFFFFF), fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Shadowed, modifier = Modifier.padding(top = 6.dp))
-            Spacer(Modifier.height(10.dp))
+            if (logo != null) AsyncImage(logo, st.title, Modifier.height(40.dp).widthIn(max = 200.dp), contentScale = ContentScale.Fit, alignment = Alignment.BottomStart)
+            else Text(st.title, style = Type.Heading, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.Bottom) {
+                Text(st.sub, style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)) // takes the room, so Ends sits at the bar's end
+                if (st.dur > 0) {
+                    val left = ((st.dur - (st.scrub ?: st.pos)) / st.speed).toLong().coerceAtLeast(0)
+                    Text("Ends " + endsAt(ctx, left), style = Type.Meta.figures(), color = Muted, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
             FocusBar(st, a, barFr, frs.getOrNull(last))
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth().height(CtlHeight), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                val shown = st.scrub ?: st.pos
+                Text(clock(shown), style = Type.Label.figures())
+                if (st.dur > 0) Text("  /  " + clock(st.dur), style = Type.Label.figures().copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = Muted)
+                Spacer(Modifier.weight(1f))
+                // pushed out by the icon's own margin, so the last icon ends exactly where the bar does
+                Row(Modifier.offset(x = (CtlHeight - CtlIcon) / 2), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     ctls.forEachIndexed { i, c ->
                         CtlButton(
                             c.icon, c.label, c.chip, frs[i],
                             Modifier.focusProperties { up = barFr }.rowEnds(i, ctls.size)
-                                .onGloballyPositioned { xs[i] = it.positionInRoot().x },
+                                .onGloballyPositioned { ends[i] = it.positionInRoot().x + it.size.width },
                             onFocus = { last = i }, onClick = { last = i; c.open() },
                         )
                     }
-                }
-                val shown = st.scrub ?: st.pos
-                Text(clock(shown), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, style = Shadowed)
-                if (st.dur > 0) {
-                    val left = ((st.dur - shown) / st.speed).toLong().coerceAtLeast(0)
-                    Text("   −" + clock((st.dur - shown).coerceAtLeast(0)) + "   Ends " + endsAt(ctx, left), color = Color(0xD9FFFFFF), fontSize = 13.5.sp, fontWeight = FontWeight.Medium, style = Shadowed)
                 }
             }
         }
 
         when (open) {
-            Menu.Episodes -> PicturePanel("Episodes", st.episodes.map { o -> Pic(o.title, o.detail, o.selected, o.image, null, o.pick) }, st.thumbs)
-            Menu.Chapters -> PicturePanel("Chapters", st.chapters.mapIndexed { i, c ->
-                val next = st.chapters.getOrNull(i + 1)?.start ?: Long.MAX_VALUE
-                Pic(c.title.ifBlank { "Chapter ${i + 1}" }, clock(c.start), st.pos in c.start until next, null, c.start) { a.scrubTo(c.start, commit = true); a.closeSheet() }
-            }, st.thumbs)
+            Menu.Episodes -> PicturePanel("Episodes", st.episodes.map { o -> Pic(o.title, o.detail, o.selected, o.image, o.pick) })
             null -> {}
             else -> {
-                val width = if (open == Menu.Speed) 180.dp else 260.dp
-                val x = with(LocalDensity.current) { xs.getOrElse(last) { 0f }.toDp() }.coerceAtMost(960.dp - Side - width)
-                Box(Modifier.align(Alignment.BottomStart).padding(start = x, bottom = BottomGap + CtlHeight + 10.dp)) {
+                val rightGap = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() - ends.getOrElse(last) { 0f }).toDp() }.coerceAtLeast(Side)
+                Box(Modifier.align(Alignment.BottomEnd).padding(end = rightGap, bottom = BottomGap + CtlHeight + 8.dp)) {
                     when (open) {
-                        Menu.Speed -> MenuPanel("Speed", Speeds.map { s -> Choice(if (s == 1f) "Normal" else speedLabel(s), "", st.speed == s) { a.setSpeed(s); a.closeSheet() } }, width)
-                        Menu.Audio -> MenuPanel("Audio", st.audio.map { o -> Choice(o.title, o.detail, o.selected) { o.pick(); a.closeSheet() } }, width)
-                        else -> MenuPanel("Subtitles", st.text.map { o -> Choice(o.title, o.detail, o.selected) { o.pick(); a.closeSheet() } }, width)
+                        Menu.Speed -> MenuPanel("Speed", Speeds.map { s -> Choice(if (s == 1f) "Normal" else speedLabel(s), "", st.speed == s) { a.setSpeed(s); a.closeSheet() } }, 180.dp)
+                        Menu.Audio -> MenuPanel("Audio", st.audio.map { o -> Choice(o.title, o.detail, o.selected) { o.pick(); a.closeSheet() } }, 280.dp)
+                        else -> MenuPanel("Subtitles", st.text.map { o -> Choice(o.title, o.detail, o.selected) { o.pick(); a.closeSheet() } }, 280.dp)
                     }
                 }
             }
@@ -424,25 +422,21 @@ private fun Full(st: PlayerState, a: PlayerActions, tv: Boolean) {
     }
 }
 
-/** No circles or chrome at rest: a plain icon. Focused, it fills in and says what it is. */
+/** A plain white icon at rest. Selected, the icon itself turns blue: nothing behind it, nothing resizes. */
 @Composable
 private fun CtlButton(icon: ImageVector, label: String, chip: String?, fr: FocusRequester, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    Row(
+    val tint = if (focused) AccentWord else Ink
+    Box(
         modifier
             .focusRequester(fr)
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocus() }
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .clip(RoundedCornerShape(CtlHeight / 2))
-            .background(if (focused) Color.White else Color.Transparent)
-            .animateContentSize(tween(Motion.FocusMs))
-            .height(CtlHeight).widthIn(min = CtlHeight).padding(horizontal = 9.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+            .size(CtlHeight),
+        contentAlignment = Alignment.Center,
     ) {
-        val c = if (focused) Bg else Ink
-        Icon(icon, label, tint = c, modifier = Modifier.size(22.dp))
-        if (chip != null) Text(chip, color = c, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 5.dp))
-        if (focused) Text(label, color = c, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.padding(start = 7.dp, end = 3.dp))
+        if (chip != null) Text(chip, style = Type.Label, color = tint)
+        else Icon(icon, label, tint = tint, modifier = Modifier.size(CtlIcon))
     }
 }
 
@@ -456,11 +450,12 @@ private fun MenuPanel(title: String, options: List<Choice>, width: Dp) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (sel - 2).coerceAtLeast(0))
     LaunchedEffect(Unit) { delay(32); runCatching { fr.requestFocus() } }
     Column(
-        Modifier.width(width).clip(RoundedCornerShape(14.dp)).background(Surface).padding(7.dp)
+        Modifier.width(width).clip(CardShape).background(Raised).padding(8.dp)
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
-        Text(title, color = Color(0x8CFFFFFF), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 9.dp, top = 4.dp, bottom = 5.dp))
-        if (options.isEmpty()) Text("None", color = Mut, fontSize = 13.5.sp, modifier = Modifier.padding(start = 9.dp, bottom = 8.dp))
+        // starts where the names do, past the option's padding and its check column
+        Text(title, style = Type.Caption, color = Muted, modifier = Modifier.padding(start = 36.dp, top = 4.dp, bottom = 4.dp))
+        if (options.isEmpty()) Text("None", style = Type.Body, color = Muted, modifier = Modifier.padding(start = 36.dp, bottom = 8.dp))
         LazyColumn(Modifier.heightIn(max = 290.dp), state = state) {
             itemsIndexed(options) { i, o ->
                 Box(Modifier.listEnds(i, options.size)) { MenuOption(o.title, o.detail, o.selected, if (i == sel) fr else null, o.pick) }
@@ -470,7 +465,7 @@ private fun MenuPanel(title: String, options: List<Choice>, width: Dp) {
 }
 
 /** Keeps the remote inside a menu: no Left/Right out of it, no Up past the first row or Down past the last. */
-private fun Modifier.listEnds(index: Int, count: Int): Modifier = onPreviewKeyEvent { e ->
+internal fun Modifier.listEnds(index: Int, count: Int): Modifier = onPreviewKeyEvent { e ->
     e.type == KeyEventType.KeyDown && when (e.key) {
         Key.DirectionLeft, Key.DirectionRight -> true
         Key.DirectionUp -> index == 0
@@ -479,11 +474,11 @@ private fun Modifier.listEnds(index: Int, count: Int): Modifier = onPreviewKeyEv
     }
 }
 
-private class Pic(val title: String, val detail: String, val selected: Boolean, val url: String?, val ms: Long?, val pick: () -> Unit)
+private class Pic(val title: String, val detail: String, val selected: Boolean, val url: String?, val pick: () -> Unit)
 
-/** Episodes and Chapters: a row of pictures along the bottom, starting at where you are. Back closes it. */
+/** Episodes: a row of pictures along the bottom, starting at where you are. Back closes it. */
 @Composable
-private fun PicturePanel(title: String, pics: List<Pic>, store: ThumbStore?) {
+private fun PicturePanel(title: String, pics: List<Pic>) {
     val fr = remember { FocusRequester() }
     val sel = pics.indexOfFirst { it.selected }.coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (sel - 1).coerceAtLeast(0))
@@ -491,37 +486,33 @@ private fun PicturePanel(title: String, pics: List<Pic>, store: ThumbStore?) {
     Box(Modifier.fillMaxSize()) {
         Column(
             Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                .background(Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color(0xB3000000), 1f to Color(0xE6000000)))
-                .padding(top = 40.dp, bottom = 22.dp),
+                .background(Brush.verticalGradient(0f to Color.Transparent, 0.3f to Base.copy(alpha = 0.72f), 1f to Base.copy(alpha = 0.94f)))
+                .padding(top = 40.dp, bottom = 24.dp),
         ) {
-            Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = Side))
+            Text(title, style = Type.Heading, modifier = Modifier.padding(start = Side))
             LazyRow(
                 state = state,
-                contentPadding = PaddingValues(horizontal = Side, vertical = 14.dp),
+                contentPadding = PaddingValues(horizontal = Side, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 itemsIndexed(pics) { i, p ->
-                    FocusCard(
-                        p.pick,
-                        Modifier.width(196.dp).aspectRatio(16f / 9f).onPreviewKeyEvent { e ->
-                            e.type == KeyEventType.KeyDown && when (e.key) { // the row keeps the remote until Back
-                                Key.DirectionUp, Key.DirectionDown -> true
-                                Key.DirectionLeft -> i == 0
-                                Key.DirectionRight -> i == pics.lastIndex
-                                else -> false
-                            }
-                        },
-                        radius = 8.dp, scale = 1.06f, focusRequester = if (i == sel) fr else null,
-                    ) {
-                        when {
-                            p.url != null -> AsyncImage(p.url, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                            p.ms != null && store != null -> ThumbPicture(store, p.ms)
+                    Column(Modifier.width(196.dp)) {
+                        FocusCard(
+                            p.pick,
+                            Modifier.fillMaxWidth().aspectRatio(16f / 9f).onPreviewKeyEvent { e ->
+                                e.type == KeyEventType.KeyDown && when (e.key) { // the row keeps the remote until Back
+                                    Key.DirectionUp, Key.DirectionDown -> true
+                                    Key.DirectionLeft -> i == 0
+                                    Key.DirectionRight -> i == pics.lastIndex
+                                    else -> false
+                                }
+                            },
+                            focusRequester = if (i == sel) fr else null,
+                        ) {
+                            p.url?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                         }
-                        Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.34f to Color.Transparent, 1f to Color(0xD9000000))))
-                        Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 10.dp, vertical = 8.dp)) {
-                            Text(p.title, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(if (p.selected) "Now playing" else p.detail, color = Mut, fontSize = 11.5.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+                        Text(p.title, style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+                        Text(if (p.selected) "Now playing" else p.detail, style = Type.Caption, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
@@ -549,27 +540,13 @@ private fun FocusBar(st: PlayerState, a: PlayerActions, fr: FocusRequester, down
                 }
             }
             .focusable(),
-    ) { Timeline(st, Modifier, if (focused) 8.dp else 5.dp) }
+    ) { Timeline(st, Modifier, if (focused) 8.dp else 4.dp) }
 }
 
-/** "Skip Intro": a capsule like the title page's play button. */
+/** "Skip Intro": a worded button, lit while it's what OK would do. */
 @Composable
 private fun SkipCapsule(label: String, armed: Boolean, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val lit = focused || armed
-    Row(
-        Modifier.onFocusChanged { focused = it.isFocused }
-            .lift(lit, RoundedCornerShape(20.dp), 1.05f)
-            .height(40.dp)
-            .background(if (lit) Color.White else Color(0x59000000))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .padding(start = 18.dp, end = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, color = if (lit) Bg else Ink, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.width(6.dp))
-        Icon(AppIcons.SkipNext, null, tint = if (lit) Bg else Ink, modifier = Modifier.size(19.dp))
-    }
+    WordButton(label, lit = armed, icon = AppIcons.SkipNext, onClick = onClick)
 }
 
 /** Up next in the credits: still, title, and a ring counting down to it. */
@@ -580,18 +557,18 @@ private fun NextCard(o: Offer, countdown: Int, armed: Boolean, onClick: () -> Un
     Row(
         Modifier.onFocusChanged { focused = it.isFocused }
             .width(320.dp)
-            .lift(lit, RoundedCornerShape(12.dp), 1.04f)
-            .background(if (lit) Color.White else Surface)
+            .clip(CardShape)
+            .background(if (lit) Ink else Raised)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(128.dp, 72.dp).clip(RoundedCornerShape(6.dp)).background(Surface2)) {
+        Box(Modifier.size(128.dp, 72.dp).clip(CardShape).background(Overlay)) {
             o.still?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             if (countdown > 0) {
-                Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).size(24.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.align(Alignment.BottomEnd).padding(4.dp).size(24.dp), contentAlignment = Alignment.Center) {
                     Canvas(Modifier.fillMaxSize()) {
-                        drawCircle(Color(0x8C000000))
+                        drawCircle(Base.copy(alpha = 0.6f))
                         drawArc(
                             Color.White, -90f, 360f * countdown / 10f, false,
                             topLeft = Offset(1.5.dp.toPx(), 1.5.dp.toPx()),
@@ -599,16 +576,17 @@ private fun NextCard(o: Offer, countdown: Int, armed: Boolean, onClick: () -> Un
                             style = Stroke(2.dp.toPx(), cap = StrokeCap.Round),
                         )
                     }
-                    Text("$countdown", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("$countdown", style = Type.Caption, color = Color.White)
                 }
             }
         }
         Spacer(Modifier.width(12.dp))
         Column {
-            val c = if (lit) Bg else Ink
-            Text("Next Episode", color = c.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            Text(o.title, color = c, fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-            if (o.detail.isNotEmpty()) Text(o.detail, color = c.copy(alpha = 0.6f), fontSize = 11.5.sp, modifier = Modifier.padding(top = 2.dp))
+            val c = if (lit) Base else Ink
+            val soft = if (lit) Base else Muted
+            Text("Next Episode", style = Type.Caption, color = soft)
+            Text(o.title, style = Type.Label, color = c, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (o.detail.isNotEmpty()) Text(o.detail, style = Type.Caption, color = soft)
         }
     }
 }
@@ -617,35 +595,20 @@ private fun NextCard(o: Offer, countdown: Int, armed: Boolean, onClick: () -> Un
 fun ErrorCard(e: PlayError, a: PlayerActions) {
     val fr = remember { FocusRequester() }
     LaunchedEffect(e) { delay(16); runCatching { fr.requestFocus() } }
-    Box(Modifier.fillMaxSize().background(Color(0xCC000000)), contentAlignment = Alignment.Center) {
-        Column(Modifier.widthIn(max = 460.dp).clip(RoundedCornerShape(16.dp)).background(Surface).padding(26.dp)) {
-            Text(e.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    Box(Modifier.fillMaxSize().background(Base.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
+        Column(Modifier.widthIn(max = 460.dp).clip(CardShape).background(Raised).padding(24.dp)) {
+            Text(e.title, style = Type.Title)
             Spacer(Modifier.height(8.dp))
-            Text(e.message, color = Mut, fontSize = 14.sp, lineHeight = 20.sp)
+            Text(e.message, style = Type.Body, color = Muted)
             if (e.detail.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text(e.detail, color = Faint, fontSize = 11.5.sp, lineHeight = 15.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(e.detail, style = Type.Caption, color = Muted, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                TextCapsule("Try again", fr, a::retry)
-                TextCapsule("Close", null, a::close)
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WordButton("Try again", focusRequester = fr, onClick = a::retry)
+                WordButton("Close", onClick = a::close)
             }
         }
     }
-}
-
-@Composable
-private fun TextCapsule(text: String, fr: FocusRequester?, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    Box(
-        Modifier.then(if (fr != null) Modifier.focusRequester(fr) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
-            .lift(focused, RoundedCornerShape(20.dp), 1.05f)
-            .height(40.dp)
-            .background(if (focused) Color.White else Glass)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .padding(horizontal = 20.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(text, color = if (focused) Bg else Ink, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold) }
 }
