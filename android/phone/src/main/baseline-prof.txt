@@ -1,0 +1,8 @@
+HSPLapp/mediacore/**->**(**)**
+Lapp/mediacore/**;
+HSPLandroidx/compose/**->**(**)**
+Landroidx/compose/**;
+HSPLcoil3/**->**(**)**
+Lcoil3/**;
+HSPLkotlinx/coroutines/**->**(**)**
+Lkotlinx/coroutines/**;

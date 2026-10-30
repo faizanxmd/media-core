@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalTextApi::class)
 
-package app.mediacore
+package app.mediacore.phone
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -41,7 +41,7 @@ val PFaint = Color(0x8CFFFFFF)
 
 /** The phone app's screens: pages over a bottom tab bar (title pages cover it). */
 @Composable
-fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
+fun Root(nav: Nav) {
     CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Inter, color = PText)) {
         Box(Modifier.fillMaxSize().background(PBg)) {
             BackHandler(enabled = nav.stack.size > 1) { nav.back() }

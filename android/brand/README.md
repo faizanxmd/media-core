@@ -4,7 +4,7 @@
 both and the TV banner (`app/src/main/res/drawable-xhdpi/banner.png`), fitted to whole pixels at the launcher's 320 x 180.
 The font isn't kept here; get it from google/fonts.
 
-The app icon (`ic_foreground.xml`), the web icon (`web/icon.svg`) and the engine's PNG icons (`icon.go`) repeat the mark's
+The app icon (`ic_foreground.xml`, one copy in each app), the web icon (`web/icon.svg`) and the engine's PNG icons (`icon.go`) repeat the mark's
 numbers by hand.
 
 Third-party:

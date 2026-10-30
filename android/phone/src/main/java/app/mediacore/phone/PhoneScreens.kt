@@ -1,4 +1,4 @@
-package app.mediacore
+package app.mediacore.phone
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.aspectRatio

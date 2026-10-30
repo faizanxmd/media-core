@@ -1,4 +1,4 @@
-package app.mediacore
+package app.mediacore.phone
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -63,7 +63,7 @@ private const val SKIP = 10_000L
  * half skips 10 s and shows only a thin line with where you landed.
  */
 @Composable
-fun DeviceOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boolean) -> Unit) {
+fun PlayerOverlay(st: PlayerState, a: PlayerActions, onChrome: (Boolean) -> Unit) {
     val full = st.mode == Mode.Full && st.sheet == null
     LaunchedEffect(full) { onChrome(full) }
     var menu by remember { mutableStateOf("audio") } // which list the Tracks sheet shows

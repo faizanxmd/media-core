@@ -6,4 +6,5 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "media-core"
-include(":app")
+include(":app") // the TV app
+include(":phone") // the phone app: shares no code with :app

@@ -26,13 +26,13 @@ OUT="$HOME/.local/share/media-core/app"
 mkdir -p "$OUT"
 
 if [ "${1:-}" = "--phone" ]; then
-  nice -n 10 "$GRADLE" --no-daemon -q assemblePhoneRelease -Pvcode="$VCODE" -Pvname="$VNAME"
-  cp app/build/outputs/apk/phone/release/app-phone-release.apk "$OUT/media-core-phone.apk"
+  nice -n 10 "$GRADLE" --no-daemon -q :phone:assembleRelease -Pvcode="$VCODE" -Pvname="$VNAME"
+  cp phone/build/outputs/apk/release/phone-release.apk "$OUT/media-core-phone.apk"
   echo "built phone $VNAME ($VCODE), $(du -h "$OUT/media-core-phone.apk" | cut -f1) -> $OUT/media-core-phone.apk"
   exit 0
 fi
 
-nice -n 10 "$GRADLE" --no-daemon -q assembleTvRelease -Pvcode="$VCODE" -Pvname="$VNAME"
+nice -n 10 "$GRADLE" --no-daemon -q :app:assembleTvRelease -Pvcode="$VCODE" -Pvname="$VNAME"
 APK=app/build/outputs/apk/tv/release/app-tv-release.apk
 cp "$APK" "$OUT/media-core.apk.tmp" && mv "$OUT/media-core.apk.tmp" "$OUT/media-core.apk"
 printf '{"version_code":%s,"version_name":"%s","size":%s}\n' "$VCODE" "$VNAME" "$(stat -c %s "$OUT/media-core.apk")" > "$OUT/media-core.json"

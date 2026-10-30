@@ -24,14 +24,10 @@ android {
         ndk { abiFilters += ((findProperty("abis") as String?) ?: "arm64-v8a,armeabi-v7a").split(",") }
     }
 
-    // Two separate apps from one codebase: the phone app gets its own id, launcher entry and UI
+    // The TV app. The phone app is its own module, ../phone
     flavorDimensions += "device"
     productFlavors {
         create("tv") { dimension = "device" }
-        create("phone") {
-            dimension = "device"
-            applicationIdSuffix = ".phone"
-        }
     }
 
     signingConfigs {
