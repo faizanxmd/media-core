@@ -75,7 +75,7 @@ object Offline {
             .setDescription("Media Core · for offline")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationUri(Uri.fromFile(videoFile(item.id)))
-            .setAllowedOverMetered(true)
+            .setAllowedOverMetered(false) // these are whole films: wait for Wi-Fi
         videoFile(item.id).delete()
         val dl = dm.enqueue(req)
         raw.put("_dl", dl).put("_at", System.currentTimeMillis())

@@ -9,6 +9,6 @@ numbers by hand.
 
 Third-party:
 - Montserrat, SIL Open Font License 1.1, Copyright 2024 The Montserrat.Git Project Authors. Used only to draw the logo.
-- Fluent UI System Icons, MIT License, Copyright (c) 2020 Microsoft Corporation. Every icon on the TV.
-- Solar icons, CC BY 4.0, by 480 Design. Some of the phone app's icons.
-- Phosphor Icons, MIT License, Copyright (c) 2023 Phosphor Icons. The phone app's outline icons.
+- Fluent UI System Icons, MIT License, Copyright (c) 2020 Microsoft Corporation. The TV's icons, and every icon on the phone.
+- Solar icons, CC BY 4.0, by 480 Design. Unused, left in the TV's `AppIcons.kt` from the old phone app.
+- Phosphor Icons, MIT License, Copyright (c) 2023 Phosphor Icons. Unused, left in the same file.

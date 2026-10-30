@@ -92,9 +92,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (st.mode == Mode.Full && player.isPlaying && st.sheet == null && st.scrub == null) st.mode = Mode.Hidden
     }
 
-    private val hideSeek = Runnable { if (st.mode == Mode.Seek && st.scrub == null) st.mode = Mode.Hidden }
     private val commit = Runnable { commitScrub() }
-    private val clearNote = Runnable { st.note = null }
+    private val clearSkipped = Runnable { st.skipped = 0 }
+    private var seekedTo = -1L // a skip's first tap lands at once; later taps add to it
+    private var scrubResume = false
+    private var scrubFrom = Mode.Hidden
 
     private fun refresh() {
         st.pos = player.currentPosition
@@ -150,30 +152,60 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.playing = player.playWhenReady
     }
 
-    override fun scrub(deltaMs: Long) {
-        if (st.mode == Mode.Hidden) st.mode = Mode.Seek
-        if (st.scrub == null) st.scrubFrom = player.currentPosition
+    /** A double tap, or one of the 10 s buttons. With nothing on screen it shows only a small mark; taps add up. */
+    override fun skip(dir: Int) {
+        if (st.dur <= 0) return
+        val first = st.scrub == null
         val from = st.scrub ?: player.currentPosition
-        st.scrub = (from + deltaMs).coerceIn(0, maxOf(0, st.dur - 1000))
+        val to = (from + dir * 10_000L).coerceIn(0, maxOf(0, st.dur - 1000))
+        st.scrub = to
+        if (st.mode == Mode.Hidden) {
+            st.skipped += ((to - from) / 1000).toInt() // what the film really moved, near its start or end
+            ui.removeCallbacks(clearSkipped)
+            ui.postDelayed(clearSkipped, 1000)
+        }
+        if (first) { seekExact(to); seekedTo = to }
         ui.removeCallbacks(commit)
-        ui.removeCallbacks(hideSeek)
         ui.removeCallbacks(autoHide)
-        ui.postDelayed(commit, 400) // one seek when you stop pressing, not one per press
+        ui.postDelayed(commit, 350)
     }
 
-    override fun scrubTo(ms: Long, commit: Boolean) {
+    /** A finger moving through the film: it holds still and the picture strip takes over until the finger lifts. */
+    override fun scrubStart() {
+        ui.removeCallbacks(commit)
+        ui.removeCallbacks(autoHide)
+        ui.removeCallbacks(clearSkipped)
+        st.skipped = 0
+        scrubFrom = st.mode
+        scrubResume = player.playWhenReady
+        seekedTo = -1
+        st.scrub = st.scrub ?: player.currentPosition
+        player.playWhenReady = false
+        st.mode = Mode.Scrub
+        view.subtitleView?.visibility = android.view.View.INVISIBLE
+        st.thumbs?.ensure()
+    }
+
+    override fun scrubMove(ms: Long) {
         st.scrub = ms.coerceIn(0, maxOf(0, st.dur - 1000))
-        ui.removeCallbacks(this.commit)
-        if (commit) commitScrub()
     }
 
-    override fun commitScrub() {
+    override fun scrubEnd() {
+        view.subtitleView?.visibility = android.view.View.VISIBLE
+        st.mode = scrubFrom
+        commitScrub()
+        if (scrubResume) player.playWhenReady = true
+        poke()
+    }
+
+    private fun commitScrub() {
         ui.removeCallbacks(commit)
         val to = st.scrub ?: return
-        seekExact(to)
+        if (to != seekedTo) seekExact(to)
+        seekedTo = -1
         st.scrub = null
         refresh()
-        if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1500) else poke()
+        poke()
     }
 
     /** Lands on the exact frame asked for: the decoder runs up to it from the keyframe before, unseen. */
@@ -203,9 +235,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun openSheet(s: Sheet) {
         when (s) {
-            Sheet.Tracks -> buildTrackOptions(player.currentTracks)
+            Sheet.Audio, Sheet.Subtitles -> buildTrackOptions(player.currentTracks)
             Sheet.Episodes -> buildEpisodes()
-            Sheet.Chapters -> {}
+            Sheet.Speed -> {}
         }
         st.sheet = s
         ui.removeCallbacks(autoHide)
@@ -217,12 +249,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         poke()
     }
 
-    override fun cycleSpeed() {
-        val speeds = listOf(1f, 1.25f, 1.5f, 2f, 0.75f)
-        setSpeed(speeds[(speeds.indexOf(st.speed).coerceAtLeast(0) + 1) % speeds.size])
-    }
-
-    private fun setSpeed(speed: Float) {
+    override fun setSpeed(speed: Float) {
         player.setPlaybackSpeed(speed)
         st.speed = speed
         poke()
@@ -245,7 +272,6 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun close() = finish()
 
     private fun showFull() {
-        ui.removeCallbacks(hideSeek)
         st.mode = Mode.Full
         refresh()
         poke()
@@ -254,13 +280,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     /** Restarts the auto-hide countdown (only while playing; paused stays up). */
     private fun poke() {
         ui.removeCallbacks(autoHide)
-        if (player.playWhenReady) ui.postDelayed(autoHide, 5000)
-    }
-
-    private fun note(text: String) {
-        st.note = text
-        ui.removeCallbacks(clearNote)
-        ui.postDelayed(clearNote, 2500)
+        if (player.playWhenReady) ui.postDelayed(autoHide, 3000)
     }
 
     /** The queue as a list to jump around in (episodes of the show). */
@@ -283,10 +303,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
     }
 
-    private fun loadChapters(j: JSONObject?) {
-        st.chapters = j?.optJSONObject("info")?.optJSONArray("chapters").objects()
-            .map { Chapter((it.optDouble("start") * 1000).toLong(), it.optString("title")) }
-            .takeIf { it.size > 1 } ?: emptyList()
+    private fun loadThumbs(j: JSONObject?) {
         // pictures for scrubbing: fetched right away at home, only when first needed over Tailscale
         if (j != null) st.thumbs?.load(j.optString("id"), j.optInt("thumbs"), eager = !Api.viaTailscale)
     }
@@ -310,11 +327,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val index = intent.getIntExtra("index", 0).coerceIn(0, queue.size - 1)
         val startPos = intent.getLongExtra("pos", 0L)
 
+        st.thumbs = ThumbStore(this, scope)
         player = newPlayer()
         buildViews()
         currentId = queue[index].optString("id")
         showTitle(queue[index])
-        loadChapters(queue[index])
+        loadThumbs(queue[index])
         buildEpisodes()
         start(index, startPos)
         ui.postDelayed(report10s, 10_000)
@@ -325,8 +343,6 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 when {
                     st.error != null -> finish()
                     st.sheet != null -> closeSheet()
-                    st.scrub != null -> { ui.removeCallbacks(commit); st.scrub = null; st.mode = Mode.Hidden } // cancel the seek
-                    st.mode == Mode.Seek -> st.mode = Mode.Hidden
                     st.offer?.kind == "next" -> { dismissedNext = currentId; st.offer = null }
                     else -> finish()
                 }
@@ -340,10 +356,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             .setEnableDecoderFallback(true)
         val load = DefaultLoadControl.Builder()
-            // start (and resume after a seek) at 0.5 s buffered; keep up to ~50 s ahead and the last
-            // 20 s behind, so skips both ways stay in memory instead of reloading from mint.
-            // Capped at 128 MB (largeHeap, about what Netflix uses): all 70 s of a 15 Mb/s WEB-DL
-            .setBufferDurationsMs(15_000, 50_000, 500, 2_000)
+            // keep up to ~50 s ahead and the last 20 s behind, so skips both ways stay in memory.
+            // At home playback starts at 0.5 s buffered; over Tailscale, a thin connection, it waits
+            // for more, and for more again after running dry, rather than stopping every few seconds.
+            // Capped at 128 MB (largeHeap): all 70 s of a 15 Mb/s WEB-DL
+            .setBufferDurationsMs(15_000, 50_000, if (Api.viaTailscale) 2_500 else 500, if (Api.viaTailscale) 6_000 else 2_000)
             .setBackBuffer(20_000, true)
             .setTargetBufferBytes(128 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
@@ -548,7 +565,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             val changed = item?.mediaId != currentId
             currentId = item?.mediaId ?: ""
             finishedCurrent = false
-            current?.let { showTitle(it); loadChapters(it) }
+            current?.let { showTitle(it); loadThumbs(it) }
             buildEpisodes()
             if (changed) {
                 st.firstFrame = false
@@ -577,7 +594,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         override fun onTracksChanged(tracks: Tracks) {
-            if (st.sheet == Sheet.Tracks) buildTrackOptions(tracks)
+            if (st.sheet == Sheet.Audio || st.sheet == Sheet.Subtitles) buildTrackOptions(tracks)
             // audio-only files never render a frame
             if (!tracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) st.firstFrame = true
         }
@@ -621,8 +638,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> { if (first) togglePlay(); return true }
             KeyEvent.KEYCODE_MEDIA_PLAY -> { if (first && !player.isPlaying) togglePlay(); return true }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (first && player.isPlaying) togglePlay(); return true }
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) scrub(scrubStep(event.repeatCount) * 3); return true }
-            KeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) scrub(-scrubStep(event.repeatCount)); return true }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) skip(1); return true }
+            KeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) skip(-1); return true }
             KeyEvent.KEYCODE_MEDIA_NEXT -> { if (first) next(); return true }
         }
         return super.dispatchKeyEvent(event)
@@ -660,7 +677,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 AppTheme {
                     PlayerOverlay(st, this@PlayerActivity, onChrome = { up ->
                         // moved as a whole: image subtitles (PGS) ignore padding
-                        view.subtitleView?.let { sv -> sv.animate().translationY(if (up) -0.28f * sv.height else 0f).setDuration(Motion.FadeInMs.toLong()).start() }
+                        view.subtitleView?.let { sv -> sv.animate().translationY(if (up) -0.2f * sv.height else 0f).setDuration(Motion.FadeInMs.toLong()).start() }
                     })
                 }
             }

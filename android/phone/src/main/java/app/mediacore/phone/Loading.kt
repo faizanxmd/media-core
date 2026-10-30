@@ -60,6 +60,11 @@ fun openItem(ctx: Context, scope: CoroutineScope, nav: Nav, it: Item, resume: Bo
     when {
         it.isEpisode -> scope.launch { playEpisode(ctx, it) }
         resume && it.type == "movie" -> PlayerActivity.play(ctx, listOf(it), 0)
+        // a show's Play starts the episode it's up to
+        resume && it.isShow -> scope.launch {
+            val next = runCatching { Api.get("/api/v1/item/${it.id}").optJSONObject("up_next")?.let(Item::parse) }.getOrNull()
+            if (next != null) playEpisode(ctx, next) else nav.open(Screen.Detail(it.id))
+        }
         else -> nav.open(Screen.Detail(it.id))
     }
 }
