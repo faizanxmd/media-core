@@ -85,12 +85,31 @@ func (p *Player) mount(mux *http.ServeMux) {
 	})
 }
 
+// list is what the poster rows and grids need: no chapters or cast, which
+// only the title page and the player use (/api/v1/item has them). Nearly half
+// of Home's size, and the TV parses all of it.
 func (p *Player) list(xs []*Item) []*Item {
 	out := make([]*Item, len(xs))
 	for i, x := range xs {
-		out[i] = p.w.decorate(x, false)
+		it := slimCast(p.w.decorate(x, false))
+		if it.Info != nil && len(it.Info.Chapters) > 0 {
+			info := *it.Info
+			info.Chapters = nil
+			it.Info = &info
+		}
+		out[i] = it
 	}
 	return out
+}
+
+// slimCast drops the cast from an item decorate has already copied.
+func slimCast(it *Item) *Item {
+	if it.Meta != nil && len(it.Meta.Cast) > 0 {
+		m := *it.Meta
+		m.Cast = nil
+		it.Meta = &m
+	}
+	return it
 }
 
 // hello lets the app find every address this server answers on, so it can
@@ -156,8 +175,13 @@ func (p *Player) home(w http.ResponseWriter, r *http.Request) {
 			dls = append(dls, dlRow{title, j.State, j.Progress, j.Speed, j.ETA})
 		}
 	}
+	// the phone's featured card can play from Recently Added directly, so it keeps its chapters
+	recentOut := make([]*Item, len(recent))
+	for i, it := range recent {
+		recentOut[i] = slimCast(p.w.decorate(it, false))
+	}
 	writeJSON(w, 200, map[string]any{
-		"continue": contOut, "recent": p.list(recent), "movies": p.list(movies), "shows": p.list(shows),
+		"continue": contOut, "recent": recentOut, "movies": p.list(movies), "shows": p.list(shows),
 		"downloading": dls,
 	})
 }

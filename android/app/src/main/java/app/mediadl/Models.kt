@@ -42,6 +42,8 @@ data class Item(
     val logo get() = Api.img(meta?.logo, "w500")
     /** 16:9 picture for wide cards: an episode's still, else the backdrop. */
     val wide get() = Api.img(meta?.still?.ifEmpty { null }, "w780") ?: Api.img(meta?.backdrop, "w780")
+    /** The same at a TV card's size: less to fetch and decode. */
+    val wideSmall get() = Api.img(meta?.still?.ifEmpty { null }, "w500") ?: Api.img(meta?.backdrop, "w500")
 
     companion object {
         fun parse(j: JSONObject): Item = Item(

@@ -1,13 +1,12 @@
 package app.mediadl
 
 import android.content.Context
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -48,8 +47,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** TV "pivot" scrolling: the focused row slides up to the top of the list, title included. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -71,6 +72,39 @@ class MinimalSpec(private val marginPx: Float) : BringIntoViewSpec {
     }
 }
 
+/** The TV's way of scrolling everywhere: move only when the focused thing nears an edge. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun rememberMinimalSpec(margin: Dp = 56.dp): BringIntoViewSpec {
+    val density = LocalDensity.current
+    return remember(density, margin) { MinimalSpec(density.run { margin.toPx() }) }
+}
+
+/** Last home seen: shown instantly on a cold start, replaced as soon as mint answers. */
+fun Nav.restoreHome(cache: java.io.File) {
+    if (home != null) return
+    runCatching {
+        val text = cache.readText()
+        home = Home.parse(org.json.JSONObject(text))
+        homeJson = text
+    }
+}
+
+/** Asks mint for Home, off the UI thread. An unchanged answer redraws nothing (every return from the player asks). */
+suspend fun Nav.loadHome(cache: java.io.File) {
+    Offline.sync()
+    val j = Api.get("/api/v1/home")
+    withContext(Dispatchers.IO) {
+        val text = j.toString()
+        if (text != homeJson) {
+            val parsed = Home.parse(j)
+            runCatching { cache.writeText(text) }
+            homeJson = text
+            home = parsed
+        }
+    }
+}
+
 /** Where the rows start: under the hero, which shows whatever card has focus. */
 private val RowsTop = 298.dp
 
@@ -83,14 +117,11 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
     // last home seen: shown instantly on a cold start, replaced as soon as mint answers
     val cache = remember { java.io.File(ctx.cacheDir, "home.json") }
-    if (nav.home == null) runCatching { nav.home = Home.parse(org.json.JSONObject(cache.readText())) }
+    remember { nav.restoreHome(cache) }
 
     suspend fun load() {
         try {
-            Offline.sync()
-            val j = Api.get("/api/v1/home")
-            nav.home = Home.parse(j)
-            runCatching { cache.writeText(j.toString()) }
+            nav.loadHome(cache)
             error = null
         } catch (e: Exception) {
             if (nav.home == null) error = e.message ?: "Can't reach mint"
@@ -118,7 +149,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         HomeHero(home, focusedId)
 
         val density = LocalDensity.current
-        val rowSpec = remember(density) { MinimalSpec(density.run { 56.dp.toPx() }) }
+        val rowSpec = rememberMinimalSpec()
         // a little room above the focused row: the lifted card must not be cut off at the top
         val listSpec = remember(density) { PivotSpec(density.run { 10.dp.toPx() }) }
         CompositionLocalProvider(LocalBringIntoViewSpec provides listSpec) {
@@ -165,16 +196,14 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     }
 }
 
-/** The backdrop and text for the focused card; the picture follows a moment later so fast scrolling stays light. */
+/** The backdrop and text for the focused card; they change once the scroll has landed, so the two never compete for frames. */
 @Composable
-private fun HomeHero(home: Home, focusedId: androidx.compose.runtime.State<String?>) {
+private fun BoxScope.HomeHero(home: Home, focusedId: androidx.compose.runtime.State<String?>) {
     val items = remember(home) { (home.cont + home.recent + home.shows + home.movies).associateBy { it.id } }
     val hero = focusedId.value?.let(items::get) ?: (home.cont + home.recent + home.movies + home.shows).firstOrNull()
     var shown by remember { mutableStateOf(hero) }
-    LaunchedEffect(hero?.id) { delay(if (shown == null) 0 else 260); shown = hero }
-    Crossfade(shown?.let { Api.img(it.meta?.backdrop?.ifEmpty { null }, "w1280") }, animationSpec = tween(500), label = "backdrop") { url ->
-        Box(Modifier.fillMaxSize()) { MaskedBackdrop(url) }
-    }
+    LaunchedEffect(hero?.id) { delay(if (shown == null) 0 else Motion.SettleMs.toLong()); shown = hero }
+    MaskedBackdrop(shown?.let { Api.img(it.meta?.backdrop?.ifEmpty { null }, "w1280") })
     shown?.let { Hero(it, home, Modifier.padding(start = 40.dp).width(440.dp).height(RowsTop - 21.dp)) }
 }
 

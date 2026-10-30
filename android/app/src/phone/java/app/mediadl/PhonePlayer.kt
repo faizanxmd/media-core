@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,8 +67,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 private const val SKIP = 10_000L
@@ -81,8 +80,6 @@ fun DeviceOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
     val full = st.mode == Mode.Full && st.sheet == null
     LaunchedEffect(full) { onChrome(full) }
     var menu by remember { mutableStateOf("audio") } // which list the Tracks sheet shows
-    var seekFrom by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(st.mode) { if (st.mode == Mode.Seek && seekFrom == null) seekFrom = st.pos else if (st.mode != Mode.Seek) seekFrom = null }
 
     CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Inter, color = Color.White)) {
         Box(
@@ -93,7 +90,7 @@ fun DeviceOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
                 )
             },
         ) {
-            AnimatedVisibility(!st.firstFrame && st.error == null, enter = fadeIn(tween(0)), exit = fadeOut(tween(400))) {
+            AnimatedVisibility(!st.firstFrame && st.error == null, enter = fadeIn(tween(0)), exit = fadeOut(tween(Motion.BackdropMs))) {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
                     st.cover?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                     Box(Modifier.fillMaxSize().background(Color(0x99000000)))
@@ -104,8 +101,8 @@ fun DeviceOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, trackColor = Color(0x33FFFFFF), modifier = Modifier.align(Alignment.Center).size(36.dp))
             }
 
-            if (st.mode == Mode.Seek && st.sheet == null) Glance(st, seekFrom)
-            AnimatedVisibility(full || st.sheet != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(200))) {
+            if (st.mode == Mode.Seek && st.sheet == null) Glance(st)
+            AnimatedVisibility(full || st.sheet != null, enter = fadeIn(tween(Motion.FadeInMs)), exit = fadeOut(tween(Motion.FadeOutMs))) {
                 Controls(st, a, onTracks = { kind -> menu = kind; a.openSheet(Sheet.Tracks) })
             }
 
@@ -141,9 +138,9 @@ fun DeviceOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
 
 /** After a double-tap: a thin line along the bottom with "+30s" and the new time over where you'll land. */
 @Composable
-private fun Glance(st: PlayerState, from: Long?) {
+private fun Glance(st: PlayerState) {
     val to = st.scrub ?: st.pos
-    val delta = from?.let { to - it } ?: 0L
+    val delta = if (st.scrub != null) to - st.scrubFrom else 0L
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(90.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x8C000000)))))
         BoxWithConstraints(Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(horizontal = 24.dp, vertical = 18.dp).fillMaxWidth()) {
@@ -176,10 +173,8 @@ private fun Controls(st: PlayerState, a: PlayerActions, onTracks: (String) -> Un
                 if (sub.isNotEmpty()) Text(sub, fontSize = 12.sp, color = Color(0xB3FFFFFF), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (st.dur > 0) {
-                val left = ((st.dur - st.pos) / st.speed).toLong()
-                val ends = LocalTime.now().plusSeconds(left / 1000).format(DateTimeFormatter.ofPattern("HH:mm"))
                 Text("Ends at ", fontSize = 13.sp, color = Color(0xBFFFFFFF))
-                Text(ends, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(endsAt(LocalContext.current, ((st.dur - st.pos) / st.speed).toLong()), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
         // middle: back 10, play/pause, forward 10

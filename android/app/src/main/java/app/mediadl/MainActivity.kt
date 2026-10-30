@@ -56,7 +56,9 @@ class Nav {
     val rowStates = mutableMapOf<String, LazyListState>()
     var homeFocus: String? = null // "row/id" of the last focused card
     var home by mutableStateOf<Home?>(null)
+    var homeJson: String? = null // what [home] was parsed from: an identical answer changes nothing on screen
     val gridStates = mutableMapOf<String, LazyGridState>()
+    val gridFocus = mutableMapOf<String?, String>() // "films"/"shows" -> id of the last focused poster
     var query = ""
     val railFocus = FocusRequester()
 

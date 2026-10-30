@@ -163,7 +163,7 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
     LaunchedEffect(full) { onChrome(full) } // subtitles move up out of the way
     Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { a.tapped() }) }) {
         // the second before the first frame: artwork and title, not a black screen
-        AnimatedVisibility(!st.firstFrame && st.error == null, enter = fadeIn(tween(0)), exit = fadeOut(tween(400))) {
+        AnimatedVisibility(!st.firstFrame && st.error == null, enter = fadeIn(tween(0)), exit = fadeOut(tween(Motion.BackdropMs))) {
             Box(Modifier.fillMaxSize().background(Bg)) {
                 st.cover?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x59000000), Color(0xE6000000)))))
@@ -185,7 +185,7 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
         }
 
         if (st.mode == Mode.Seek && st.sheet == null) Glance(st)
-        AnimatedVisibility(full, enter = fadeIn(tween(150)), exit = fadeOut(tween(200))) { Full(st, a, tv) }
+        AnimatedVisibility(full, enter = fadeIn(tween(Motion.FadeInMs)), exit = fadeOut(tween(Motion.FadeOutMs))) { Full(st, a, tv) }
 
         val offer = st.offer
         if (offer != null && st.sheet == null && st.error == null && st.mode != Mode.Seek) {

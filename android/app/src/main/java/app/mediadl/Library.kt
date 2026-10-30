@@ -1,12 +1,13 @@
 package app.mediadl
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,9 +40,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -80,28 +86,32 @@ fun TopTabs(current: Tab, onPick: (Tab) -> Unit, update: Boolean, onUpdate: () -
 @Composable
 private fun TabWord(label: String, selected: Boolean, fr: FocusRequester?, dot: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    Column(
+    Row(
         Modifier
-            .width(IntrinsicSize.Max)
             .then(if (fr != null) Modifier.focusRequester(fr) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .lift(focused, RoundedCornerShape(16.dp), 1.06f)
             .background(if (focused) Color.White else Color.Transparent)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (dot) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(if (focused) Bg else Ink))
-                Spacer(Modifier.width(7.dp))
+            // the underline is painted, not laid out: it takes no space, so the word stays centred in the pill
+            .drawBehind {
+                if (selected && !focused) {
+                    val h = 2.dp.toPx()
+                    val inset = 10.dp.toPx()
+                    drawRoundRect(Ink, Offset(inset, size.height - 3.dp.toPx() - h), Size(size.width - inset * 2, h), CornerRadius(h / 2))
+                }
             }
-            Text(
-                label, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp,
-                color = when { focused -> Bg; selected -> Ink; else -> Color(0x8CFFFFFF) },
-            )
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (dot) {
+            Box(Modifier.size(6.dp).clip(CircleShape).background(if (focused) Bg else Ink))
+            Spacer(Modifier.width(7.dp))
         }
-        Box(Modifier.padding(top = 4.dp).height(2.dp).fillMaxWidth().clip(CircleShape).background(if (selected && !focused) Ink else Color.Transparent))
+        Text(
+            label, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp,
+            color = when { focused -> Bg; selected -> Ink; else -> Color(0x8CFFFFFF) },
+        )
     }
 }
 
@@ -112,7 +122,7 @@ fun LibraryScreen(nav: Nav, shows: Boolean) {
     var error by remember(shows) { mutableStateOf<String?>(null) }
     LaunchedEffect(shows, nav.refresh) {
         try {
-            items = Api.get(if (shows) "/api/v1/shows" else "/api/v1/movies").optJSONArray("items").objects().map(Item::parse)
+            items = Api.items(if (shows) "/api/v1/shows" else "/api/v1/movies")
         } catch (e: Exception) {
             if (items == null) error = e.message
         }
@@ -124,29 +134,36 @@ fun LibraryScreen(nav: Nav, shows: Boolean) {
     }
     val first = remember { FocusRequester() }
     LaunchedEffect(shows) { delay(60); runCatching { first.requestFocus() } }
-    PosterGrid(all, nav.gridStates.getOrPut(if (shows) "shows" else "films") { LazyGridState() }, first, nav) {
+    val key = if (shows) "shows" else "films"
+    PosterGrid(all, nav.gridStates.getOrPut(key) { LazyGridState() }, first, nav, focusKey = key) {
         if (all.isEmpty()) Text("Nothing here yet.", color = Mut, fontSize = 14.5.sp)
     }
 }
 
-/** Six posters across, 40 dp margins, the tvOS 2:3 grid. */
+/** Six posters across, 40 dp margins, the tvOS 2:3 grid. Back lands on the poster you left ([focusKey] remembers it). */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PosterGrid(items: List<Item>, state: LazyGridState, first: FocusRequester?, nav: Nav, header: @Composable () -> Unit) {
-    LazyVerticalGrid(
-        GridCells.Fixed(6),
-        Modifier.fillMaxSize(),
-        state = state,
-        contentPadding = PaddingValues(start = 40.dp, end = 40.dp, top = TabsHeight + 6.dp, bottom = 40.dp),
-        horizontalArrangement = Arrangement.spacedBy(26.dp),
-        verticalArrangement = Arrangement.spacedBy(30.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { header() }
-        itemsIndexed(items, key = { _, it -> it.id }) { i, it ->
-            PosterCard(
-                it, 125.dp, onClick = { nav.open(Screen.Detail(it.id)) },
-                focusRequester = if (i == 0) first else null,
-                modifier = Modifier.rowEnds(i % 6, if (i / 6 == (items.size - 1) / 6) (items.size - 1) % 6 + 1 else 6),
-            )
+private fun PosterGrid(items: List<Item>, state: LazyGridState, first: FocusRequester?, nav: Nav, focusKey: String? = null, header: @Composable () -> Unit) {
+    val target = remember(items) { items.indexOfFirst { it.id == nav.gridFocus[focusKey] }.coerceAtLeast(0) }
+    // keeps the focused row clear of the tabs that float over the top of the grid
+    CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec(TabsHeight + 24.dp)) {
+        LazyVerticalGrid(
+            GridCells.Fixed(6),
+            Modifier.fillMaxSize(),
+            state = state,
+            contentPadding = PaddingValues(start = 40.dp, end = 40.dp, top = TabsHeight + 6.dp, bottom = 40.dp),
+            horizontalArrangement = Arrangement.spacedBy(26.dp),
+            verticalArrangement = Arrangement.spacedBy(30.dp),
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) { header() }
+            itemsIndexed(items, key = { _, it -> it.id }) { i, it ->
+                PosterCard(
+                    it, 125.dp, onClick = { nav.open(Screen.Detail(it.id)) },
+                    onFocus = { if (focusKey != null) nav.gridFocus[focusKey] = it.id },
+                    focusRequester = if (i == target) first else null,
+                    modifier = Modifier.rowEnds(i % 6, if (i / 6 == (items.size - 1) / 6) (items.size - 1) % 6 + 1 else 6),
+                )
+            }
         }
     }
 }
@@ -164,9 +181,7 @@ fun SearchScreen(nav: Nav) {
         nav.query = q
         if (q.isBlank()) { results = emptyList(); return@LaunchedEffect }
         delay(250)
-        results = runCatching {
-            Api.get("/api/v1/search?q=" + java.net.URLEncoder.encode(q, "UTF-8")).optJSONArray("items").objects().map(Item::parse)
-        }.getOrDefault(results)
+        results = runCatching { Api.items("/api/v1/search?q=" + java.net.URLEncoder.encode(q, "UTF-8")) }.getOrDefault(results)
     }
     PosterGrid(results, remember { LazyGridState() }, null, nav) {
         Column {

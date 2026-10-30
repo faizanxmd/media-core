@@ -1,9 +1,7 @@
 package app.mediadl
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,8 +29,8 @@ import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +47,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -62,8 +59,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 private val Text72 = Color(0xB8FFFFFF)
@@ -74,13 +73,14 @@ private val Text76 = Color(0xC2FFFFFF)
 fun DetailScreen(nav: Nav, id: String) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var data by remember(id) { mutableStateOf<JSONObject?>(null) }
+    var data by remember(id) { mutableStateOf<Pair<Item, Item?>?>(null) }
     var error by remember(id) { mutableStateOf<String?>(null) }
     val playFr = remember { FocusRequester() }
 
     suspend fun load() {
         try {
-            data = Api.get("/api/v1/item/$id")
+            val j = Api.get("/api/v1/item/$id")
+            data = withContext(Dispatchers.Default) { Item.parse(j.getJSONObject("item")) to j.optJSONObject("up_next")?.let(Item::parse) }
         } catch (e: Exception) {
             if (data == null) error = e.message
         }
@@ -92,8 +92,7 @@ fun DetailScreen(nav: Nav, id: String) {
         if (error != null) ErrorView(error!!, onRetry = { error = null; scope.launch { load() } }) else Loading()
         return
     }
-    val main = remember(d) { Item.parse(d.getJSONObject("item")) }
-    val upNext = remember(d) { d.optJSONObject("up_next")?.let(Item::parse) }
+    val (main, upNext) = d
     val show = main.isShow
     LaunchedEffect(id) { delay(60); runCatching { playFr.requestFocus() } }
 
@@ -191,12 +190,9 @@ private fun Cast(cast: List<Person>) {
 }
 
 /** "Season 1 ⌄" (a picker when there are more), then that season's episodes as Apple-style cards. */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Episodes(main: Item, upNext: Item?) {
     val ctx = LocalContext.current
-    val density = LocalDensity.current
-    val rowSpec = remember(density) { MinimalSpec(density.run { 56.dp.toPx() }) } // moves like Home's rows
     var season by remember(main.id) {
         mutableIntStateOf(main.seasons.indexOfFirst { s -> upNext != null && s.episodes.any { it.id == upNext.id } }.coerceAtLeast(0))
     }
@@ -204,8 +200,8 @@ private fun Episodes(main: Item, upNext: Item?) {
     val queue = episodeQueue(main)
     Column {
         SeasonHeading(main.seasons.map { it.title }, season) { season = it }
-        val state = rememberLazyListState(initialFirstVisibleItemIndex = s.episodes.indexOfFirst { it.id == upNext?.id }.coerceAtLeast(0))
-        CompositionLocalProvider(LocalBringIntoViewSpec provides rowSpec) {
+        key(season) { // another season starts at its own beginning, not at the old scroll position
+            val state = rememberLazyListState(initialFirstVisibleItemIndex = s.episodes.indexOfFirst { it.id == upNext?.id }.coerceAtLeast(0))
             LazyRow(
                 state = state,
                 contentPadding = PaddingValues(horizontal = 40.dp, vertical = 12.dp),
@@ -262,7 +258,7 @@ private fun SeasonHeading(titles: List<String>, current: Int, onPick: (Int) -> U
 @Composable
 private fun EpisodeCard(ep: Item, modifier: Modifier, onClick: () -> Unit) {
     FocusCard(onClick, modifier.width(205.dp).height(180.dp), radius = 8.dp, scale = 1.06f) {
-        ep.wide?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.22f to Color.Transparent, 0.48f to Color(0x8C000000), 0.72f to Color(0xDB000000), 1f to Color(0xEB000000))))
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 13.dp, end = 13.dp, bottom = 12.dp)) {
             Text("EPISODE ${ep.episode}", color = Color(0xA8FFFFFF), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.4.sp)

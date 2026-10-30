@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +51,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -60,6 +62,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
@@ -73,6 +76,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 
 // Theater's look: neutral black, white at a few opacities, no accent colour.
 val Bg = Color(0xFF0B0B0D)
@@ -109,15 +114,23 @@ fun AppTheme(content: @Composable () -> Unit) {
     }
 }
 
+/** Every animation's timing, so the whole app moves alike. */
+object Motion {
+    const val FocusMs = 180 // a card or button lifting
+    const val FadeInMs = 160 // controls and panels appearing
+    const val FadeOutMs = 200 // and leaving
+    const val BackdropMs = 320 // one picture dissolving into the next
+    const val SettleMs = 300 // a scroll has landed: start heavier work only after this
+}
+
 private val Ease = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
 
-/** tvOS focus: the thing lifts (grows, casts a shadow) and comes to the front. */
+/** tvOS focus: the thing lifts (grows) and comes to the front. */
 @Composable
 fun Modifier.lift(focused: Boolean, shape: Shape, scale: Float = 1.1f): Modifier {
-    val s by animateFloatAsState(if (focused) scale else 1f, tween(220, easing = Ease), label = "lift")
+    val s by animateFloatAsState(if (focused) scale else 1f, tween(Motion.FocusMs, easing = Ease), label = "lift")
     return zIndex(if (focused) 1f else 0f).graphicsLayer {
         scaleX = s; scaleY = s
-        shadowElevation = if (focused) 18.dp.toPx() else 0f
         this.shape = shape
         clip = true
     }
@@ -205,7 +218,7 @@ fun WideCard(
     focusRequester: FocusRequester? = null,
 ) {
     FocusCard(onClick, modifier.width(width).aspectRatio(16f / 9f), focusRequester = focusRequester, onFocus = onFocus) {
-        val pic = Api.img(item.meta?.backdrop?.ifEmpty { null }, "w780") ?: item.wide
+        val pic = Api.img(item.meta?.backdrop?.ifEmpty { null }, "w500") ?: item.wideSmall
         if (pic != null) AsyncImage(pic, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.34f to Color.Transparent, 0.58f to Color(0x59000000), 1f to Color(0xD1000000))))
         Column(Modifier.align(Alignment.BottomStart).padding(start = 11.dp, end = 11.dp, bottom = 15.dp)) {
@@ -329,11 +342,48 @@ fun Modifier.rowEnds(index: Int, count: Int): Modifier = onPreviewKeyEvent { e -
  */
 @Composable
 fun BoxScope.MaskedBackdrop(url: String?) {
-    if (url == null) return
-    Box(Modifier.align(Alignment.TopEnd).fillMaxWidth(0.75f).aspectRatio(16f / 9f)) {
-        AsyncImage(url, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0f to Bg, 0.12f to Bg.copy(alpha = 0.85f), 0.28f to Bg.copy(alpha = 0.45f), 0.44f to Bg.copy(alpha = 0.1f), 0.56f to Color.Transparent)))
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.46f to Color.Transparent, 0.7f to Bg.copy(alpha = 0.45f), 0.92f to Bg)))
+    // picture + full-screen gradients are the heaviest thing a TV's GPU draws here, and without this they'd
+    // be redrawn on every frame of every scroll; Offscreen keeps them as one texture, redrawn only during a fade
+    Box(Modifier.matchParentSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
+        Box(Modifier.align(Alignment.TopEnd).fillMaxWidth(0.75f).aspectRatio(16f / 9f)) {
+            DissolvingPicture(url)
+            Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0f to Bg, 0.12f to Bg.copy(alpha = 0.85f), 0.28f to Bg.copy(alpha = 0.45f), 0.44f to Bg.copy(alpha = 0.1f), 0.56f to Color.Transparent)))
+            Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.46f to Color.Transparent, 0.7f to Bg.copy(alpha = 0.45f), 0.92f to Bg)))
+        }
+        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0f to Bg.copy(alpha = 0.5f), 0.5f to Color.Transparent)))
     }
-    Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0f to Bg.copy(alpha = 0.5f), 0.5f to Color.Transparent)))
+}
+
+/**
+ * Two fixed slots: a new picture loads into the hidden one and only then dissolves in,
+ * so the old one stays up meanwhile and nothing ever flashes empty.
+ */
+@Composable
+private fun DissolvingPicture(url: String?) {
+    var a by remember { mutableStateOf<String?>(null) }
+    var b by remember { mutableStateOf<String?>(null) }
+    var showB by remember { mutableStateOf(false) }
+    LaunchedEffect(url) {
+        if (url == null || url == (if (showB) b else a)) return@LaunchedEffect
+        when {
+            showB && a == url -> showB = false // already loaded in the hidden slot
+            !showB && b == url -> showB = true
+            showB -> a = url
+            else -> b = url
+        }
+    }
+    val bAlpha by animateFloatAsState(if (showB) 1f else 0f, tween(Motion.BackdropMs), label = "dissolve")
+    val ctx = LocalContext.current
+    a?.let { u ->
+        AsyncImage(
+            remember(u) { ImageRequest.Builder(ctx).data(u).crossfade(false).build() }, null, Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop, onSuccess = { if (u == url) showB = false },
+        )
+    }
+    b?.let { u ->
+        AsyncImage(
+            remember(u) { ImageRequest.Builder(ctx).data(u).crossfade(false).build() }, null, Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop, alpha = bAlpha, onSuccess = { if (u == url) showB = true },
+        )
+    }
 }

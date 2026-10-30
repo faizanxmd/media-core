@@ -117,6 +117,12 @@ object Api {
         Request.Builder().url(b + path).build()
     }
 
+    /** A list of films or shows, parsed away from the UI thread. */
+    suspend fun items(path: String): List<Item> {
+        val j = get(path)
+        return withContext(Dispatchers.Default) { j.optJSONArray("items").objects().map(Item::parse) }
+    }
+
     suspend fun post(path: String, body: JSONObject): JSONObject = call { b ->
         Request.Builder().url(b + path)
             .post(body.toString().toRequestBody("application/json".toMediaType())).build()

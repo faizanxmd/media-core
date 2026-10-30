@@ -140,12 +140,10 @@ fun PhoneHome(nav: Nav) {
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     val cache = remember { java.io.File(ctx.cacheDir, "home.json") }
-    if (nav.home == null) runCatching { nav.home = Home.parse(JSONObject(cache.readText())) }
+    remember { nav.restoreHome(cache) }
     LaunchedEffect(nav.refresh) {
         try {
-            val j = Api.get("/api/v1/home")
-            nav.home = Home.parse(j)
-            runCatching { cache.writeText(j.toString()) }
+            nav.loadHome(cache)
             error = null
         } catch (e: Exception) {
             if (nav.home == null) error = e.message ?: "Can't reach mint"
@@ -263,8 +261,8 @@ fun PhoneDetail(nav: Nav, id: String) {
         if (error != null) ErrorView(error!!, onRetry = { error = null; scope.launch { load() } }) else Loading()
         return
     }
-    val main = Item.parse(d.getJSONObject("item"))
-    val upNext = d.optJSONObject("up_next")?.let(Item::parse)
+    val main = remember(d) { Item.parse(d.getJSONObject("item")) }
+    val upNext = remember(d) { d.optJSONObject("up_next")?.let(Item::parse) }
     val show = main.isShow
     val target = if (show || main.type == "season") upNext else main
     val play = { fromStart: Boolean ->
@@ -402,7 +400,7 @@ fun PhoneLibrary(nav: Nav, shows: Boolean) {
     var error by remember(shows) { mutableStateOf<String?>(null) }
     LaunchedEffect(shows, nav.refresh) {
         try {
-            items = Api.get(if (shows) "/api/v1/shows" else "/api/v1/movies").optJSONArray("items").objects().map(Item::parse)
+            items = Api.items(if (shows) "/api/v1/shows" else "/api/v1/movies")
         } catch (e: Exception) {
             if (items == null) error = e.message
         }
@@ -428,9 +426,7 @@ fun PhoneSearch(nav: Nav) {
         nav.query = q
         if (q.isBlank()) { results = emptyList(); return@LaunchedEffect }
         delay(250)
-        results = runCatching {
-            Api.get("/api/v1/search?q=" + java.net.URLEncoder.encode(q, "UTF-8")).optJSONArray("items").objects().map(Item::parse)
-        }.getOrDefault(results)
+        results = runCatching { Api.items("/api/v1/search?q=" + java.net.URLEncoder.encode(q, "UTF-8")) }.getOrDefault(results)
     }
     PosterGrid(nav, results) {
         Column(Modifier.statusBarsPadding().padding(top = 10.dp, bottom = 14.dp)) {
