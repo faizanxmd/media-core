@@ -60,7 +60,8 @@ class Nav {
     val gridStates = mutableMapOf<String, LazyGridState>()
     val gridFocus = mutableMapOf<String?, String>() // "films"/"shows" -> id of the last focused poster
     var query = ""
-    val railFocus = FocusRequester()
+    val railFocus = FocusRequester() // the current tab
+    var contentFocus: FocusRequester? = null // the card last focused on this page: Down from the tabs goes back to it
 
     val tab: Tab get() = when (stack.lastOrNull { it !is Screen.Detail }) {
         Screen.Films -> Tab.Films
@@ -71,6 +72,7 @@ class Nav {
 
     /** Sidebar / bottom bar: Home is always underneath, so Back from a tab lands on Home. */
     fun go(t: Tab) {
+        if (t != tab) contentFocus = null
         stack.clear()
         stack.add(Screen.Home)
         when (t) {

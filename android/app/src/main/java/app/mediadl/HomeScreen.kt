@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
@@ -106,7 +107,11 @@ suspend fun Nav.loadHome(cache: java.io.File) {
 }
 
 /** Where the rows start: under the hero, which shows whatever card has focus. */
-private val RowsTop = 298.dp
+private val RowsTop = 294.dp
+
+/** Poster size and row gap on Home: a focused poster row with its title fits, and the next row's title shows whole below it. */
+private val HomePoster = 115.dp
+private val RowGap = 10.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -150,14 +155,20 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
 
         val density = LocalDensity.current
         val rowSpec = rememberMinimalSpec()
-        // a little room above the focused row: the lifted card must not be cut off at the top
-        val listSpec = remember(density) { PivotSpec(density.run { 10.dp.toPx() }) }
+        // the focused card sits a title's height down, so its row's title stays on screen
+        val listSpec = remember(density) { PivotSpec(density.run { RowTitleHeight.toPx() }) }
+        val topRow = when {
+            home.cont.isNotEmpty() -> "continue"
+            home.recent.isNotEmpty() -> "recent"
+            home.shows.isNotEmpty() -> "shows"
+            else -> "movies"
+        }
         CompositionLocalProvider(LocalBringIntoViewSpec provides listSpec) {
             LazyColumn(
                 state = nav.homeList,
                 modifier = Modifier.padding(top = RowsTop).fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 300.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(RowGap),
             ) {
                 fun row(key: String, title: String, list: List<Item>, wide: Boolean) {
                     if (list.isEmpty()) return
@@ -174,10 +185,12 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                                     itemsIndexed(list, key = { _, it -> it.id }) { i, it ->
                                         val k = "$key/${it.id}"
                                         val fr = requesters.getOrPut(k) { FocusRequester() }
-                                        val onFocus = { nav.homeFocus = k; focusedId.value = it.id }
+                                        val onFocus = { nav.homeFocus = k; nav.contentFocus = fr; focusedId.value = it.id }
                                         val click = { openItem(ctx, scope, nav, it, resume = key == "continue") }
-                                        if (wide) WideCard(it, 205.dp, click, Modifier.rowEnds(i, list.size), onFocus, fr)
-                                        else PosterCard(it, 125.dp, click, Modifier.rowEnds(i, list.size), onFocus, fr)
+                                        // Up from the top row lands on the current tab, not whichever tab is nearest
+                                        val mod = Modifier.rowEnds(i, list.size).then(if (key == topRow) Modifier.focusProperties { up = nav.railFocus } else Modifier)
+                                        if (wide) WideCard(it, 205.dp, click, mod, onFocus, fr)
+                                        else PosterCard(it, HomePoster, click, mod, onFocus, fr)
                                     }
                                 }
                             }

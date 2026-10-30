@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
@@ -67,27 +68,28 @@ val TabsHeight = 76.dp
  * the focused one a solid white capsule. An update, when there is one, sits at the far right.
  */
 @Composable
-fun TopTabs(current: Tab, onPick: (Tab) -> Unit, update: Boolean, onUpdate: () -> Unit, currentFr: FocusRequester) {
+fun TopTabs(current: Tab, onPick: (Tab) -> Unit, update: Boolean, onUpdate: () -> Unit, currentFr: FocusRequester, downTo: () -> FocusRequester?) {
     Box(Modifier.fillMaxWidth().height(TabsHeight).background(Brush.verticalGradient(0f to Bg.copy(alpha = 0.7f), 1f to Color.Transparent))) {
         Row(
             Modifier.padding(start = 30.dp, top = 22.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
             Tab.entries.forEach { t ->
-                TabWord(t.label, t == current, if (t == current) currentFr else null) { onPick(t) }
+                TabWord(t.label, t == current, if (t == current) currentFr else null, downTo) { onPick(t) }
             }
         }
         if (update) Box(Modifier.align(Alignment.TopEnd).padding(end = 30.dp, top = 22.dp)) {
-            TabWord("Update available", selected = false, fr = null, dot = true, onClick = onUpdate)
+            TabWord("Update available", selected = false, fr = null, downTo = downTo, dot = true, onClick = onUpdate)
         }
     }
 }
 
 @Composable
-private fun TabWord(label: String, selected: Boolean, fr: FocusRequester?, dot: Boolean = false, onClick: () -> Unit) {
+private fun TabWord(label: String, selected: Boolean, fr: FocusRequester?, downTo: () -> FocusRequester?, dot: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
+            .focusProperties { downTo()?.let { down = it } }
             .then(if (fr != null) Modifier.focusRequester(fr) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .lift(focused, RoundedCornerShape(16.dp), 1.06f)
@@ -145,6 +147,7 @@ fun LibraryScreen(nav: Nav, shows: Boolean) {
 @Composable
 private fun PosterGrid(items: List<Item>, state: LazyGridState, first: FocusRequester?, nav: Nav, focusKey: String? = null, header: @Composable () -> Unit) {
     val target = remember(items) { items.indexOfFirst { it.id == nav.gridFocus[focusKey] }.coerceAtLeast(0) }
+    val requesters = remember { mutableMapOf<String, FocusRequester>() }
     // keeps the focused row clear of the tabs that float over the top of the grid
     CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec(TabsHeight + 24.dp)) {
         LazyVerticalGrid(
@@ -157,11 +160,14 @@ private fun PosterGrid(items: List<Item>, state: LazyGridState, first: FocusRequ
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
             itemsIndexed(items, key = { _, it -> it.id }) { i, it ->
+                val fr = if (i == target && first != null) first else requesters.getOrPut(it.id) { FocusRequester() }
                 PosterCard(
                     it, 125.dp, onClick = { nav.open(Screen.Detail(it.id)) },
-                    onFocus = { if (focusKey != null) nav.gridFocus[focusKey] = it.id },
-                    focusRequester = if (i == target) first else null,
-                    modifier = Modifier.rowEnds(i % 6, if (i / 6 == (items.size - 1) / 6) (items.size - 1) % 6 + 1 else 6),
+                    onFocus = { nav.contentFocus = fr; if (focusKey != null) nav.gridFocus[focusKey] = it.id },
+                    focusRequester = fr,
+                    modifier = Modifier.rowEnds(i % 6, if (i / 6 == (items.size - 1) / 6) (items.size - 1) % 6 + 1 else 6)
+                        // the top row goes up to the current tab (in Search, the box above it comes first)
+                        .then(if (i < 6 && focusKey != null) Modifier.focusProperties { up = nav.railFocus } else Modifier),
                 )
             }
         }
@@ -202,7 +208,8 @@ fun SearchScreen(nav: Nav) {
                         textStyle = TextStyle(fontFamily = Inter, fontSize = 15.sp, color = Ink),
                         cursorBrush = SolidColor(Color.White),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        modifier = Modifier.fillMaxWidth().focusRequester(fr).onFocusChanged { focused = it.isFocused },
+                        modifier = Modifier.fillMaxWidth().focusProperties { up = nav.railFocus }.focusRequester(fr)
+                            .onFocusChanged { focused = it.isFocused; if (it.isFocused) nav.contentFocus = fr },
                     )
                 }
             }

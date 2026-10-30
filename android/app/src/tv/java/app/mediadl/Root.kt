@@ -26,7 +26,7 @@ fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
                         Screen.Search -> SearchScreen(nav)
                         else -> HomeScreen(nav, onUpdate = onUpdate)
                     }
-                    TopTabs(nav.tab, nav::go, nav.update != null, onUpdate, nav.railFocus)
+                    TopTabs(nav.tab, nav::go, nav.update != null, onUpdate, nav.railFocus) { nav.contentFocus }
                 }
             }
         }

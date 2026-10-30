@@ -201,9 +201,6 @@ fun PosterCard(
     FocusCard(onClick, modifier.width(width).aspectRatio(2f / 3f), focusRequester = focusRequester, onFocus = onFocus) {
         if (item.poster != null) AsyncImage(item.poster, item.displayTitle, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else TitleArt(item.displayTitle)
-        if (item.progress > 0f) {
-            ProgressTrack(item.progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp))
-        }
     }
 }
 
@@ -325,10 +322,13 @@ private fun Logo(res: Int, height: Dp, color: Color) {
     Image(painterResource(res), null, colorFilter = ColorFilter.tint(color), contentScale = ContentScale.FillHeight, modifier = Modifier.height(height))
 }
 
+/** Height of [RowTitle]: its line plus the gap under it. */
+val RowTitleHeight = 35.dp
+
 /** Row heading. */
 @Composable
 fun RowTitle(text: String, modifier: Modifier = Modifier) {
-    Text(text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp, modifier = modifier.padding(bottom = 13.dp))
+    Text(text, fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp, modifier = modifier.padding(bottom = 13.dp))
 }
 
 /** Stops D-pad Right at the last card of a row. */
