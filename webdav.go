@@ -24,9 +24,6 @@ import (
 const davPrefix = "/dav"
 const davUser = "media-core"
 
-// Infuse on the Mac may still have the old login saved
-const davOldUser = "theater"
-
 type davHandler struct {
 	root *os.Root
 	pass string
@@ -63,7 +60,7 @@ func davPassword() string {
 
 func (h *davHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u, p, ok := r.BasicAuth()
-	if !ok || (u != davUser && u != davOldUser) || subtle.ConstantTimeCompare([]byte(p), []byte(h.pass)) != 1 {
+	if !ok || u != davUser || subtle.ConstantTimeCompare([]byte(p), []byte(h.pass)) != 1 {
 		w.Header().Set("WWW-Authenticate", `Basic realm="Media Core"`)
 		http.Error(w, "login required", http.StatusUnauthorized)
 		return
