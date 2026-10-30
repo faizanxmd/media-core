@@ -1,0 +1,21 @@
+# Android
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+*.aab
+
+# signing keys and secrets live in ~/.config/theater, never here
+*.jks
+*.keystore
+*.key
+*.pass
+.env*
+
+# Python
+__pycache__/
+*.pyc
+
+# Go binary
+/theater

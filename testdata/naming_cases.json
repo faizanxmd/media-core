@@ -1,0 +1,137 @@
+[
+ {
+  "name": "Oldboy.2003.2160p.UHD.BluRay.REMUX.DV.HDR.HEVC.Atmos-FGT.mkv",
+  "kind": "movie",
+  "title": "Oldboy",
+  "year": "2003",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/Oldboy (2003)/Oldboy (2003).mkv"
+ },
+ {
+  "name": "The.Bear.S03E04.1080p.WEB.H264-SuccessfulCrab.mkv",
+  "kind": "tv",
+  "title": "The Bear",
+  "year": "",
+  "season": "3",
+  "episode": "4",
+  "final": "/srv/data/media/TV Shows/The Bear/Season 03/The Bear - S03E04.mkv"
+ },
+ {
+  "name": "Severance.S02.2160p.ATVP.WEB-DL.zip",
+  "kind": "tv",
+  "title": "Severance",
+  "year": "",
+  "season": "2",
+  "episode": "",
+  "final": "/srv/data/media/TV Shows/Severance/Season 02"
+ },
+ {
+  "name": "Shogun (2024) Season 1 1080p.rar",
+  "kind": "tv",
+  "title": "Shogun (2024)",
+  "year": "",
+  "season": "1",
+  "episode": "",
+  "final": "/srv/data/media/TV Shows/Shogun (2024)/Season 01"
+ },
+ {
+  "name": "Dune Part Two (2024) [2160p].mkv",
+  "kind": "movie",
+  "title": "Dune Part Two",
+  "year": "2024",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/Dune Part Two (2024)/Dune Part Two (2024).mkv"
+ },
+ {
+  "name": "Blade.Runner.2049.2017.1080p.mkv",
+  "kind": "movie",
+  "title": "Blade Runner 2049",
+  "year": "2017",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mkv"
+ },
+ {
+  "name": "1917.2019.2160p.mkv",
+  "kind": "movie",
+  "title": "1917",
+  "year": "2019",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/1917 (2019)/1917 (2019).mkv"
+ },
+ {
+  "name": "Arrival.1080p.WEB.mkv",
+  "kind": "movie",
+  "title": "Arrival",
+  "year": "",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/Arrival/Arrival.mkv"
+ },
+ {
+  "name": "01 - Track.flac",
+  "kind": "music",
+  "title": "",
+  "year": "",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Music"
+ },
+ {
+  "name": "Some Movie.mp4",
+  "kind": "movie",
+  "title": "Some Movie",
+  "year": "",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/Some Movie/Some Movie.mp4"
+ },
+ {
+  "name": "download",
+  "kind": "movie",
+  "title": "download",
+  "year": "",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/download/download."
+ },
+ {
+  "name": "The.Office.US.s05e12.720p.mkv",
+  "kind": "tv",
+  "title": "The Office US",
+  "year": "",
+  "season": "5",
+  "episode": "12",
+  "final": "/srv/data/media/TV Shows/The Office US/Season 05/The Office US - S05E12.mkv"
+ },
+ {
+  "name": "Movie_Name_1999_x264.avi",
+  "kind": "movie",
+  "title": "Movie Name",
+  "year": "1999",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/Movie Name (1999)/Movie Name (1999).avi"
+ },
+ {
+  "name": "Fargo S1E3.mkv",
+  "kind": "tv",
+  "title": "Fargo",
+  "year": "",
+  "season": "1",
+  "episode": "3",
+  "final": "/srv/data/media/TV Shows/Fargo/Season 01/Fargo - S01E03.mkv"
+ },
+ {
+  "name": "Alien [1979] Directors Cut.mkv",
+  "kind": "movie",
+  "title": "Alien Directors Cut",
+  "year": "",
+  "season": "",
+  "episode": "",
+  "final": "/srv/data/media/Movies/Alien Directors Cut/Alien Directors Cut.mkv"
+ }
+]

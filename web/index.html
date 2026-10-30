@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Theater">
+<meta name="theme-color" content="#f2f3ed" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151513" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/serif.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app.css">
+<title>Theater</title>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mark" viewBox="0 0 24 24"><path d="M8.5 8.75L12 5.25L15.5 8.75M8.5 13.75H15.5"/><rect x="3.75" y="8.75" width="16.5" height="10" rx="1.5"/><path d="M7 11.25h.01M9.5 11.25h.01M12 11.25h.01M14.5 11.25h.01M17 11.25h.01M7 16.25h.01M9.5 16.25h.01M12 16.25h.01M14.5 16.25h.01M17 16.25h.01"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 8h16M4 16h16"/><circle cx="15" cy="8" r="2" class="fillbg"/><circle cx="9" cy="16" r="2" class="fillbg"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4.2h4.2"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></symbol>
+  <symbol id="i-top" viewBox="0 0 24 24"><path d="M6 5h12M12 19V9M7.5 13.5 12 9l4.5 4.5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 7h11M9 12h11M9 17h11"/><rect x="3.5" y="5.5" width="3" height="3" rx=".6"/><rect x="3.5" y="10.5" width="3" height="3" rx=".6"/><rect x="3.5" y="15.5" width="3" height="3" rx=".6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="9" rx="1.2"/><rect x="13.5" y="4" width="6.5" height="9" rx="1.2"/><path d="M4 17h6.5M13.5 17h6.5M4 20h4M13.5 20h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7M10 10.5v6M14 10.5v6"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand"><svg class="mark"><use href="#i-mark"/></svg><b>Theater</b></div>
+  <div class="status paused" id="status" role="status"><i></i><span>Connecting</span></div>
+  <button class="icon" id="openSettings" aria-label="Settings"><svg><use href="#i-sliders"/></svg></button>
+</header>
+
+<main>
+  <div class="banner" id="banner" hidden></div>
+
+  <form class="add" id="drop">
+    <textarea id="links" rows="1" placeholder="Paste links — one, or a whole list" aria-label="Download links" autocomplete="off"
+      autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go"></textarea>
+    <button class="go" id="check" type="submit" aria-label="Check links"><svg><use href="#i-up"/></svg></button>
+  </form>
+  <section id="probes"></section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="active" class="on">Active<span class="count" id="nActive"></span></button>
+    <button role="tab" data-tab="history">History<span class="count" id="nHistory"></span></button>
+    <button role="tab" data-tab="library">Library</button>
+    <button class="text" id="clear" hidden>Clear finished</button>
+  </nav>
+
+  <section id="jobs" aria-live="polite"></section>
+
+  <section id="library" hidden>
+    <div class="libbar">
+      <div class="pills" id="libSec">
+        <button type="button" data-v="Movies" class="on">Films</button><button type="button" data-v="TV Shows">Shows</button><button type="button" data-v="Music">Music</button>
+      </div>
+      <label class="search"><svg><use href="#i-search"/></svg>
+        <input id="libSearch" type="search" placeholder="Search" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label class="sort"><select id="libSort" aria-label="Sort">
+        <option value="added">Newest first</option><option value="size">Biggest first</option><option value="name">A–Z</option><option value="watched">Watched first</option>
+      </select><svg><use href="#i-chev"/></svg></label>
+      <div class="viewsw" id="libView"><button type="button" data-v="list" aria-label="List"><svg><use href="#i-list"/></svg></button><button type="button" data-v="grid" aria-label="Posters"><svg><use href="#i-grid"/></svg></button></div>
+    </div>
+    <div class="libsum"><span id="libSum"></span><span class="disk" id="libDisk"></span></div>
+    <div id="libList"></div>
+  </section>
+</main>
+
+<dialog id="settings" class="sheet">
+  <form method="dialog">
+    <div class="sheethead"><h2>Settings</h2><button class="icon" aria-label="Close"><svg><use href="#i-x"/></svg></button></div>
+
+    <div class="rows">
+    <div class="row">
+      <span>Download limit <small>(MB/s)</small></span>
+      <div class="opts" data-key="limit_mbps">
+        <button type="button" data-v="0">Off</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="5">5</button>
+      </div>
+    </div>
+    <label class="row">
+      <span>Ease off while something is playing<small class="sub">Drops to 1 MB/s while the Theater app streams</small></span>
+      <input type="checkbox" class="toggle" id="autoThrottle">
+    </label>
+    <div class="row">
+      <span>Downloads at once</span>
+      <div class="opts" data-key="max_concurrent">
+        <button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button>
+      </div>
+    </div>
+    </div>
+
+    <div class="rows">
+    <div class="row">
+      <span>Theater app for TV &amp; phone<small class="sub">Direct play, no transcoding. Away from home it works over Tailscale. It updates itself after this.</small></span>
+      <a class="btn" href="/api/v1/app.apk" download="theater.apk">Get APK</a>
+    </div>
+    </div>
+
+  </form>
+</dialog>
+
+<dialog id="detail" class="sheet detail"></dialog>
+
+<dialog id="ask" class="sheet small">
+  <form method="dialog">
+    <h2 id="askTitle"></h2>
+    <p class="mut" id="askText"></p>
+    <input id="askInput" class="field" type="text" inputmode="url" placeholder="https://…" autocomplete="off" autocapitalize="off" hidden>
+    <div class="askbtns" id="askBtns"></div>
+  </form>
+</dialog>
+
+<div id="toast" role="status"></div>
+<script src="/app.js" defer></script>
+</body>
+</html>
