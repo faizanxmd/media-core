@@ -1,8 +1,8 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
     <!-- the O of the Media Core wordmark: a ring around a solid core -->
-    <path android:strokeColor="#FFF4F5F8" android:strokeWidth="8.3"
-        android:pathData="M28.15,54a25.85,25.85 0 1,0 51.7,0a25.85,25.85 0 1,0 -51.7,0" />
+    <path android:strokeColor="#FFF4F5F8" android:strokeWidth="8.75"
+        android:pathData="M28.38,54a25.62,25.62 0 1,0 51.24,0a25.62,25.62 0 1,0 -51.24,0" />
     <path android:fillColor="#FF1E3AB8"
-        android:pathData="M45.25,54a8.75,8.75 0 1,0 17.5,0a8.75,8.75 0 1,0 -17.5,0" />
+        android:pathData="M44.37,54a9.63,9.63 0 1,0 19.26,0a9.63,9.63 0 1,0 -19.26,0" />
 </vector>

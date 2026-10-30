@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Job is persisted as ~/.local/share/theater/jobs/<id>.json (same shape as the
+// Job is persisted as ~/.local/share/media-core/jobs/<id>.json (same shape as the
 // Python version, plus a few numeric fields).
 type Job struct {
 	ID          string   `json:"id"`

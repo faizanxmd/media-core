@@ -1,7 +1,7 @@
 // Keeps the app shell available so the installed app opens instantly (and
 // says "offline" instead of a browser error when mint is unreachable).
 // API calls always go to the network.
-const CACHE = "theater-v1";
+const CACHE = "media-core-v1";
 const SHELL = ["/", "/app.js", "/app.css", "/icon.svg", "/manifest.webmanifest", "/fonts/serif.woff2", "/fonts/serif-italic.woff2"];
 
 self.addEventListener("install", e => {

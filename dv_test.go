@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-// THEATER_DVTEST=<some DV file> go test -run TestDVPipeline -v
+// MEDIA_CORE_DVTEST=<some DV file> go test -run TestDVPipeline -v
 // Runs the real ffmpeg | dovi_tool | mkvmerge pipeline on a copy of the file.
 func TestDVPipeline(t *testing.T) {
-	src := os.Getenv("THEATER_DVTEST")
+	src := os.Getenv("MEDIA_CORE_DVTEST")
 	if src == "" {
-		t.Skip("set THEATER_DVTEST to a Dolby Vision file")
+		t.Skip("set MEDIA_CORE_DVTEST to a Dolby Vision file")
 	}
 	dir := t.TempDir()
 	JobsDir = filepath.Join(dir, "jobs")

@@ -378,7 +378,7 @@ func serve() {
 	ps := servePlayer(pl)
 	srv := &Server{e: e, p: pl, assets: loadAssets()}
 	addr := Listen
-	if v := os.Getenv("THEATER_LISTEN"); v != "" {
+	if v := os.Getenv("MEDIA_CORE_LISTEN"); v != "" {
 		addr = v
 	}
 	hs := &http.Server{Addr: addr, Handler: srv.routes(), ReadHeaderTimeout: 10 * time.Second}
@@ -392,7 +392,7 @@ func serve() {
 		ps.Shutdown(ctx)
 		hs.Shutdown(ctx)
 	}()
-	log.Printf("theater listening on %s", addr)
+	log.Printf("media-core-engine listening on %s", addr)
 	if err := hs.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

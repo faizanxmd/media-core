@@ -116,7 +116,7 @@ function renderStatus() {
     const jobs = S.jobs, post = jobs.find(j => j.state === "processing" || j.state === "converting");
     if (jobs.some(j => j.state === "downloading")) {
       cls = "busy";
-      txt = mbps(S.speed_bps) + (S.throttled ? " · Theater playing" : "");
+      txt = mbps(S.speed_bps) + (S.throttled ? " · Media Core playing" : "");
     } else if (post) {
       cls = "busy";
       txt = (post.state === "converting" ? "Converting" : post.phase || "Processing") + (post.progress ? ` ${post.progress}%` : "");
@@ -126,7 +126,7 @@ function renderStatus() {
   st.className = "status " + cls;
   $("span", st).textContent = txt;
   st.title = S ? (S.settings.limit_mbps ? `Limited to ${S.settings.limit_mbps} MB/s` : "No speed limit") +
-    (S.throttled ? `, eased to 1 MB/s while Theater plays` : "") : "";
+    (S.throttled ? `, eased to 1 MB/s while Media Core plays` : "") : "";
 }
 
 function render() {

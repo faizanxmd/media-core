@@ -19,10 +19,13 @@ import (
 // A read-only WebDAV view of the library at /dav/ on the player port, so
 // Infuse (or Finder, VLC, IINA) can browse and stream it. Only OPTIONS,
 // PROPFIND, GET and HEAD; dot-folders (unpack scratch) are hidden. The
-// password lives in ~/.config/theater/webdav.pass (user "theater").
+// password lives in ~/.config/media-core/webdav.pass (user "media-core").
 
 const davPrefix = "/dav"
-const davUser = "theater"
+const davUser = "media-core"
+
+// Infuse on the Mac may still have the old login saved
+const davOldUser = "theater"
 
 type davHandler struct {
 	root *os.Root
@@ -60,8 +63,8 @@ func davPassword() string {
 
 func (h *davHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u, p, ok := r.BasicAuth()
-	if !ok || u != davUser || subtle.ConstantTimeCompare([]byte(p), []byte(h.pass)) != 1 {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Theater"`)
+	if !ok || (u != davUser && u != davOldUser) || subtle.ConstantTimeCompare([]byte(p), []byte(h.pass)) != 1 {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Media Core"`)
 		http.Error(w, "login required", http.StatusUnauthorized)
 		return
 	}
@@ -133,7 +136,7 @@ func davEntry(name string, fi fs.FileInfo) davResponse {
 	}
 	p := davProp{Name: fi.Name(), Type: &davColl{}, Modified: fi.ModTime().UTC().Format(http.TimeFormat)}
 	if name == "." {
-		p.Name = "Theater"
+		p.Name = "Media Core"
 	}
 	if fi.IsDir() {
 		p.Type.Coll = &struct{}{}

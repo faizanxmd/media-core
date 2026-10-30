@@ -94,8 +94,8 @@ func (p *Player) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/app", p.appInfo)
 	mux.HandleFunc("GET /api/v1/app.apk", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
-		w.Header().Set("Content-Disposition", `attachment; filename="theater.apk"`)
-		http.ServeFile(w, r, filepath.Join(DataDir, "app", "theater.apk"))
+		w.Header().Set("Content-Disposition", `attachment; filename="media-core.apk"`)
+		http.ServeFile(w, r, filepath.Join(DataDir, "app", "media-core.apk"))
 	})
 }
 
@@ -423,7 +423,7 @@ type AppInfo struct {
 
 func readAppInfo() *AppInfo {
 	var a AppInfo
-	b, err := os.ReadFile(filepath.Join(DataDir, "app", "theater.json"))
+	b, err := os.ReadFile(filepath.Join(DataDir, "app", "media-core.json"))
 	if err != nil || json.Unmarshal(b, &a) != nil {
 		return nil
 	}
@@ -446,10 +446,10 @@ func servePlayer(p *Player) *http.Server {
 	mountDAV(mux)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write([]byte("Theater player API. Get the TV/phone app: /api/v1/app.apk\n"))
+		w.Write([]byte("Media Core Engine player API. Get the TV/phone app: /api/v1/app.apk\n"))
 	})
 	addr := PlayerListen
-	if v := os.Getenv("THEATER_PLAYER_LISTEN"); v != "" {
+	if v := os.Getenv("MEDIA_CORE_PLAYER_LISTEN"); v != "" {
 		addr = v
 	}
 	hs := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}

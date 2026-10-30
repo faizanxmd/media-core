@@ -1,5 +1,5 @@
-HSPLapp/mediadl/**->**(**)**
-Lapp/mediadl/**;
+HSPLapp/mediacore/**->**(**)**
+Lapp/mediacore/**;
 HSPLandroidx/compose/**->**(**)**
 Landroidx/compose/**;
 HSPLcoil3/**->**(**)**

@@ -6,7 +6,7 @@ local.properties
 *.apk
 *.aab
 
-# signing keys and secrets live in ~/.config/theater, never here
+# signing keys and secrets live in ~/.config/media-core, never here
 *.jks
 *.keystore
 *.key
@@ -18,4 +18,4 @@ __pycache__/
 *.pyc
 
 # Go binary
-/theater
+/media-core-engine

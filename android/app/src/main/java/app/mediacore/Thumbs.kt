@@ -1,4 +1,4 @@
-package app.mediadl
+package app.mediacore
 
 import android.content.Context
 import android.graphics.BitmapFactory

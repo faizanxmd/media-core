@@ -51,7 +51,7 @@ button.text:hover { color: var(--ink); }
 /* header */
 .top { max-width: 740px; margin: 0 auto; padding: 36px 16px 0; display: flex; align-items: center; gap: 6px; }
 .brand { flex: 1; display: flex; align-items: center; gap: 10px; font-size: 20px; letter-spacing: -.01em; }
-.brand .mark { width: 24px; height: 24px; color: var(--green); stroke-width: 1.6; }
+.brand .mark { width: 24px; height: 24px; color: var(--ink); stroke-width: 2.5; }
 .status { display: flex; align-items: center; height: 34px; padding: 0 10px; color: var(--mut); font-size: 14px; gap: 8px; white-space: nowrap; }
 .status i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
 .status.busy span { color: var(--ink); font-family: var(--mono); font-size: 13.5px; letter-spacing: -.01em; }

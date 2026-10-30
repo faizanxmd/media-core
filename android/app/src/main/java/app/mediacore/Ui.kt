@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalTextApi::class)
 
-package app.mediadl
+package app.mediacore
 
 import android.graphics.Bitmap
 import androidx.compose.animation.animateColorAsState

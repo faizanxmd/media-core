@@ -11,11 +11,11 @@ val vCode = (findProperty("vcode") as String?)?.toInt() ?: 1
 val vName = (findProperty("vname") as String?) ?: "dev"
 
 android {
-    namespace = "app.mediadl"
+    namespace = "app.mediacore"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.mediadl" // kept from before the rename: a new id would mean a reinstall on the TV
+        applicationId = "app.mediacore"
         minSdk = 26
         targetSdk = 36
         versionCode = vCode
@@ -24,8 +24,7 @@ android {
         ndk { abiFilters += ((findProperty("abis") as String?) ?: "arm64-v8a,armeabi-v7a").split(",") }
     }
 
-    // Two separate apps from one codebase: the TV app keeps its old id (no reinstall on the TV),
-    // the phone app gets its own id, launcher entry and UI
+    // Two separate apps from one codebase: the phone app gets its own id, launcher entry and UI
     flavorDimensions += "device"
     productFlavors {
         create("tv") { dimension = "device" }
@@ -37,10 +36,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file(System.getenv("THEATER_KEYSTORE") ?: "${System.getProperty("user.home")}/.config/theater/app.jks")
-            storePassword = System.getenv("THEATER_KS_PASS")
-            keyAlias = "mediadl" // the alias inside the existing key file
-            keyPassword = System.getenv("THEATER_KS_PASS")
+            storeFile = file(System.getenv("MEDIA_CORE_KEYSTORE") ?: "${System.getProperty("user.home")}/.config/media-core/app.jks")
+            storePassword = System.getenv("MEDIA_CORE_KS_PASS")
+            keyAlias = "media-core"
+            keyPassword = System.getenv("MEDIA_CORE_KS_PASS")
         }
     }
     buildTypes {

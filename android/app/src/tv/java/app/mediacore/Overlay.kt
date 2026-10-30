@@ -1,4 +1,4 @@
-package app.mediadl
+package app.mediacore
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec

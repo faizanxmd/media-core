@@ -29,7 +29,7 @@ type LNode struct {
 var librarySections = map[string]string{"Movies": "movie", "TV Shows": "tv", "Music": "music"}
 
 // scanTree reads a folder recursively, skipping dot-folders (.incoming,
-// .convert: theater's work areas).
+// .convert: the engine's work areas).
 func scanTree(abs string) *LNode {
 	n := &LNode{Name: filepath.Base(abs), Path: rel(abs), Dir: true}
 	ents, _ := os.ReadDir(abs)
@@ -161,7 +161,7 @@ func attachMeta(root *LNode, section string, idx *metaIdx) {
 
 // libraryTarget checks that p is something inside a library section that may
 // be deleted: never a section root, nothing outside /srv/data/media, no
-// theater work folders.
+// the engine's work folders.
 func libraryTarget(p string) (abs, section string, err error) {
 	if p == "" || strings.Contains(p, "\x00") {
 		return "", "", errors.New("no path")

@@ -106,8 +106,8 @@ func (e *Engine) syncLocked() bool {
 	if err != nil {
 		if time.Since(e.lastStart) > 30*time.Second {
 			e.lastStart = time.Now()
-			log.Printf("aria2 unreachable (%v); starting theater-aria2", err)
-			exec.Command("systemctl", "--user", "start", "theater-aria2.service").Run()
+			log.Printf("aria2 unreachable (%v); starting media-core-aria2", err)
+			exec.Command("systemctl", "--user", "start", "media-core-aria2.service").Run()
 		}
 		if wasOK {
 			e.store.Notify()

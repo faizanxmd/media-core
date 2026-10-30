@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// Aria2 talks JSON-RPC to the long-running aria2c daemon (theater-aria2.service).
+// Aria2 talks JSON-RPC to the long-running aria2c daemon (media-core-aria2.service).
 // Downloads live there, so they survive restarts of the web app.
 type Aria2 struct {
 	endpoint, token string

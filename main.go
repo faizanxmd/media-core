@@ -1,8 +1,8 @@
-// theater: paste a link, it lands in the library. Web UI + API on :8780 (Tailscale only).
+// media-core-engine: paste a link, it lands in the library. Web UI + API on :8780 (Tailscale only).
 //
-//	theater [serve]             run the web app (theater.service)
-//	theater add <url> [kind] [title]   queue a link with the guessed (or given) name
-//	theater ls                  list jobs
+//	media-core-engine [serve]             run the web app (media-core-engine.service)
+//	media-core-engine add <url> [kind] [title]   queue a link with the guessed (or given) name
+//	media-core-engine ls                  list jobs
 package main
 
 import (
@@ -36,7 +36,7 @@ func main() {
 		serve()
 	case "add":
 		if len(os.Args) < 3 {
-			fail("usage: theater add <url> [movie|tv|music] [title]")
+			fail("usage: media-core-engine add <url> [movie|tv|music] [title]")
 		}
 		body := map[string]string{"url": os.Args[2]}
 		if len(os.Args) > 3 {
@@ -69,7 +69,7 @@ func main() {
 		tw.Flush()
 		fmt.Printf("%d GB free\n", st.FreeGB)
 	default:
-		fail("usage: theater [serve | add <url> [kind] [title] | ls]")
+		fail("usage: media-core-engine [serve | add <url> [kind] [title] | ls]")
 	}
 }
 

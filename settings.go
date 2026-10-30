@@ -10,7 +10,7 @@ import (
 
 type Settings struct {
 	LimitMBps     float64 `json:"limit_mbps"`     // 0 = unlimited
-	AutoThrottle  bool    `json:"auto_throttle"`  // drop to ThrottleMBps while Theater is streaming
+	AutoThrottle  bool    `json:"auto_throttle"`  // drop to ThrottleMBps while Media Core is streaming
 	MaxConcurrent int     `json:"max_concurrent"` // parallel downloads
 	AvgBps        float64 `json:"avg_bps"`        // learned from finished downloads, for ETAs
 }

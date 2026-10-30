@@ -1,6 +1,6 @@
 {
-  "name": "Theater",
-  "short_name": "Theater",
+  "name": "Media Core Engine",
+  "short_name": "Media Core",
   "description": "Paste a link, it lands in the library.",
   "start_url": "/",
   "scope": "/",

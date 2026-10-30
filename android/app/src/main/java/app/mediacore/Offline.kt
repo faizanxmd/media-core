@@ -1,4 +1,4 @@
-package app.mediadl
+package app.mediacore
 
 import android.app.DownloadManager
 import android.content.Context

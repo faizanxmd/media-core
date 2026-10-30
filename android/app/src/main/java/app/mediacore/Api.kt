@@ -1,4 +1,4 @@
-package app.mediadl
+package app.mediacore
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -21,7 +21,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Talks to Theater's player API on mint. At home that's the LAN address
+ * Talks to the engine's player API on mint. At home that's the LAN address
  * (full speed, no VPN); away it's the Tailscale address. The app races all
  * known addresses and prefers the LAN one, so it never needs a settings page.
  */
@@ -50,7 +50,7 @@ object Api {
     private val discoverLock = Mutex()
 
     fun init(ctx: Context) {
-        prefs = ctx.getSharedPreferences("mediadl", Context.MODE_PRIVATE)
+        prefs = ctx.getSharedPreferences("media-core", Context.MODE_PRIVATE)
         base = prefs.getString("base", "") ?: ""
     }
 

@@ -1,4 +1,4 @@
-package app.mediadl
+package app.mediacore
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType

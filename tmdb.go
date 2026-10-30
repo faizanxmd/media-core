@@ -113,7 +113,7 @@ func (t *TMDB) save() {
 
 func (t *TMDB) get(ctx context.Context, p string, q url.Values, out any) error {
 	if t.key == "" {
-		return errors.New("no TMDB key in ~/.config/theater/tmdb.key")
+		return errors.New("no TMDB key in ~/.config/media-core/tmdb.key")
 	}
 	if q == nil {
 		q = url.Values{}

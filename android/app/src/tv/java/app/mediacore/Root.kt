@@ -1,4 +1,4 @@
-package app.mediadl
+package app.mediacore
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi

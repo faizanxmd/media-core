@@ -1,4 +1,4 @@
-package app.mediadl
+package app.mediacore
 
 import android.app.UiModeManager
 import android.content.Context
@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity() {
             val f = withContext(Dispatchers.IO) {
                 runCatching {
                     val dir = File(cacheDir, "update").apply { mkdirs() }
-                    val out = File(dir, "theater.apk")
+                    val out = File(dir, "media-core.apk")
                     Api.http.newCall(Request.Builder().url("${Api.base}/api/v1/app.apk").build()).execute().use { r ->
                         if (!r.isSuccessful) error("HTTP ${r.code}")
                         out.outputStream().use { r.body!!.byteStream().copyTo(it) }
