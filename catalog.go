@@ -32,6 +32,7 @@ type Item struct {
 	Subs    []XSub  `json:"subs,omitempty"`    // subtitle files next to the video
 	Intro   *Span   `json:"intro,omitempty"`   // skip-intro marker (episodes)
 	Credits *Span   `json:"credits,omitempty"` // end credits start (from chapters)
+	Thumbs  int     `json:"thumbs,omitempty"`  // scrub pictures available (/api/v1/thumbs/{id})
 	Count   int     `json:"count,omitempty"`   // episodes in a show / season
 	Meta    *TMeta  `json:"meta,omitempty"`
 	Watch   *WState `json:"watch,omitempty"`  // filled per response
@@ -61,11 +62,12 @@ type Catalog struct {
 	refresh chan struct{}
 	tmdb    *TMDB
 	intros  *Intros
+	thumbs  *Thumbs
 	ready   chan struct{} // closed after the first scan
 }
 
-func NewCatalog(t *TMDB, in *Intros) *Catalog {
-	c := &Catalog{intros: in, items: map[string]*Item{}, refresh: make(chan struct{}, 1), tmdb: t, ready: make(chan struct{})}
+func NewCatalog(t *TMDB, in *Intros, th *Thumbs) *Catalog {
+	c := &Catalog{intros: in, thumbs: th, items: map[string]*Item{}, refresh: make(chan struct{}, 1), tmdb: t, ready: make(chan struct{})}
 	go c.loop()
 	return c
 }
@@ -270,6 +272,7 @@ func (c *Catalog) scan() {
 			it.Info = mediaInfo(it.file, fi)
 		}
 		it.Subs = sidecarSubs(it.file)
+		it.Thumbs = c.thumbs.Count(it.file)
 		if it.Info != nil {
 			it.Intro = chapterIntro(it.Info.Chapters)
 			it.Credits = chapterCredits(it.Info.Chapters)
@@ -300,6 +303,9 @@ func (c *Catalog) scan() {
 				c.Refresh()
 			}
 		}()
+	}
+	if c.thumbs.Pending(items) {
+		go c.thumbs.Generate(items, c.Refresh)
 	}
 	if c.tmdb.HasMissing(movies, shows) {
 		go func() {

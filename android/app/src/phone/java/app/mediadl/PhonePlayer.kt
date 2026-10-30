@@ -28,19 +28,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay10
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -164,7 +151,7 @@ private fun Controls(st: PlayerState, a: PlayerActions, onTracks: (String) -> Un
         // top: back + what's playing; when it'll end
         Row(Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White,
+            Icon(AppIcons.Back, "Back", tint = Color.White,
                 modifier = Modifier.clip(CircleShape).clickable(onClick = a::close).padding(8.dp).size(24.dp))
             Column(Modifier.padding(start = 8.dp).weight(1f)) {
                 Text(st.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -179,11 +166,11 @@ private fun Controls(st: PlayerState, a: PlayerActions, onTracks: (String) -> Un
         }
         // middle: back 10, play/pause, forward 10
         Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(56.dp), verticalAlignment = Alignment.CenterVertically) {
-            RoundTap(Icons.Rounded.Replay10, "Back 10 seconds", 44) { a.scrub(-SKIP) }
+            RoundTap(AppIcons.Rewind, "Back 10 seconds", 44) { a.scrub(-SKIP) }
             Box(Modifier.size(72.dp).clip(CircleShape).background(Color(0x2EFFFFFF)).clickable(onClick = a::togglePlay), contentAlignment = Alignment.Center) {
-                Icon(if (st.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (st.playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(48.dp))
+                Icon(if (st.playing) AppIcons.Pause else AppIcons.Play, if (st.playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(48.dp))
             }
-            RoundTap(Icons.Rounded.Forward10, "Forward 10 seconds", 44) { a.scrub(SKIP) }
+            RoundTap(AppIcons.FastForward, "Forward 10 seconds", 44) { a.scrub(SKIP) }
         }
         // bottom: the bar with times at its ends, then the controls on the right
         Column(Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(start = 24.dp, end = 24.dp, bottom = 8.dp).fillMaxWidth()) {
@@ -194,15 +181,15 @@ private fun Controls(st: PlayerState, a: PlayerActions, onTracks: (String) -> Un
                 Text("−" + clock((st.dur - shown).coerceAtLeast(0)), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
             Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (st.episodes.size > 1) RoundTap(Icons.Rounded.VideoLibrary, "Episodes", 24) { a.openSheet(Sheet.Episodes) }
-                if (st.chapters.size > 1) RoundTap(Icons.AutoMirrored.Rounded.FormatListBulleted, "Chapters", 24) { a.openSheet(Sheet.Chapters) }
+                if (st.episodes.size > 1) RoundTap(AppIcons.Episodes, "Episodes", 24) { a.openSheet(Sheet.Episodes) }
+                if (st.chapters.size > 1) RoundTap(AppIcons.Chapters, "Chapters", 24) { a.openSheet(Sheet.Chapters) }
                 Row(Modifier.clip(CircleShape).clickable(onClick = a::cycleSpeed).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Speed, "Speed", tint = Color.White, modifier = Modifier.size(24.dp))
+                    Icon(AppIcons.Speed, "Speed", tint = Color.White, modifier = Modifier.size(24.dp))
                     if (st.speed != 1f) Text(speedLabel(st.speed), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
                 }
-                RoundTap(Icons.Rounded.GraphicEq, "Audio", 24) { onTracks("audio") }
-                RoundTap(Icons.Rounded.Subtitles, "Subtitles", 24) { onTracks("subs") }
-                if (st.hasNext) RoundTap(Icons.Rounded.SkipNext, "Next episode", 24, onClick = a::next)
+                RoundTap(AppIcons.Audio, "Audio", 24) { onTracks("audio") }
+                RoundTap(AppIcons.Subtitles, "Subtitles", 24) { onTracks("subs") }
+                if (st.hasNext) RoundTap(AppIcons.SkipNext, "Next episode", 24, onClick = a::next)
             }
         }
     }
@@ -255,7 +242,7 @@ private fun Menu(title: String, options: List<TrackOption>, a: PlayerActions) {
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { o.pick(); a.closeSheet() }.padding(horizontal = 12.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(Modifier.width(26.dp)) { if (o.selected) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(18.dp)) }
+                        Box(Modifier.width(26.dp)) { if (o.selected) Icon(AppIcons.Check, null, tint = Color.White, modifier = Modifier.size(18.dp)) }
                         Text(o.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                         Spacer(Modifier.width(10.dp).weight(0.01f))
                         if (o.detail.isNotEmpty()) Text(o.detail, fontSize = 12.sp, color = Color(0x8CFFFFFF), maxLines = 1)

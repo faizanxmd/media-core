@@ -72,7 +72,7 @@ object Offline {
         val title = if (item.isEpisode) "${item.showTitle} ${item.code}" else item.displayTitle
         val req = DownloadManager.Request(Uri.parse(Api.stream(item.id) + "?dl=1"))
             .setTitle(title)
-            .setDescription("Theater · for offline")
+            .setDescription("Media Core · for offline")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationUri(Uri.fromFile(videoFile(item.id)))
             .setAllowedOverMetered(true)

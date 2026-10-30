@@ -45,6 +45,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -71,6 +73,17 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var dismissedNext = "" // Back on the next-episode card: let the credits run
     private var nextLeftMs = 0L
     private var lastTick = 0L
+    private val scope = MainScope()
+    private var showLogo: String? = null // a show's title art: its episodes don't carry it
+
+    // holding Left/Right
+    private var holdKey = 0
+    private var holdDir = 0
+    private var holdStart = 0L
+    private var holdLast = 0L
+    private var holdFrom = Mode.Hidden
+    private var holdResume = false
+    private var seekedTo = -1L // a skip's first press lands at once; later presses add to it
 
     private val current get() = queue.firstOrNull { it.optString("id") == currentId }
 
@@ -91,6 +104,22 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     private val autoHide = Runnable {
         if (st.mode == Mode.Full && player.isPlaying && st.sheet == null && st.scrub == null) st.mode = Mode.Hidden
+    }
+
+    /** Moves the held position, faster the longer it's held: 1, then 3, then 8 minutes of film per second. */
+    private val holdTick = object : Runnable {
+        override fun run() {
+            if (st.mode != Mode.Scrub) return
+            val now = System.currentTimeMillis()
+            val rate = when (now - holdStart) {
+                in 0 until 1500 -> 60L
+                in 1500 until 4000 -> 180L
+                else -> 480L
+            }
+            st.scrub = ((st.scrub ?: 0L) + holdDir * rate * (now - holdLast)).coerceIn(0, maxOf(0, st.dur - 1000))
+            holdLast = now
+            ui.postDelayed(this, 50)
+        }
     }
     private val hideSeek = Runnable { if (st.mode == Mode.Seek && st.scrub == null) st.mode = Mode.Hidden }
     private val commit = Runnable { commitScrub() }
@@ -140,14 +169,55 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun togglePlay() {
         if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
-        if (player.isPlaying) {
+        if (player.playWhenReady) {
             player.pause()
             showFull() // paused: title, bar and menu stay up
         } else {
             player.play()
-            if (st.mode == Mode.Full) poke()
+            if (tv) st.mode = Mode.Hidden // back to just the picture, at once
+            else if (st.mode == Mode.Full) poke()
         }
         st.playing = player.playWhenReady
+    }
+
+    /** A press of Left/Right: skips with nothing on screen. Presses in quick succession add up. */
+    private fun tapSkip(dir: Int) {
+        val first = st.scrub == null
+        val to = ((st.scrub ?: player.currentPosition) + dir * 10_000L).coerceIn(0, maxOf(0, st.dur - 1000))
+        st.scrub = to
+        if (first) { seekNear(to); seekedTo = to }
+        ui.removeCallbacks(commit)
+        ui.removeCallbacks(autoHide)
+        ui.postDelayed(commit, 350)
+    }
+
+    /** Left/Right held: the film holds still and the picture strip takes over until the key comes up. */
+    private fun startHold(dir: Int, key: Int) {
+        ui.removeCallbacks(commit)
+        ui.removeCallbacks(autoHide)
+        holdKey = key
+        holdDir = dir
+        holdFrom = st.mode
+        holdResume = player.playWhenReady
+        holdStart = System.currentTimeMillis()
+        holdLast = holdStart
+        seekedTo = -1
+        st.scrub = st.scrub ?: player.currentPosition
+        player.playWhenReady = false
+        st.mode = Mode.Scrub
+        view.subtitleView?.visibility = android.view.View.INVISIBLE
+        st.thumbs?.ensure()
+        ui.post(holdTick)
+    }
+
+    private fun endHold(land: Boolean) {
+        ui.removeCallbacks(holdTick)
+        view.subtitleView?.visibility = android.view.View.VISIBLE
+        st.focusMenu = false
+        st.mode = holdFrom
+        if (land) commitScrub() else st.scrub = null
+        if (holdResume) player.playWhenReady = true
+        poke()
     }
 
     override fun scrub(deltaMs: Long) {
@@ -170,7 +240,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun commitScrub() {
         ui.removeCallbacks(commit)
         val to = st.scrub ?: return
-        seekNear(to)
+        if (to != seekedTo) seekNear(to)
+        seekedTo = -1
         st.scrub = null
         refresh()
         if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1500) else poke()
@@ -281,6 +352,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 "${j.optInt("episode")}. ${j.optString("title")}",
                 listOfNotNull("Season ${j.optInt("season")}", dur.takeIf { it > 0 }?.let { mins((it * 1000).toLong()) }).joinToString(", "),
                 j.optString("id") == currentId,
+                Api.img(j.optJSONObject("meta")?.optString("still")?.ifEmpty { null }, "w500"),
             ) {
                 st.sheet = null
                 if (j.optString("id") != currentId) {
@@ -296,6 +368,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.chapters = j?.optJSONObject("info")?.optJSONArray("chapters").objects()
             .map { Chapter((it.optDouble("start") * 1000).toLong(), it.optString("title")) }
             .takeIf { it.size > 1 } ?: emptyList()
+        // pictures for scrubbing: fetched right away at home, only when first needed over Tailscale
+        if (j != null) st.thumbs?.load(j.optString("id"), j.optInt("thumbs"), eager = !Api.viaTailscale)
     }
 
     // ---------- lifecycle ----------
@@ -318,7 +392,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val startPos = intent.getLongExtra("pos", 0L)
 
         tv = MainActivity.isTv(this)
-        val fps = queue[index].optJSONObject("info")?.optDouble("fps", 0.0) ?: 0.0
+        showLogo = intent.getStringExtra("logo")
+        if (tv) st.thumbs = ThumbStore(this, scope)
+        val fps =queue[index].optJSONObject("info")?.optDouble("fps", 0.0) ?: 0.0
         switchedRate = tv && matchRefreshRate(fps)
 
         player = newPlayer()
@@ -337,7 +413,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                     st.error != null -> finish()
                     st.sheet != null -> closeSheet()
                     st.scrub != null -> { ui.removeCallbacks(commit); st.scrub = null; st.mode = Mode.Hidden } // cancel the seek
-                    st.mode == Mode.Full && tv -> st.mode = Mode.Hidden
+                    st.mode == Mode.Full && tv -> if (player.playWhenReady) st.mode = Mode.Hidden else finish() // paused: leave
                     st.mode == Mode.Seek -> st.mode = Mode.Hidden
                     st.offer?.kind == "next" -> { dismissedNext = currentId; st.offer = null }
                     else -> finish()
@@ -535,7 +611,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private fun titles(j: JSONObject): Pair<String, String> {
         val meta = j.optJSONObject("meta")
         return if (j.optString("type") == "episode") {
-            j.optString("show") to "Season ${j.optInt("season")}, Episode ${j.optInt("episode")}"
+            j.optString("show") to "S${j.optInt("season")}, E${j.optInt("episode")} · ${j.optString("title")}"
         } else {
             (meta?.optString("title")?.ifEmpty { null } ?: j.optString("title")) to
                 (j.optInt("year").takeIf { it > 0 }?.toString() ?: "")
@@ -547,7 +623,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.title = t
         st.sub = s
         val m = j.optJSONObject("meta")
-        st.cover = Api.img(m?.optString("backdrop")?.ifEmpty { null }, "w1280")
+        st.logo = Api.img(m?.optString("logo")?.ifEmpty { null }, "w500") ?: showLogo
+        st.cover =Api.img(m?.optString("backdrop")?.ifEmpty { null }, "w1280")
             ?: Api.img(m?.optString("still")?.ifEmpty { null }, "w780")
     }
 
@@ -633,14 +710,38 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> { if (first) togglePlay(); return true }
             KeyEvent.KEYCODE_MEDIA_PLAY -> { if (first && !player.isPlaying) togglePlay(); return true }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (first && player.isPlaying) togglePlay(); return true }
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) scrub(scrubStep(event.repeatCount) * 3); return true }
-            KeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) scrub(-scrubStep(event.repeatCount)); return true }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> if (!tv) { if (down) scrub(scrubStep(event.repeatCount) * 3); return true }
+            KeyEvent.KEYCODE_MEDIA_REWIND -> if (!tv) { if (down) scrub(-scrubStep(event.repeatCount)); return true }
             KeyEvent.KEYCODE_MEDIA_NEXT -> { if (first) next(); return true }
+        }
+        if (tv) {
+            // holding: nothing else counts until that key comes up (Back cancels)
+            if (st.mode == Mode.Scrub) {
+                if (event.action == KeyEvent.ACTION_UP) when (event.keyCode) {
+                    holdKey -> endHold(land = true)
+                    KeyEvent.KEYCODE_BACK -> endHold(land = false)
+                }
+                return true
+            }
+            // a press skips, a hold scrubs: with nothing on screen, on the bar, or from the remote's own keys
+            val dir = when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> -1
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> 1
+                else -> 0
+            }
+            val isDpad = event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+            val free = st.error == null && st.sheet == null && (st.mode != Mode.Full || st.barFocused || !isDpad)
+            if (dir != 0 && free) {
+                if (st.dur <= 0) return true // nothing loaded yet to skip through
+                if (first) tapSkip(dir)
+                else if (down) startHold(dir, event.keyCode)
+                return true
+            }
         }
         if (st.error != null || st.sheet != null) return super.dispatchKeyEvent(event)
         if (st.mode == Mode.Full) {
             if (down) poke()
-            if (first && event.keyCode == KeyEvent.KEYCODE_MENU) { st.mode = Mode.Hidden; return true }
+            if (first && event.keyCode == KeyEvent.KEYCODE_MENU) { if (player.playWhenReady) st.mode = Mode.Hidden; return true }
             return super.dispatchKeyEvent(event)
         }
         // Hidden or seeking: OK pauses (or takes the offer), Left/Right skip, Up/Down/Menu open the controls
@@ -719,7 +820,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 CompositionLocalProvider(LocalTv provides tv) {
                     AppTheme {
                         DeviceOverlay(st, this@PlayerActivity, tv, onChrome = { up ->
-                            view.subtitleView?.setBottomPaddingFraction(if (up) 0.3f else 0.09f)
+                            view.subtitleView?.setBottomPaddingFraction(if (up) 0.36f else 0.09f)
                         })
                     }
                 }
@@ -745,20 +846,23 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private fun release() {
         if (released || !::player.isInitialized) return
         released = true
+        st.thumbs?.release()
+        scope.cancel()
         ui.removeCallbacksAndMessages(null)
         player.removeListener(listener)
         player.release()
     }
 
     companion object {
-        fun play(ctx: Context, queue: List<Item>, index: Int, fromStart: Boolean = false) {
+        fun play(ctx: Context, queue: List<Item>, index: Int, fromStart: Boolean = false, logo: String? = null) {
             val start = queue.getOrNull(index) ?: return
             val pos = if (!fromStart && !start.watched) start.pos else 0L
             ctx.startActivity(
                 Intent(ctx, PlayerActivity::class.java)
                     .putExtra("queue", JSONArray(queue.map { it.raw }).toString())
                     .putExtra("index", index)
-                    .putExtra("pos", pos),
+                    .putExtra("pos", pos)
+                    .putExtra("logo", logo),
             )
         }
     }

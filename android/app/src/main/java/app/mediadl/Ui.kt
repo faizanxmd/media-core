@@ -3,8 +3,13 @@
 package app.mediadl
 
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,8 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -172,6 +176,21 @@ fun FocusCard(
     ) { content(focused) }
 }
 
+/** A thin turning arc: the app's only loading mark. */
+@Composable
+fun LoadingRing(modifier: Modifier = Modifier, size: Dp = 26.dp) {
+    val turn = rememberInfiniteTransition(label = "loading")
+    val angle by turn.animateFloat(0f, 360f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "angle")
+    Canvas(modifier.size(size)) {
+        val w = 2.dp.toPx()
+        drawCircle(Color(0x29FFFFFF), radius = (this.size.minDimension - w) / 2, style = Stroke(w))
+        drawArc(
+            Color(0xE6FFFFFF), angle, 90f, false, topLeft = Offset(w / 2, w / 2),
+            size = this.size.copy(this.size.width - w, this.size.height - w), style = Stroke(w, cap = StrokeCap.Round),
+        )
+    }
+}
+
 /** Thin rounded progress track. */
 @Composable
 fun ProgressTrack(fraction: Float, modifier: Modifier = Modifier, height: Dp = 3.dp, back: Color = Color(0x42FFFFFF), fill: Color = Color(0xF2FFFFFF)) {
@@ -257,7 +276,7 @@ fun PlayCapsule(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         val c = if (focused) Bg else Ink
-        Icon(Icons.Rounded.PlayArrow, null, tint = c, modifier = Modifier.size(23.dp))
+        Icon(AppIcons.Play, null, tint = c, modifier = Modifier.size(23.dp))
         Text(label, color = c, fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }

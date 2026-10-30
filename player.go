@@ -74,6 +74,20 @@ func (p *Player) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/stream/{id}/{name...}", p.stream)
 	mux.HandleFunc("GET /api/v1/stream/{id}", p.stream)
 	mux.HandleFunc("GET /api/v1/sub/{id}/{n}", p.sub)
+	mux.HandleFunc("GET /api/v1/thumbs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		it := p.c.Get(r.PathValue("id"))
+		if it == nil || it.file == "" {
+			http.NotFound(w, r)
+			return
+		}
+		f, ok := p.c.thumbs.File(it.file)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeFile(w, r, f)
+	})
 	mux.HandleFunc("GET /api/v1/img/{size}/{file}", p.t.serveImage)
 	mux.HandleFunc("GET /api/v1/match/{id}", p.matchSearch)
 	mux.HandleFunc("POST /api/v1/match", p.rematch)

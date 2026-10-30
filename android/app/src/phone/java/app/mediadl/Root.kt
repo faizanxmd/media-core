@@ -17,15 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Tv
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
@@ -80,10 +71,10 @@ private fun TabBar(current: Tab, onPick: (Tab) -> Unit) {
             .navigationBarsPadding().height(64.dp),
         horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically,
     ) {
-        TabItem("Home", Icons.Rounded.Home, Icons.Outlined.Home, current == Tab.Home) { onPick(Tab.Home) }
-        TabItem("Search", Icons.Rounded.Search, Icons.Outlined.Search, current == Tab.Search) { onPick(Tab.Search) }
-        TabItem("Films", Icons.Rounded.Movie, Icons.Outlined.Movie, current == Tab.Films) { onPick(Tab.Films) }
-        TabItem("Shows", Icons.Rounded.Tv, Icons.Outlined.Tv, current == Tab.Shows) { onPick(Tab.Shows) }
+        TabItem("Home", AppIcons.Home, AppIcons.HomeOutline, current == Tab.Home) { onPick(Tab.Home) }
+        TabItem("Search", AppIcons.Search, AppIcons.SearchOutline, current == Tab.Search) { onPick(Tab.Search) }
+        TabItem("Films", AppIcons.Movie, AppIcons.MovieOutline, current == Tab.Films) { onPick(Tab.Films) }
+        TabItem("Shows", AppIcons.Tv, AppIcons.TvOutline, current == Tab.Shows) { onPick(Tab.Shows) }
     }
 }
 

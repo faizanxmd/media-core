@@ -20,9 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -109,9 +106,9 @@ suspend fun Nav.loadHome(cache: java.io.File) {
 /** Where the rows start: under the hero, which shows whatever card has focus. */
 private val RowsTop = 294.dp
 
-/** Poster size and row gap on Home: a focused poster row with its title fits, and the next row's title shows whole below it. */
+/** Poster size and row gap on Home: a focused poster row with its title fits, and the next row's title shows whole below it (the row's own padding is the gap). */
 private val HomePoster = 115.dp
-private val RowGap = 10.dp
+private val RowGap = 0.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -288,7 +285,7 @@ suspend fun playEpisode(ctx: Context, ep: Item, fromStart: Boolean = false) {
     val eps = show?.let(::episodeQueue).orEmpty()
     val i = eps.indexOfFirst { it.id == ep.id }
     if (i < 0) PlayerActivity.play(ctx, listOf(ep), 0, fromStart)
-    else PlayerActivity.play(ctx, eps, i, fromStart)
+    else PlayerActivity.play(ctx, eps, i, fromStart, show?.logo)
 }
 
 /** Every episode in viewing order (the server already puts specials last). */
@@ -297,7 +294,7 @@ fun episodeQueue(show: Item): List<Item> = show.seasons.flatMap { it.episodes }
 @Composable
 fun Loading() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = Ink, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+        LoadingRing()
     }
 }
 
@@ -314,7 +311,7 @@ fun ErrorView(msg: String, onRetry: () -> Unit, extra: @Composable () -> Unit = 
             )
             if (msg != "Can't reach mint") Text(msg, color = Faint, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(20.dp))
-            CircleButton(Icons.Rounded.Refresh, "Try again", focusRequester = fr, onClick = onRetry)
+            CircleButton(AppIcons.Refresh, "Try again", focusRequester = fr, onClick = onRetry)
             Spacer(Modifier.height(24.dp))
             extra()
         }

@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -38,13 +37,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -91,7 +83,7 @@ fun PlayCapsule(item: Item?, modifier: Modifier = Modifier, onClick: () -> Unit)
             .padding(start = 12.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
     ) {
-        Icon(Icons.Rounded.PlayArrow, "Play", tint = PBg, modifier = Modifier.size(24.dp))
+        Icon(AppIcons.Play, "Play", tint = PBg, modifier = Modifier.size(24.dp))
         if (resume) {
             Text(hm(item!!.durMs - item.pos), color = PBg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         } else {
@@ -205,7 +197,7 @@ private fun Featured(item: Item, onPlay: () -> Unit, onInfo: () -> Unit) {
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 PlayCapsule(item, onClick = onPlay)
-                RoundIcon(Icons.Outlined.Info, "Details", onClick = onInfo)
+                RoundIcon(AppIcons.InfoOutline, "Details", onClick = onInfo)
             }
         }
     }
@@ -288,7 +280,7 @@ fun PhoneDetail(nav: Nav, id: String) {
             Box(
                 Modifier.statusBarsPadding().padding(12.dp).size(40.dp).clip(CircleShape).background(Color(0x59000000)).clickable { nav.back() },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = PText, modifier = Modifier.size(24.dp)) }
+            ) { Icon(AppIcons.Back, "Back", tint = PText, modifier = Modifier.size(24.dp)) }
         }
         Column(Modifier.offset(y = (-52).dp).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val logo = main.logo
@@ -316,8 +308,8 @@ fun PhoneDetail(nav: Nav, id: String) {
 
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 PlayCapsule(target) { play(false) }
-                if (target != null && target.pos > 0 && !target.watched) RoundIcon(Icons.Rounded.Replay, "Start over") { play(true) }
-                RoundIcon(Icons.Rounded.Check, if (allWatched) "Mark unwatched" else "Mark watched", on = allWatched) { setWatched(!allWatched) }
+                if (target != null && target.pos > 0 && !target.watched) RoundIcon(AppIcons.Replay, "Start over") { play(true) }
+                RoundIcon(AppIcons.Check, if (allWatched) "Mark unwatched" else "Mark watched", on = allWatched) { setWatched(!allWatched) }
             }
 
             if (show) Episodes(main, upNext) else Cast(main)
@@ -355,7 +347,7 @@ private fun Episodes(main: Item, upNext: Item?) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(main.seasons[season].title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            if (main.seasons.size > 1) Icon(Icons.Rounded.ExpandMore, null, tint = PFaint, modifier = Modifier.size(24.dp))
+            if (main.seasons.size > 1) Icon(AppIcons.ExpandMore, null, tint = PFaint, modifier = Modifier.size(24.dp))
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             main.seasons.forEachIndexed { i, s -> DropdownMenuItem(text = { Text(s.title) }, onClick = { season = i; menu = false }) }
@@ -388,7 +380,7 @@ private fun EpisodeRow(ep: Item, thumb: Dp, onClick: () -> Unit) {
             }
             if (sub.isNotEmpty()) Text(sub, color = PFaint, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 3.dp))
         }
-        if (ep.watched) Icon(Icons.Rounded.Check, "Watched", tint = PFaint, modifier = Modifier.size(20.dp))
+        if (ep.watched) Icon(AppIcons.Check, "Watched", tint = PFaint, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -435,7 +427,7 @@ fun PhoneSearch(nav: Nav) {
                 Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x1FFFFFFF)).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.Search, null, tint = PFaint, modifier = Modifier.size(22.dp))
+                Icon(AppIcons.Search, null, tint = PFaint, modifier = Modifier.size(22.dp))
                 Box(Modifier.padding(start = 10.dp).weight(1f)) {
                     if (q.isEmpty()) Text("Films, shows, people", color = PFaint, fontSize = 16.sp)
                     BasicTextField(

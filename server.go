@@ -370,7 +370,7 @@ func serve() {
 	}
 	e := NewEngine(store, aria, loadSettings())
 	tm := NewTMDB()
-	cat := NewCatalog(tm, NewIntros())
+	cat := NewCatalog(tm, NewIntros(), NewThumbs())
 	watch := NewWatch()
 	e.onLibrary = cat.Refresh
 	go e.Run()

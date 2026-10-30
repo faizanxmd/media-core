@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
     /** Downloads the new APK from mint and hands it to the system installer. */
     private fun installUpdate() {
         if (!packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(this, "Allow Theater to install updates, then press Update again", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Allow Media Core to install updates, then press Update again", Toast.LENGTH_LONG).show()
             runCatching { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
             return
         }

@@ -22,10 +22,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Replay
-import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -150,9 +146,9 @@ fun DetailScreen(nav: Nav, id: String) {
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
                     PlayCapsule(if (resumable) hm(target!!.durMs - target.pos) else "Play", focusRequester = playFr) { play(false) }
-                    if (resumable) CircleButton(Icons.Rounded.Replay, "Start over") { play(true) }
-                    CircleButton(Icons.Rounded.Check, if (allWatched) "Mark unwatched" else "Mark watched", content = { f ->
-                        Icon(Icons.Rounded.Check, null, tint = if (f) Bg else if (allWatched) Ink else Faint, modifier = Modifier.size(19.dp))
+                    if (resumable) CircleButton(AppIcons.Replay, "Start over") { play(true) }
+                    CircleButton(AppIcons.Check, if (allWatched) "Mark unwatched" else "Mark watched", content = { f ->
+                        Icon(AppIcons.Check, null, tint = if (f) Bg else if (allWatched) Ink else Faint, modifier = Modifier.size(19.dp))
                     }) { setWatched(!allWatched) }
                 }
             }
@@ -209,7 +205,7 @@ private fun Episodes(main: Item, upNext: Item?) {
             ) {
                 itemsIndexed(s.episodes, key = { _, it -> it.id }) { i, ep ->
                     EpisodeCard(ep, Modifier.rowEnds(i, s.episodes.size)) {
-                        PlayerActivity.play(ctx, queue, queue.indexOfFirst { it.id == ep.id }.coerceAtLeast(0))
+                        PlayerActivity.play(ctx, queue, queue.indexOfFirst { it.id == ep.id }.coerceAtLeast(0), logo = main.logo)
                     }
                 }
             }
@@ -234,7 +230,7 @@ private fun SeasonHeading(titles: List<String>, current: Int, onPick: (Int) -> U
         ) {
             val c = if (focused && many) Bg else Ink
             Text(titles[current], color = c, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
-            if (many) Icon(Icons.Rounded.UnfoldMore, null, tint = if (focused) Bg.copy(alpha = 0.6f) else Faint, modifier = Modifier.padding(start = 3.dp).size(18.dp))
+            if (many) Icon(AppIcons.UnfoldMore, null, tint = if (focused) Bg.copy(alpha = 0.6f) else Faint, modifier = Modifier.padding(start = 3.dp).size(18.dp))
         }
         if (open) Popup(
             alignment = Alignment.TopStart, offset = IntOffset(0, 0),
@@ -301,7 +297,7 @@ fun MenuOption(title: String, detail: String, selected: Boolean, fr: FocusReques
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(22.dp)) {
-            if (selected) Icon(Icons.Rounded.Check, null, tint = if (focused) Bg else Ink, modifier = Modifier.size(15.dp))
+            if (selected) Icon(AppIcons.Check, null, tint = if (focused) Bg else Ink, modifier = Modifier.size(15.dp))
         }
         Text(title, color = if (focused) Bg else Ink, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         if (detail.isNotEmpty()) Text(detail, color = if (focused) Bg.copy(alpha = 0.6f) else Faint, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
