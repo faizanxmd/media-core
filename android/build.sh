@@ -20,7 +20,7 @@ if [ ! -f "$CONF/app.jks.pass" ]; then
 fi
 export THEATER_KS_PASS="$(cat "$CONF/app.jks.pass")"
 
-VCODE=$(date +%y%m%d%H%M | cut -c1-9)   # yymmddHHM (fits an int, increases)
+VCODE=$(date +%s)   # seconds: fits an int and rises on every build, so the app always offers a new one
 VNAME=$(date +%Y.%m.%d-%H%M)
 OUT="$HOME/.local/share/theater/app"
 mkdir -p "$OUT"

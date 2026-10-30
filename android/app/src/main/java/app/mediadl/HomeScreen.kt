@@ -105,12 +105,8 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         return
     }
 
-    // the card with focus drives the hero; the picture follows a moment later so fast scrolling stays light
-    val items = remember(home) { (home.cont + home.recent + home.shows + home.movies).associateBy { it.id } }
-    var focusedId by remember { mutableStateOf(nav.homeFocus?.substringAfter('/') ?: (home.cont + home.recent).firstOrNull()?.id) }
-    val hero = focusedId?.let(items::get) ?: (home.cont + home.recent + home.movies + home.shows).firstOrNull()
-    var shown by remember { mutableStateOf(hero) }
-    LaunchedEffect(hero?.id) { delay(if (shown == null) 0 else 260); shown = hero }
+    // only the hero reads this, so a press redraws the hero and two cards rather than every row
+    val focusedId = remember { mutableStateOf(nav.homeFocus?.substringAfter('/') ?: (home.cont + home.recent).firstOrNull()?.id) }
 
     LaunchedEffect(Unit) {
         delay(60)
@@ -119,14 +115,13 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        Crossfade(shown?.let { Api.img(it.meta?.backdrop?.ifEmpty { null }, "w1280") }, animationSpec = tween(500), label = "backdrop") { url ->
-            Box(Modifier.fillMaxSize()) { MaskedBackdrop(url) }
-        }
-        shown?.let { Hero(it, home, Modifier.padding(start = 40.dp).width(440.dp).height(RowsTop - 21.dp)) }
+        HomeHero(home, focusedId)
 
         val density = LocalDensity.current
-        val rowSpec = MinimalSpec(density.run { 56.dp.toPx() })
-        CompositionLocalProvider(LocalBringIntoViewSpec provides PivotSpec(0f)) {
+        val rowSpec = remember(density) { MinimalSpec(density.run { 56.dp.toPx() }) }
+        // a little room above the focused row: the lifted card must not be cut off at the top
+        val listSpec = remember(density) { PivotSpec(density.run { 10.dp.toPx() }) }
+        CompositionLocalProvider(LocalBringIntoViewSpec provides listSpec) {
             LazyColumn(
                 state = nav.homeList,
                 modifier = Modifier.padding(top = RowsTop).fillMaxSize(),
@@ -148,7 +143,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                                     itemsIndexed(list, key = { _, it -> it.id }) { i, it ->
                                         val k = "$key/${it.id}"
                                         val fr = requesters.getOrPut(k) { FocusRequester() }
-                                        val onFocus = { nav.homeFocus = k; focusedId = it.id }
+                                        val onFocus = { nav.homeFocus = k; focusedId.value = it.id }
                                         val click = { openItem(ctx, scope, nav, it, resume = key == "continue") }
                                         if (wide) WideCard(it, 205.dp, click, Modifier.rowEnds(i, list.size), onFocus, fr)
                                         else PosterCard(it, 125.dp, click, Modifier.rowEnds(i, list.size), onFocus, fr)
@@ -170,6 +165,19 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     }
 }
 
+/** The backdrop and text for the focused card; the picture follows a moment later so fast scrolling stays light. */
+@Composable
+private fun HomeHero(home: Home, focusedId: androidx.compose.runtime.State<String?>) {
+    val items = remember(home) { (home.cont + home.recent + home.shows + home.movies).associateBy { it.id } }
+    val hero = focusedId.value?.let(items::get) ?: (home.cont + home.recent + home.movies + home.shows).firstOrNull()
+    var shown by remember { mutableStateOf(hero) }
+    LaunchedEffect(hero?.id) { delay(if (shown == null) 0 else 260); shown = hero }
+    Crossfade(shown?.let { Api.img(it.meta?.backdrop?.ifEmpty { null }, "w1280") }, animationSpec = tween(500), label = "backdrop") { url ->
+        Box(Modifier.fillMaxSize()) { MaskedBackdrop(url) }
+    }
+    shown?.let { Hero(it, home, Modifier.padding(start = 40.dp).width(440.dp).height(RowsTop - 21.dp)) }
+}
+
 /** Moves content up by [dy] and gives the space back: the row's padding (room for a lifted card) tucks under its title. */
 private fun Modifier.layoutOffset(dy: Dp): Modifier = layout { m, c ->
     val p = m.measure(c)
@@ -183,7 +191,8 @@ private fun Hero(it: Item, home: Home, modifier: Modifier) {
     val ctx = LocalContext.current
     val show = if (it.isEpisode) home.shows.firstOrNull { s -> s.id == it.showId } else null
     val base = show ?: it
-    Column(modifier, verticalArrangement = Arrangement.Bottom) {
+    // laid out from the top, under the tabs: the logo stays put whatever the text below it
+    Column(modifier.padding(top = 60.dp)) {
         Box(Modifier.height(85.dp).width(280.dp), contentAlignment = Alignment.BottomStart) {
             val logo = it.logo ?: show?.logo
             if (logo != null) AsyncImage(logo, it.showTitle, Modifier.fillMaxSize(), contentScale = ContentScale.Fit, alignment = Alignment.BottomStart)

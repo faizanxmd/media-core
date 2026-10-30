@@ -96,6 +96,7 @@ class PlayerState {
     var buffered by mutableLongStateOf(0L)
     var dur by mutableLongStateOf(0L)
     var scrub by mutableStateOf<Long?>(null) // where you'll land while still pressing Left/Right
+    var scrubFrom by mutableLongStateOf(0L) // where that skip started, so "+10s" doesn't drift as the film plays
     var speed by mutableStateOf(1f)
     var title by mutableStateOf("")
     var sub by mutableStateOf("") // year, or "Season 1, Episode 2"
@@ -127,6 +128,7 @@ interface PlayerActions {
     fun openSheet(s: Sheet)
     fun closeSheet()
     fun cycleSpeed()
+    fun setSpeed(speed: Float)
     fun tapped()
     fun retry()
     fun close()
@@ -151,7 +153,9 @@ private val Dim70 = Color(0xB3FFFFFF)
 private val Dim88 = Color(0xE0FFFFFF)
 
 /** Which compact menu is open above the controls (the activity only knows "a sheet is open"). */
-private enum class Menu { Audio, Subtitles, Chapters, Episodes }
+private enum class Menu { Speed, Audio, Subtitles, Chapters, Episodes }
+
+private val Speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 
 @Composable
 fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boolean) -> Unit) {
@@ -217,7 +221,7 @@ private fun Glance(st: PlayerState) {
             val w = maxWidth
             ProgressTrack(frac, Modifier.fillMaxWidth(), height = 2.5.dp, back = Color(0x4DFFFFFF))
             if (target != null) {
-                val delta = (target - st.pos) / 1000
+                val delta = (target - st.scrubFrom) / 1000
                 Column(
                     Modifier.offset(x = (w * frac - 60.dp).coerceIn(0.dp, w - 120.dp), y = (-44).dp).width(120.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -237,7 +241,8 @@ private fun skipLabel(sec: Long): String {
     return sign + if (s >= 60) "${s / 60}m" + (if (s % 60 != 0L) " ${s % 60}s" else "") else "${s}s"
 }
 
-private val Shadowed = TextStyle(fontFamily = Inter, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), blurRadius = 10f))
+// a style passed to Text replaces the theme's, so it must name its own colour (or the text turns black)
+private val Shadowed = TextStyle(fontFamily = Inter, color = Ink, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), blurRadius = 10f))
 
 /** Paused or asked for: title above the bar, times at its ends, round controls on the right. */
 @Composable
@@ -251,7 +256,7 @@ private fun Full(st: PlayerState, a: PlayerActions, tv: Boolean) {
     val ctls = buildList {
         if (st.episodes.size > 1) add(Ctl(Icons.Rounded.VideoLibrary, "Episodes", { menu = Menu.Episodes; a.openSheet(Sheet.Episodes) }))
         if (st.chapters.size > 1) add(Ctl(Icons.AutoMirrored.Rounded.FormatListBulleted, "Chapters", { menu = Menu.Chapters; a.openSheet(Sheet.Chapters) }))
-        add(Ctl(Icons.Rounded.Speed, "Speed", a::cycleSpeed, text = if (st.speed != 1f) speedLabel(st.speed) else null))
+        add(Ctl(Icons.Rounded.Speed, "Speed", { menu = Menu.Speed; a.openSheet(Sheet.Tracks) }, text = if (st.speed != 1f) speedLabel(st.speed) else null))
         add(Ctl(Icons.Rounded.GraphicEq, "Audio", { menu = Menu.Audio; a.openSheet(Sheet.Tracks) }))
         add(Ctl(Icons.Rounded.Subtitles, "Subtitles", { menu = Menu.Subtitles; a.openSheet(Sheet.Tracks) }))
         if (st.hasNext) add(Ctl(Icons.Rounded.SkipNext, "Next episode", a::next))
@@ -264,9 +269,15 @@ private fun Full(st: PlayerState, a: PlayerActions, tv: Boolean) {
         runCatching { (if (st.focusMenu) frs.getOrNull(last.coerceIn(0, frs.lastIndex)) ?: barFr else barFr).requestFocus() }
         st.focusMenu = false
     }
-    // a menu just closed: back to the button that opened it
+    // a menu just closed: back to the button that opened it (not when the controls first appear: that's the bar's focus)
+    var menuWasOpen by remember { mutableStateOf(false) }
     LaunchedEffect(st.sheet) {
-        if (tv && st.sheet == null) { delay(16); runCatching { frs.getOrNull(last)?.requestFocus() } }
+        if (st.sheet != null) menuWasOpen = true
+        else if (tv && menuWasOpen) {
+            menuWasOpen = false
+            delay(16)
+            runCatching { frs.getOrNull(last)?.requestFocus() }
+        }
     }
 
     val scrubbing = st.scrub != null
@@ -312,6 +323,7 @@ private fun Full(st: PlayerState, a: PlayerActions, tv: Boolean) {
             val end = 40.dp + 45.dp * (ctls.size - 1 - last)
             Box(Modifier.align(Alignment.BottomEnd).padding(end = end, bottom = 91.dp)) {
                 when (m) {
+                    Menu.Speed -> MenuPanel("Speed", Speeds.map { s -> Choice(if (s == 1f) "Normal" else speedLabel(s), "", st.speed == s) { a.setSpeed(s); a.closeSheet() } }, width = 180.dp)
                     Menu.Audio -> MenuPanel("Audio", st.audio.map { o -> Choice(o.title, o.detail, o.selected) { o.pick(); a.closeSheet() } })
                     Menu.Subtitles -> MenuPanel("Subtitles", st.text.map { o -> Choice(o.title, o.detail, o.selected) { o.pick(); a.closeSheet() } })
                     Menu.Episodes -> MenuPanel("Episodes", st.episodes.map { o -> Choice(o.title, o.detail, o.selected) { o.pick(); a.closeSheet() } }, width = 300.dp)
@@ -419,10 +431,10 @@ private fun Bar(st: PlayerState, modifier: Modifier, target: Long?, focused: Boo
         }
         if (target != null && tFrac != null) {
             Column(
-                Modifier.offset(x = (w * tFrac - 100.dp).coerceIn(0.dp, w - 200.dp), y = (-46).dp).width(200.dp),
+                Modifier.offset(x = (w * tFrac - 100.dp).coerceIn(0.dp, w - 200.dp), y = (-30).dp).width(200.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(clock(target), fontSize = 24.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.25).sp, style = Shadowed)
+                Text(clock(target), fontSize = 15.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, style = Shadowed)
                 chapterAt(st.chapters, target)?.let {
                     Text(it, color = Color(0xCCFFFFFF), fontSize = 12.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Shadowed)
                 }

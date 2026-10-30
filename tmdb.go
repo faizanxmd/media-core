@@ -59,6 +59,7 @@ type tmdbMatch struct {
 type seasonMeta struct {
 	TMeta
 	At       float64        `json:"at"`
+	Failed   float64        `json:"failed,omitempty"` // last failed refresh: wait before trying again
 	Episodes map[int]*TMeta `json:"episodes"`
 }
 
@@ -126,6 +127,10 @@ func (t *TMDB) get(ctx context.Context, p string, q url.Values, out any) error {
 	req.URL, _ = url.Parse("https://api.themoviedb.org/3" + p + "?" + q.Encode())
 	resp, err := t.hc.Do(req)
 	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			return ue.Err // the URL holds the API key: keep it out of the logs
+		}
 		return err
 	}
 	defer resp.Body.Close()
@@ -232,12 +237,19 @@ func (t *TMDB) stale(cache map[int]*TMeta, folder string) int {
 }
 
 // seasonStale: a running show's season is re-read every 3 days for new
-// episode titles; ended shows never.
+// episode titles; ended shows never. A season we hold nothing for is always
+// wanted. After a failed fetch, wait an hour before trying again.
 func (t *TMDB) seasonStale(show, season int, status string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	sm := t.seasons[fmt.Sprintf("%d/%d", show, season)]
-	return sm == nil || status != "Ended" && status != "Canceled" && now()-sm.At > 3*86400
+	if sm == nil {
+		return true
+	}
+	if now()-sm.Failed < 3600 {
+		return false
+	}
+	return len(sm.Episodes) == 0 || status != "Ended" && status != "Canceled" && now()-sm.At > 3*86400
 }
 
 // FetchMissing looks up everything not cached yet. Returns true when it
@@ -316,8 +328,14 @@ func (t *TMDB) FetchMissing(movies, shows []*Item) bool {
 			}
 			if err := t.fetchSeason(ctx, id, sn.Season); err != nil {
 				log.Printf("tmdb: show %d season %d: %v", id, sn.Season, err)
-				t.mu.Lock() // don't ask again on every scan; retried with the 3-day refresh
-				t.seasons[fmt.Sprintf("%d/%d", id, sn.Season)] = &seasonMeta{At: now(), Episodes: map[int]*TMeta{}}
+				t.mu.Lock() // keep what we already have: one network error must not wipe a season
+				key := fmt.Sprintf("%d/%d", id, sn.Season)
+				sm := t.seasons[key]
+				if sm == nil {
+					sm = &seasonMeta{At: now(), Episodes: map[int]*TMeta{}}
+					t.seasons[key] = sm
+				}
+				sm.Failed = now()
 				t.mu.Unlock()
 			}
 			changed = true

@@ -150,10 +150,12 @@ fun FocusCard(
         modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocus() }
+            // focus sits outside the lift: scrolling to a card must see its resting size,
+            // or the list chases the card as it grows and every row bobs on each press
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .lift(focused, shape, scale)
             .background(Surface2)
-            .sheen(focused, radius)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+            .sheen(focused, radius),
     ) { content(focused) }
 }
 

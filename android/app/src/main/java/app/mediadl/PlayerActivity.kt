@@ -152,6 +152,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun scrub(deltaMs: Long) {
         if (st.mode == Mode.Hidden) st.mode = Mode.Seek
+        if (st.scrub == null) st.scrubFrom = player.currentPosition
         val from = st.scrub ?: player.currentPosition
         st.scrub = (from + deltaMs).coerceIn(0, maxOf(0, st.dur - 1000))
         ui.removeCallbacks(commit)
@@ -227,9 +228,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun cycleSpeed() {
         val speeds = listOf(1f, 1.25f, 1.5f, 2f, 0.75f)
-        val next = speeds[(speeds.indexOf(st.speed).coerceAtLeast(0) + 1) % speeds.size]
-        player.setPlaybackSpeed(next)
-        st.speed = next
+        setSpeed(speeds[(speeds.indexOf(st.speed).coerceAtLeast(0) + 1) % speeds.size])
+    }
+
+    override fun setSpeed(speed: Float) {
+        player.setPlaybackSpeed(speed)
+        st.speed = speed
         poke()
     }
 

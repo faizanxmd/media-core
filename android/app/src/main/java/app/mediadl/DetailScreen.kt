@@ -1,7 +1,9 @@
 package app.mediadl
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,6 +49,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -88,8 +92,8 @@ fun DetailScreen(nav: Nav, id: String) {
         if (error != null) ErrorView(error!!, onRetry = { error = null; scope.launch { load() } }) else Loading()
         return
     }
-    val main = Item.parse(d.getJSONObject("item"))
-    val upNext = d.optJSONObject("up_next")?.let(Item::parse)
+    val main = remember(d) { Item.parse(d.getJSONObject("item")) }
+    val upNext = remember(d) { d.optJSONObject("up_next")?.let(Item::parse) }
     val show = main.isShow
     LaunchedEffect(id) { delay(60); runCatching { playFr.requestFocus() } }
 
@@ -187,9 +191,12 @@ private fun Cast(cast: List<Person>) {
 }
 
 /** "Season 1 ⌄" (a picker when there are more), then that season's episodes as Apple-style cards. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Episodes(main: Item, upNext: Item?) {
     val ctx = LocalContext.current
+    val density = LocalDensity.current
+    val rowSpec = remember(density) { MinimalSpec(density.run { 56.dp.toPx() }) } // moves like Home's rows
     var season by remember(main.id) {
         mutableIntStateOf(main.seasons.indexOfFirst { s -> upNext != null && s.episodes.any { it.id == upNext.id } }.coerceAtLeast(0))
     }
@@ -198,14 +205,16 @@ private fun Episodes(main: Item, upNext: Item?) {
     Column {
         SeasonHeading(main.seasons.map { it.title }, season) { season = it }
         val state = rememberLazyListState(initialFirstVisibleItemIndex = s.episodes.indexOfFirst { it.id == upNext?.id }.coerceAtLeast(0))
-        LazyRow(
-            state = state,
-            contentPadding = PaddingValues(horizontal = 40.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            itemsIndexed(s.episodes, key = { _, it -> it.id }) { i, ep ->
-                EpisodeCard(ep, Modifier.rowEnds(i, s.episodes.size)) {
-                    PlayerActivity.play(ctx, queue, queue.indexOfFirst { it.id == ep.id }.coerceAtLeast(0))
+        CompositionLocalProvider(LocalBringIntoViewSpec provides rowSpec) {
+            LazyRow(
+                state = state,
+                contentPadding = PaddingValues(horizontal = 40.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                itemsIndexed(s.episodes, key = { _, it -> it.id }) { i, ep ->
+                    EpisodeCard(ep, Modifier.rowEnds(i, s.episodes.size)) {
+                        PlayerActivity.play(ctx, queue, queue.indexOfFirst { it.id == ep.id }.coerceAtLeast(0))
+                    }
                 }
             }
         }
