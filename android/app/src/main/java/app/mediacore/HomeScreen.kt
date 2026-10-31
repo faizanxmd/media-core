@@ -92,6 +92,7 @@ fun Nav.restoreHome(cache: java.io.File) {
 
 /** Asks mint for Home, off the UI thread. An unchanged answer redraws nothing (every return from the player asks). */
 suspend fun Nav.loadHome(cache: java.io.File) {
+    Api.settled()
     Offline.sync()
     val j = Api.get("/api/v1/home")
     withContext(Dispatchers.IO) {

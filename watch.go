@@ -8,6 +8,9 @@ import (
 )
 
 // WState is how far into a film/episode we are and whether it's been seen.
+// This server is the one record every app reads. An item is in exactly one of
+// three states: not started (pos 0), part-way (pos > 0, not watched) or
+// finished (pos 0, watched). A rewatch is part-way again; Plays keeps the history.
 type WState struct {
 	Pos     int64   `json:"pos"`           // ms; 0 when finished or never started
 	Dur     int64   `json:"dur,omitempty"` // ms, as the player reported it
@@ -28,12 +31,24 @@ var watchPath = filepath.Join(DataDir, "watch.json")
 func NewWatch() *Watch {
 	w := &Watch{m: map[string]*WState{}, path: watchPath}
 	readJSONFile(w.path, &w.m)
+	w.repair()
 	go func() { // progress ticks arrive every few seconds; write at most every 15 s
 		for range time.Tick(15 * time.Second) {
 			w.Flush()
 		}
 	}()
 	return w
+}
+
+// repair fixes entries saved before the three states were enforced: watched
+// with a position was a rewatch left part-way, so it's part-way.
+func (w *Watch) repair() {
+	for _, s := range w.m {
+		if s.Watched && s.Pos > 0 {
+			s.Watched = false
+			w.dirty = true
+		}
+	}
 }
 
 func (w *Watch) Flush() {
@@ -56,8 +71,10 @@ func (w *Watch) Get(id string) *WState {
 }
 
 // Progress records a position report from the player. Past 90% (or a
-// reported end) counts as watched.
-func (w *Watch) Progress(id string, pos, dur int64, ended bool) *WState {
+// reported end) counts as watched. at is when it happened, for a report saved
+// offline and sent later (0 means now); one older than what we know is dropped,
+// so a phone coming back online can't undo what was watched elsewhere since.
+func (w *Watch) Progress(id string, pos, dur int64, ended bool, at float64) *WState {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	s := w.m[id]
@@ -65,17 +82,24 @@ func (w *Watch) Progress(id string, pos, dur int64, ended bool) *WState {
 		s = &WState{}
 		w.m[id] = s
 	}
-	s.At, s.Dur = now(), max(dur, s.Dur)
+	if at > 0 && at < s.At {
+		cp := *s
+		return &cp
+	}
+	if at <= 0 {
+		at = now()
+	}
+	s.Dur = max(dur, s.Dur)
 	switch {
-	case ended || dur > 0 && pos >= dur*9/10:
-		if s.Pos > 0 || !s.Watched || ended { // count a play once per viewing
+	case ended || s.Dur > 0 && pos >= s.Dur*9/10:
+		if !s.Watched { // count a play once per viewing
 			s.Plays++
 		}
-		s.Watched, s.Pos = true, 0
+		s.Watched, s.Pos, s.At = true, 0, at
 	case pos < 20_000 && s.Pos == 0:
-		// opened and closed straight away: don't put it on Continue Watching
+		// opened and closed straight away: nothing changes, so it stays off Continue Watching
 	default:
-		s.Pos = pos
+		s.Watched, s.Pos, s.At = false, pos, at
 	}
 	w.dirty = true
 	cp := *s
@@ -142,27 +166,11 @@ func (w *Watch) continueRow(movies, shows []*Item) []*Item {
 		}
 	}
 	for _, sh := range shows {
-		eps := episodesOf(sh)
-		var last float64
-		lastIdx := -1
-		for i, e := range eps {
-			if s := w.Get(e.ID); s != nil && (s.Watched || s.Pos > 0) && s.At >= last {
-				last, lastIdx = s.At, i
-			}
-		}
-		if lastIdx < 0 || now()-last > 120*86400 { // abandoned for 4 months: drop it
+		ep, last := w.carryOn(episodesOf(sh))
+		if ep == nil || now()-last > 120*86400 { // abandoned for 4 months: drop it
 			continue
 		}
-		if s := w.Get(eps[lastIdx].ID); s.Pos > 0 && !s.Watched {
-			out = append(out, entry{eps[lastIdx], last})
-			continue
-		}
-		for _, e := range eps[lastIdx+1:] { // next one not seen yet
-			if s := w.Get(e.ID); s == nil || !s.Watched {
-				out = append(out, entry{e, last})
-				break
-			}
-		}
+		out = append(out, entry{ep, last})
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].at > out[b].at })
 	items := make([]*Item, len(out))
@@ -170,6 +178,30 @@ func (w *Watch) continueRow(movies, shows []*Item) []*Item {
 		items[i] = e.it
 	}
 	return items
+}
+
+// carryOn is where you left off in these episodes, and when: the one played
+// last if it's part-way, else the next one not seen yet. nil if there's none.
+func (w *Watch) carryOn(eps []*Item) (*Item, float64) {
+	var last float64
+	lastIdx := -1
+	for i, e := range eps {
+		if s := w.Get(e.ID); s != nil && (s.Watched || s.Pos > 0) && s.At >= last {
+			last, lastIdx = s.At, i
+		}
+	}
+	if lastIdx < 0 {
+		return nil, 0
+	}
+	if s := w.Get(eps[lastIdx].ID); s.Pos > 0 {
+		return eps[lastIdx], last
+	}
+	for _, e := range eps[lastIdx+1:] {
+		if s := w.Get(e.ID); s == nil || !s.Watched {
+			return e, last
+		}
+	}
+	return nil, 0
 }
 
 // nextEpisode is what plays after ep (for autoplay), or nil.

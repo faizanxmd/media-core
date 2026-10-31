@@ -883,6 +883,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         setContentView(root)
     }
 
+    override fun onPause() {
+        super.onPause()
+        report(false) // before the screen underneath wakes and asks: onStop only comes after that
+    }
+
     override fun onStop() {
         super.onStop()
         // leaving (Home button, Back, screen off): save the spot and free the decoder

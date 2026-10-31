@@ -39,6 +39,7 @@ fun Nav.restoreHome(cache: java.io.File) {
 }
 
 suspend fun Nav.loadHome(cache: java.io.File) {
+    Api.settled()
     Offline.sync()
     val j = Api.get("/api/v1/home")
     withContext(Dispatchers.IO) {

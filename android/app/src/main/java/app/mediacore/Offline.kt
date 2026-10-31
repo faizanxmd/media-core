@@ -101,7 +101,7 @@ object Offline {
     private val prefs get() = ctx.getSharedPreferences("offline-progress", Context.MODE_PRIVATE)
 
     fun savePos(id: String, pos: Long, dur: Long, ended: Boolean) {
-        prefs.edit().putString(id, JSONObject().put("pos", pos).put("dur", dur).put("ended", ended).toString()).apply()
+        prefs.edit().putString(id, JSONObject().put("pos", pos).put("dur", dur).put("ended", ended).put("at", System.currentTimeMillis() / 1000.0).toString()).apply()
     }
 
     /** An offline item shows the newest position we know of (local beats the copy from download time). */
@@ -111,16 +111,18 @@ object Offline {
         return it.copy(watch = w)
     }
 
-    /** Sends offline positions to mint once it's reachable again. */
+    /** Sends offline positions to mint once it's reachable again, with when they happened; mint drops any it has newer news of. */
     suspend fun sync() {
         val all = prefs.all
         for ((id, v) in all) {
             val p = runCatching { JSONObject(v as String) }.getOrNull() ?: continue
+            if (p.optBoolean("sent")) continue
             val ok = runCatching {
                 Api.post("/api/v1/progress", JSONObject().put("id", id).put("pos", p.optLong("pos"))
-                    .put("dur", p.optLong("dur")).put("ended", p.optBoolean("ended")))
+                    .put("dur", p.optLong("dur")).put("ended", p.optBoolean("ended")).put("at", p.optDouble("at", 0.0)))
             }.isSuccess
-            if (ok) prefs.edit().remove(id).apply()
+            // kept, because the offline copy still resumes from it
+            if (ok) prefs.edit().putString(id, p.put("sent", true).toString()).apply()
         }
     }
 

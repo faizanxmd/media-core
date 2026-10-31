@@ -263,11 +263,13 @@ func (p *Player) item(w http.ResponseWriter, r *http.Request) {
 	if it.Type == "show" || it.Type == "season" {
 		// what the big Play button starts: the in-progress or next unseen episode
 		eps := episodesOf(it)
-		var pick *Item
-		for _, e := range eps {
-			if s := p.w.Get(e.ID); s == nil || !s.Watched {
-				pick = e
-				break
+		pick, _ := p.w.carryOn(eps) // the same episode Continue Watching offers
+		if pick == nil {
+			for _, e := range eps {
+				if s := p.w.Get(e.ID); s == nil || !s.Watched {
+					pick = e
+					break
+				}
 			}
 		}
 		if pick == nil && len(eps) > 0 {
@@ -282,10 +284,11 @@ func (p *Player) item(w http.ResponseWriter, r *http.Request) {
 
 func (p *Player) progress(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		ID    string `json:"id"`
-		Pos   int64  `json:"pos"`
-		Dur   int64  `json:"dur"`
-		Ended bool   `json:"ended"`
+		ID    string  `json:"id"`
+		Pos   int64   `json:"pos"`
+		Dur   int64   `json:"dur"`
+		Ended bool    `json:"ended"`
+		At    float64 `json:"at"` // when it happened, if it was saved offline
 	}
 	if !readJSON(w, r, &b) {
 		return
@@ -298,7 +301,7 @@ func (p *Player) progress(w http.ResponseWriter, r *http.Request) {
 	if !b.Ended {
 		touchPlaying(r, b.ID)
 	}
-	writeJSON(w, 200, p.w.Progress(b.ID, b.Pos, b.Dur, b.Ended))
+	writeJSON(w, 200, p.w.Progress(b.ID, b.Pos, b.Dur, b.Ended, b.At))
 }
 
 func (p *Player) watched(w http.ResponseWriter, r *http.Request) {

@@ -157,15 +157,23 @@ object Api {
     fun stream(id: String): String = "$base/api/v1/stream/$id"
     fun sub(id: String, n: Int): String = "$base/api/v1/sub/$id/$n"
 
+    private val sending = java.util.concurrent.atomic.AtomicInteger()
+
+    /** Waits briefly for positions still on their way, so what's asked for next already includes them. */
+    suspend fun settled() {
+        withTimeoutOrNull(1500) { while (sending.get() > 0) kotlinx.coroutines.delay(25) }
+    }
+
     fun progress(id: String, pos: Long, dur: Long, ended: Boolean) {
         val body = JSONObject().put("id", id).put("pos", pos).put("dur", dur).put("ended", ended)
         // fire-and-forget on OkHttp's own threads; works even while the activity is finishing
+        sending.incrementAndGet()
         http.newCall(
             Request.Builder().url("$base/api/v1/progress")
                 .post(body.toString().toRequestBody("application/json".toMediaType())).build()
         ).enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: IOException) {}
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) { response.close() }
+            override fun onFailure(call: okhttp3.Call, e: IOException) { sending.decrementAndGet() }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) { response.close(); sending.decrementAndGet() }
         })
     }
 }

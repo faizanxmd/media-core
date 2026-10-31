@@ -73,8 +73,22 @@ class MainActivity : ComponentActivity() {
         setContent { AppTheme { Root(nav) } }
     }
 
+    // while the app sits open, pick up what's being watched on other devices
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private val keepUp = object : Runnable {
+        override fun run() {
+            nav.refresh++
+            ui.postDelayed(this, 60_000)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        ui.removeCallbacks(keepUp)
+    }
+
     override fun onResume() {
         super.onResume()
-        nav.refresh++
+        keepUp.run()
     }
 }

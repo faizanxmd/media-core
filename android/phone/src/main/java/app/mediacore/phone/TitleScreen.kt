@@ -57,6 +57,7 @@ fun TitleScreen(nav: Nav, id: String) {
     var error by remember(id) { mutableStateOf<String?>(null) }
     suspend fun load() {
         try {
+            Api.settled()
             val j = Api.get("/api/v1/item/$id")
             nav.titles[id] = j
             data = j

@@ -87,6 +87,7 @@ fun DetailScreen(nav: Nav, id: String) {
 
     suspend fun load() {
         try {
+            Api.settled()
             val j = Api.get("/api/v1/item/$id")
             data = withContext(Dispatchers.Default) { Item.parse(j.getJSONObject("item")) to j.optJSONObject("up_next")?.let(Item::parse) }
         } catch (e: Exception) {
