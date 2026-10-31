@@ -5,6 +5,9 @@ build/
 local.properties
 *.apk
 *.aab
+.idea/
+*.iml
+captures/
 
 # signing keys and secrets live in ~/.config/media-core, never here
 *.jks
@@ -13,9 +16,7 @@ local.properties
 *.pass
 .env*
 
-# Python
-__pycache__/
-*.pyc
+# Go binary (deploy/install.sh builds to ~/.local/bin)
+/engine/media-core-engine
 
-# Go binary
-/media-core-engine
+.DS_Store
