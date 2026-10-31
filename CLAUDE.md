@@ -3,7 +3,9 @@
 See [README.md](README.md) for the layout, setup and how the parts fit.
 
 ## Builds
-Build the apps only when the user asks. Never run `android/build.sh`, Gradle build tasks or adb installs on your own, and don't offer a build after each change.
+Build the apps only when the user asks. Never run `scripts/ci-build.sh`, `android/build.sh`, Gradle build tasks or adb installs on your own, and don't offer a build after each change.
+
+Builds run on GitHub Actions, not on mint: `scripts/ci-build.sh [both|tv|phone]` starts one, waits and publishes the APKs on mint, where both apps offer the update. Run it as its own systemd unit. Keep `android/build.sh` for when GitHub can't be used.
 
 Make the change, commit it to GitHub, and add it to [docs/PENDING.md](docs/PENDING.md). When the batch is ready, the user asks for the build, tests it and reports back. After that build, clear the list and tag the commit (`tv-YYYY.MM.DD-HHMM` / `phone-...`, the build's version name).
 

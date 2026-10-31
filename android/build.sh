@@ -53,7 +53,8 @@ mkdir -p "$OUT"
 
 if [ "${1:-}" = "--phone" ]; then
   nice -n 10 "$GRADLE" --no-daemon -q :phone:assembleRelease -Pvcode="$VCODE" -Pvname="$VNAME"
-  cp phone/build/outputs/apk/release/phone-release.apk "$OUT/media-core-phone.apk"
+  cp phone/build/outputs/apk/release/phone-release.apk "$OUT/media-core-phone.apk.tmp" && mv "$OUT/media-core-phone.apk.tmp" "$OUT/media-core-phone.apk"
+  printf '{"version_code":%s,"version_name":"%s","size":%s}\n' "$VCODE" "$VNAME" "$(wc -c < "$OUT/media-core-phone.apk" | tr -d ' ')" > "$OUT/media-core-phone.json"
   echo "built phone $VNAME ($VCODE), $(du -h "$OUT/media-core-phone.apk" | cut -f1) -> $OUT/media-core-phone.apk"
   exit 0
 fi

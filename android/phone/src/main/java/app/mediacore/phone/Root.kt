@@ -2,6 +2,7 @@ package app.mediacore.phone
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +24,7 @@ import androidx.compose.ui.unit.dp
 
 /** Pages over the bottom bar; a title page covers it. */
 @Composable
-fun Root(nav: Nav) {
+fun Root(nav: Nav, onUpdate: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Base)) {
         BackHandler(enabled = nav.stack.size > 1) { nav.back() }
         val s = nav.stack.last()
@@ -40,9 +41,22 @@ fun Root(nav: Nav) {
                         }
                     }
                 }
+                if (nav.update) UpdateBar(onUpdate)
                 TabBar(nav.tab, nav::go)
             }
         }
+    }
+}
+
+@Composable
+private fun UpdateBar(onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(ButtonHeight).background(Raised).tap(onClick = onClick).padding(horizontal = Side),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("New version available", style = Type.Body, color = Muted)
+        Text("Update", style = Type.Label)
     }
 }
 

@@ -72,13 +72,25 @@ You need JDK 17 and the Android SDK (platform 36, build-tools 36). Gradle comes 
 - **macOS:** install Android Studio, or `brew install --cask android-commandlinetools`, and set `ANDROID_HOME`.
 - Android Studio can open `android/` directly.
 
+Builds normally run on GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml)), started by hand, so mint only downloads the result:
+
+```sh
+scripts/ci-build.sh                 # build both apps from origin/main, wait, publish on mint
+scripts/ci-build.sh tv              # or just one: tv | phone
+scripts/ci-build.sh --latest        # publish the newest build started from the GitHub site or app
+```
+
+The workflow signs with the repo secrets `MEDIA_CORE_KEYSTORE_B64` (base64 of `app.jks`) and `MEDIA_CORE_KS_PASS`. GitHub can't give these back, so they aren't a backup of the key.
+
+To build locally instead (slow and heavy on mint):
+
 ```sh
 android/build.sh                    # TV app  -> ~/.local/share/media-core/app/media-core.apk (+ .json version file)
-android/build.sh --phone            # phone   -> ~/.local/share/media-core/app/media-core-phone.apk
+android/build.sh --phone            # phone   -> ~/.local/share/media-core/app/media-core-phone.apk (+ .json)
 android/build.sh --install <tv-ip>  # TV app, then adb install (TV: Developer options > Network debugging)
 ```
 
-The engine serves the TV APK at `/api/v1/app.apk`, and the TV offers "Update app" when a newer build appears. Build on mint, or build elsewhere and copy `media-core.apk` and `media-core.json` into mint's `~/.local/share/media-core/app/`. `MEDIA_CORE_APK_DIR` changes where the build output goes.
+The engine serves the APKs at `/api/v1/app.apk` (TV) and `/api/v1/phone-app.apk` (phone), and each app offers an update when a newer build appears. `MEDIA_CORE_APK_DIR` changes where the build output goes.
 
 Headless emulators for UI checks: `scripts/android-setup.sh --emulator`, then `scripts/emulator.sh tv|phone`.
 

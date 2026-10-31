@@ -4,6 +4,19 @@ Changes committed but not yet built or tested. Cleared after each build the user
 
 Last published builds: TV 2026.10.30-2319, phone 2026.10.31-0019.
 
+## Builds on GitHub Actions, and the phone updates itself
+
+The next build is the first real one on GitHub Actions.
+
+**Phone app (needs a build)**
+- A "New version available" bar sits above the bottom tabs when mint has a newer phone build. Tapping it downloads and installs the update, as on the TV.
+- The installed phone app doesn't have this yet, so install the next build by hand once: open `http://mint.tail25d09d.ts.net:8790/api/v1/phone-app.apk` in the phone's browser, or use Taildrop.
+
+### To test
+1. After the build, the TV shows "Update available" and installs it. It must install over the old app, which proves GitHub signs with the same key.
+2. Install the phone build by hand. It must install over the old app and keep its offline downloads.
+3. Run a later build. The bar appears on the phone, and tapping it asks once for permission to install updates, then installs.
+
 ## Progress sync across TV and phone ([#1](https://github.com/faizanxmd/media-core/issues/1))
 
 **Engine (live on mint since 2026-10-31 15:24, no app build needed)**

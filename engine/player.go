@@ -91,12 +91,18 @@ func (p *Player) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/img/{size}/{file}", p.t.serveImage)
 	mux.HandleFunc("GET /api/v1/match/{id}", p.matchSearch)
 	mux.HandleFunc("POST /api/v1/match", p.rematch)
-	mux.HandleFunc("GET /api/v1/app", p.appInfo)
-	mux.HandleFunc("GET /api/v1/app.apk", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/app", appInfo("media-core"))
+	mux.HandleFunc("GET /api/v1/app.apk", serveAPK("media-core"))
+	mux.HandleFunc("GET /api/v1/phone-app", appInfo("media-core-phone"))
+	mux.HandleFunc("GET /api/v1/phone-app.apk", serveAPK("media-core-phone"))
+}
+
+func serveAPK(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
-		w.Header().Set("Content-Disposition", `attachment; filename="media-core.apk"`)
-		http.ServeFile(w, r, filepath.Join(DataDir, "app", "media-core.apk"))
-	})
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.apk"`)
+		http.ServeFile(w, r, filepath.Join(DataDir, "app", name+".apk"))
+	}
 }
 
 // list is what the poster rows and grids need: no chapters or cast, which
@@ -151,7 +157,7 @@ func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
 	}
 	host, _ := os.Hostname()
 	writeJSON(w, 200, map[string]any{"name": host, "lan": lan, "tailscale": ts,
-		"magicdns": "http://mint.tail25d09d.ts.net" + PlayerListen, "app": readAppInfo()})
+		"magicdns": "http://mint.tail25d09d.ts.net" + PlayerListen, "app": readAppInfo("media-core")})
 }
 
 type dlRow struct {
@@ -424,21 +430,23 @@ type AppInfo struct {
 	Size        int64  `json:"size"`
 }
 
-func readAppInfo() *AppInfo {
+func readAppInfo(name string) *AppInfo {
 	var a AppInfo
-	b, err := os.ReadFile(filepath.Join(DataDir, "app", "media-core.json"))
+	b, err := os.ReadFile(filepath.Join(DataDir, "app", name+".json"))
 	if err != nil || json.Unmarshal(b, &a) != nil {
 		return nil
 	}
 	return &a
 }
 
-func (p *Player) appInfo(w http.ResponseWriter, r *http.Request) {
-	if a := readAppInfo(); a != nil {
-		writeJSON(w, 200, a)
-		return
+func appInfo(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if a := readAppInfo(name); a != nil {
+			writeJSON(w, 200, a)
+			return
+		}
+		errJSON(w, 404, "no app build yet")
 	}
-	errJSON(w, 404, "no app build yet")
 }
 
 // servePlayer runs the player API on its own port. Firewall: home Wi-Fi +
