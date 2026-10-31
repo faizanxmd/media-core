@@ -10,7 +10,7 @@ plugins {
 val vCode = (findProperty("vcode") as String?)?.toInt() ?: 1
 val vName = (findProperty("vname") as String?) ?: "dev"
 
-// The phone app stands alone: it shares no code with the TV app in ../app, only the server's API.
+// The phone app: its screens and player are its own. Plumbing it shares with the TV app is in ../core.
 android {
     namespace = "app.mediacore.phone"
     compileSdk = 36
@@ -55,6 +55,7 @@ android {
 kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 
 dependencies {
+    implementation(project(":core"))
     val media3 = "1.8.0"
     implementation(platform("androidx.compose:compose-bom:2025.09.00"))
     implementation("androidx.compose.ui:ui")

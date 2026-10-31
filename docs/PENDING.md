@@ -4,6 +4,16 @@ Changes committed but not yet built or tested. Cleared after each build the user
 
 Last published builds: TV 2026.10.30-2319, phone 2026.10.31-0019.
 
+## Shared code in android/core
+
+The TV and phone apps now use one copy of Api, Models, Offline and Thumbs. Nothing should look or behave differently. This hasn't been compiled yet, so the next build is its first check. If it fails, nothing gets published.
+
+### To test
+1. Both apps open, find mint at home and over Tailscale, and play a film.
+2. Scrub pictures appear on both.
+3. On the phone, an existing offline copy still plays, and a new download waits for Wi-Fi.
+4. On the TV, a title's Atmos, Dolby Vision and other format marks still show.
+
 ## Builds on GitHub Actions, and the phone updates itself
 
 The next build is the first real one on GitHub Actions.

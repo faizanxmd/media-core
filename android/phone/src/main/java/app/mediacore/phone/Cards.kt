@@ -22,6 +22,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.mediacore.core.Info
+import app.mediacore.core.Item
+import app.mediacore.core.hm
 import coil3.compose.AsyncImage
 
 /** The picture at the top of Home and every title page: 4:3 across the screen, under the status bar. */

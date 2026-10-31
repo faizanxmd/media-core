@@ -25,6 +25,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.mediacore.core.Item
+import app.mediacore.core.Offline
+import app.mediacore.core.hm
 
 @Composable
 fun HomeScreen(nav: Nav) {

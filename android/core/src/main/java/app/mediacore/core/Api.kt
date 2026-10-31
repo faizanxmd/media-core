@@ -1,4 +1,4 @@
-package app.mediacore
+package app.mediacore.core
 
 import android.content.Context
 import android.content.SharedPreferences

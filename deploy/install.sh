@@ -30,12 +30,15 @@ go test ./...
 go build -trimpath -ldflags='-s -w' -o "$HOME/.local/bin/media-core-engine.new" .
 mv "$HOME/.local/bin/media-core-engine.new" "$HOME/.local/bin/media-core-engine"
 
+# nightly backup of watch progress and settings
+install -m 755 "$ROOT/deploy/backup-state.sh" "$HOME/.local/bin/media-core-backup"
+
 # services
-for u in media-core-aria2.service media-core-engine.service; do
+for u in media-core-aria2.service media-core-engine.service media-core-backup.service media-core-backup.timer; do
   cmp -s "$ROOT/deploy/$u" "$UNITS/$u" || { cp "$ROOT/deploy/$u" "$UNITS/$u"; echo "installed $UNITS/$u"; }
 done
 systemctl --user daemon-reload
-systemctl --user enable --now media-core-aria2.service media-core-engine.service >/dev/null
+systemctl --user enable --now media-core-aria2.service media-core-engine.service media-core-backup.timer >/dev/null
 systemctl --user restart media-core-engine.service
 sleep 1
 systemctl --user --no-pager --lines=5 status media-core-engine.service | head -12

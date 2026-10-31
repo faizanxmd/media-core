@@ -1,4 +1,4 @@
-package app.mediacore.phone
+package app.mediacore.core
 
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -108,7 +108,7 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
                     part.outputStream().use { out -> r.body!!.byteStream().copyTo(out) }
                 }
                 part.renameTo(f)
-                // only the last few videos stay on the phone
+                // only the last few videos stay on the device
                 dir.listFiles { x -> x.name.endsWith(".bin") }?.sortedByDescending { it.lastModified() }?.drop(6)?.forEach { it.delete() }
             }.isSuccess
         }

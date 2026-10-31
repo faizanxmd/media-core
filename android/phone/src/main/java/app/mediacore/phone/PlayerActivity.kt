@@ -43,6 +43,12 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import app.mediacore.core.Api
+import app.mediacore.core.Item
+import app.mediacore.core.Offline
+import app.mediacore.core.ThumbStore
+import app.mediacore.core.mins
+import app.mediacore.core.objects
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import org.json.JSONArray

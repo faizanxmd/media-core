@@ -1,6 +1,7 @@
 package app.mediacore.phone
 
 import android.app.Application
+import app.mediacore.core.Api
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader

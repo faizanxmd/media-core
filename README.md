@@ -6,12 +6,13 @@ A private Plex replacement. A server on the home box ("mint") downloads links st
 |---|---|---|
 | **media-core-engine** | `engine/` | Go server, standard library only, with its web UI embedded. Downloads through aria2, unpacks, renames, fixes Dolby Vision, keeps the catalog with TMDB metadata, records watch progress, finds intros, makes scrub thumbnails, streams files and serves WebDAV. |
 | **TV app** | `android/app` | Kotlin, Jetpack Compose and Media3. Id `app.mediacore`. Updates itself from the engine. |
-| **Phone app** | `android/phone` | A separate module that shares no code with the TV app. Id `app.mediacore.phone`. Has offline downloads. |
+| **Phone app** | `android/phone` | Its own screens and player. Id `app.mediacore.phone`. Has offline downloads. |
+| **Shared core** | `android/core` | Used by both apps: the engine API, its data, offline copies and scrub pictures. |
 
 ```
 engine/          Go module: *.go, web/ (embedded UI), testdata/
-android/         Gradle project: app/ (TV), phone/, brand/ (logo sources), build.sh
-deploy/          install.sh, systemd user units, aria2.conf template
+android/         Gradle project: app/ (TV), phone/, core/ (shared), brand/ (logo sources), build.sh
+deploy/          install.sh, backup-state.sh, systemd user units, aria2.conf template
 scripts/         Android SDK setup, headless emulators
 docs/            design systems (TV, phone), PENDING.md (changes waiting for a build)
 ```
@@ -26,13 +27,15 @@ TV / phone app ◀─ :8790 player API /api/v1, streaming, WebDAV /dav (home LAN
 
 - The engine never transcodes. Files are streamed as they are, with HTTP ranges, and the apps decode them (Media3, plus FFmpeg decoders for DTS and TrueHD).
 - Library layout: `Movies/<Title> (<Year>)/…`, `TV Shows/<Show>/Season 01/<Show> - S01E01.ext` and `Music/<Artist>/<Album>/`. The catalog skips dot-folders.
-- Two systemd user services: `media-core-engine` and `media-core-aria2`.
+- Two systemd user services, `media-core-engine` and `media-core-aria2`, plus the nightly `media-core-backup.timer`.
 
 | Path | What | In git? |
 |---|---|---|
 | `~/.config/media-core/` | `aria2.conf` (RPC secret), `tmdb.key`, `webdav.pass`, `app.jks` and `app.jks.pass` (the app signing key) | **never** |
 | `~/.local/share/media-core/` | jobs, watch state, TMDB cache, thumbs, intros, built APKs | no (runtime data) |
 | `~/.local/bin/media-core-engine` | engine binary, built by `deploy/install.sh` | no |
+
+Every night `media-core-backup` saves watch progress, settings, intro data and title matches to `~/.local/share/media-core/backups/state/`, and to a USB stick mounted at `/mnt/media-core-usb` when there is one. It keeps 30 days. To restore, stop the engine, unpack the newest `state-*.tgz` into `~/.local/share/media-core/` and start it again. The signing key isn't in this backup, so keep a copy off the box.
 
 **Keep `app.jks` and `app.jks.pass` safe.** Every build must be signed with them. If the key is lost, the installed apps won't take updates and have to be uninstalled, which wipes their offline downloads.
 
@@ -106,6 +109,12 @@ sudo apt install aria2 ffmpeg p7zip-full mkvtoolnix   # Ubuntu's ffmpeg has the 
 sudo mkdir -p /srv/data/media/{Movies,"TV Shows",Music}   # owned by your user, group media, mode 2775
 sudo loginctl enable-linger "$USER"                       # user services start at boot
 deploy/install.sh
+```
+
+To also keep the nightly backup on a USB stick, so it survives the main disk dying, add it to `/etc/fstab` using its UUID and filesystem type from `lsblk -f`, then make the folder and run `sudo systemctl daemon-reload && sudo systemctl start mnt-media\\x2dcore\\x2dusb.automount`:
+
+```
+UUID=<uuid> /mnt/media-core-usb exfat noauto,nofail,x-systemd.automount,x-systemd.idle-timeout=60,x-systemd.device-timeout=5,uid=1000,gid=1000,umask=077 0 0
 ```
 
 `deploy/install.sh` builds, tests and installs the binary and units, creates `aria2.conf` with a random secret the first time, and restarts the engine. Re-running it deploys engine changes. Firewall: allow 8780 on `tailscale0` only, and 8790 on the home LAN plus `tailscale0`.

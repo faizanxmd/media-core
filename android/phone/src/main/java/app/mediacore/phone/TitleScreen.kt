@@ -41,6 +41,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.mediacore.core.Api
+import app.mediacore.core.Item
+import app.mediacore.core.Offline
+import app.mediacore.core.Person
+import app.mediacore.core.hm
+import app.mediacore.core.objects
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

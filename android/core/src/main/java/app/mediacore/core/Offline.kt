@@ -1,4 +1,4 @@
-package app.mediacore
+package app.mediacore.core
 
 import android.app.DownloadManager
 import android.content.Context
@@ -20,9 +20,12 @@ import java.io.File
 object Offline {
     private lateinit var dir: File
     private lateinit var ctx: Context
+    private var allowMetered = false
 
-    fun init(c: Context) {
+    /** [overMetered]: may a download use mobile data? Films are big, so the phone waits for Wi-Fi. */
+    fun init(c: Context, overMetered: Boolean = false) {
         ctx = c.applicationContext
+        allowMetered = overMetered
         dir = File(ctx.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: ctx.filesDir, "offline").apply { mkdirs() }
     }
 
@@ -75,7 +78,7 @@ object Offline {
             .setDescription("Media Core · for offline")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationUri(Uri.fromFile(videoFile(item.id)))
-            .setAllowedOverMetered(true)
+            .setAllowedOverMetered(allowMetered)
         videoFile(item.id).delete()
         val dl = dm.enqueue(req)
         raw.put("_dl", dl).put("_at", System.currentTimeMillis())

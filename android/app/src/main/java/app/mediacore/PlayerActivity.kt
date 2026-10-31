@@ -45,6 +45,12 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import app.mediacore.core.Api
+import app.mediacore.core.Item
+import app.mediacore.core.Offline
+import app.mediacore.core.ThumbStore
+import app.mediacore.core.mins
+import app.mediacore.core.objects
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import org.json.JSONArray
@@ -417,7 +423,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         Api.init(this)
-        Offline.init(this)
+        Offline.init(this, overMetered = true)
         val arr = JSONArray(intent.getStringExtra("queue") ?: "[]")
         for (i in 0 until arr.length()) queue += arr.getJSONObject(i)
         if (queue.isEmpty()) { finish(); return }

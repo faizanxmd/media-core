@@ -86,6 +86,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import app.mediacore.core.Api
+import app.mediacore.core.Info
+import app.mediacore.core.Item
+import app.mediacore.core.leftText
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware

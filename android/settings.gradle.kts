@@ -7,4 +7,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "media-core"
 include(":app") // the TV app
-include(":phone") // the phone app: shares no code with :app
+include(":phone") // the phone app: its screens and player are its own
+include(":core") // what both apps share: engine API, data, offline copies, scrub pictures

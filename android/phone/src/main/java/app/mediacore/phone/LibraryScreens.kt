@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import app.mediacore.core.Api
+import app.mediacore.core.Item
 import kotlinx.coroutines.delay
 
 /** Films or Shows: the bottom bar and a poster grid, nothing else. */

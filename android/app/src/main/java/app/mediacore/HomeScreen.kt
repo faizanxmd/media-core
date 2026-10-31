@@ -42,6 +42,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.mediacore.core.Api
+import app.mediacore.core.Home
+import app.mediacore.core.Item
+import app.mediacore.core.Offline
+import app.mediacore.core.hm
 import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.ImageRequest

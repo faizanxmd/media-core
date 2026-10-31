@@ -77,6 +77,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.mediacore.core.ThumbStore
+import app.mediacore.core.clock
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlin.math.abs

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.mediacore.core.ThumbStore
 
 /**
  * Hidden: just the picture (a double tap skips, with only a small mark).

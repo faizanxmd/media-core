@@ -1,7 +1,7 @@
 # Media Core design system (phone)
 
 The TV's rules (`design-system.md`), moved to a thumb. Sizes are in dp on the Galaxy A55's 412 x 915 layout.
-A value that isn't here doesn't get used, and the code is `android/phone`, which shares nothing with the TV's.
+A value that isn't here doesn't get used, and the code is `android/phone`, whose screens share nothing with the TV's.
 
 ## Same as the TV
 

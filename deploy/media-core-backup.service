@@ -1,0 +1,8 @@
+[Unit]
+Description=Media Core - back up watch progress and settings
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/media-core-backup
+Nice=19
+IOSchedulingClass=idle

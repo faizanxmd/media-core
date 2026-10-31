@@ -11,8 +11,8 @@ Make the change, commit it to GitHub, and add it to [docs/PENDING.md](docs/PENDI
 
 Engine changes go live with `deploy/install.sh` (builds, tests, restarts the service on mint).
 
-## Two apps, one copy each
-`android/app` (TV) and `android/phone` share no code. A fix in the copied plumbing (Api, Models, Offline, Thumbs, player engine) goes in both.
+## Two apps, one shared core
+`android/core` holds what both apps use to talk to the engine: Api, Models, Offline and Thumbs. Fix those once, there. Screens stay in `android/app` (TV) and `android/phone`, and each keeps its own player, so a fix in the player engine goes in both.
 
 ## Watch state
 The engine's `engine/watch.go` is the one record of progress, and every app reads it. An item is not started, part-way or finished, never two at once. Rules about progress belong there, not in an app.

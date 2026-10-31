@@ -55,6 +55,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.mediacore.core.ThumbStore
+import app.mediacore.core.clock
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope

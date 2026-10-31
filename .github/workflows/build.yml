@@ -45,7 +45,7 @@ jobs:
       - name: Check the Gradle setup
         if: inputs.what == 'check'
         working-directory: android
-        run: ./gradlew --no-daemon -q :app:help :phone:help
+        run: ./gradlew --no-daemon -q :core:help :app:help :phone:help
 
       - name: Build
         if: inputs.what != 'check'
