@@ -1,0 +1,18 @@
+[Unit]
+Description=Media Core Engine - downloads into the library + streams to the TV app (http://mint:8780, Tailscale only)
+After=network-online.target media-core-aria2.service
+Wants=media-core-aria2.service
+
+[Service]
+ExecStart=%h/.local/bin/media-core-engine serve
+Restart=on-failure
+RestartSec=3
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+UMask=0002
+# post-processing children (ffmpeg, 7z) may be mid-run on restart; the app
+# picks those jobs up again, so a quick stop is fine
+TimeoutStopSec=10
+MemoryHigh=300M
+
+[Install]
+WantedBy=default.target

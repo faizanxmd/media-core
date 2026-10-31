@@ -1,0 +1,33 @@
+# aria2 daemon for Media Core (media-core-aria2.service). RPC on localhost only.
+enable-rpc=true
+rpc-listen-port=6800
+rpc-listen-all=false
+rpc-secret=@SECRET@
+
+# queue survives restarts; partial downloads resume (.aria2 control files)
+input-file=@HOME@/.local/share/media-core/aria2.session
+save-session=@HOME@/.local/share/media-core/aria2.session
+save-session-interval=20
+continue=true
+auto-file-renaming=false
+allow-overwrite=false
+max-concurrent-downloads=1
+max-download-result=200
+
+# per-download split/connections are set by Media Core from the link check
+max-connection-per-server=16
+split=16
+min-split-size=8M
+max-tries=20
+retry-wait=15
+connect-timeout=30
+timeout=60
+user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15
+
+# HDD-friendly: reserve the whole file up front (no fragmentation from 16
+# parallel pieces) and batch small writes in RAM before they hit the disk
+file-allocation=falloc
+disk-cache=32M
+
+summary-interval=0
+console-log-level=warn
