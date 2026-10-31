@@ -285,6 +285,7 @@ func (s *Server) routes() http.Handler {
 		writeJSON(w, 200, map[string]any{"ok": true, "freed": freed})
 	})
 	s.p.mount(mux) // the app's API is reachable here too (Tailscale)
+	mountWebCopies(mux, s.p)
 	mux.HandleFunc("GET /api/settings", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.e.settings.get())
 	})

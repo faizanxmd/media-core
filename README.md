@@ -5,6 +5,7 @@ A private Plex replacement. A server on the home box ("mint") downloads links st
 | Part | Where | What |
 |---|---|---|
 | **media-core-engine** | `engine/` | Go server, standard library only, with its web UI embedded. Downloads through aria2, unpacks, renames, fixes Dolby Vision, keeps the catalog with TMDB metadata, records watch progress, finds intros, makes scrub thumbnails, streams files and serves WebDAV. |
+| **Web player** | `engine/web` | The site at `mint:8780`: the TV app's screens and player in a browser (hls.js, plain JS), with adding links, downloads and files under Add. Plays browser copies, not the originals: see [docs/web-copies.md](docs/web-copies.md). |
 | **TV app** | `android/app` | Kotlin, Jetpack Compose and Media3. Id `app.mediacore`. Updates itself from the engine. |
 | **Phone app** | `android/phone` | Its own screens and player. Id `app.mediacore.phone`. Has offline downloads. |
 | **Shared core** | `android/core` | Used by both apps: the engine API, its data, offline copies and scrub pictures. |
@@ -14,18 +15,18 @@ engine/          Go module: *.go, web/ (embedded UI), testdata/
 android/         Gradle project: app/ (TV), phone/, core/ (shared), brand/ (logo sources), build.sh
 deploy/          install.sh, backup-state.sh, systemd user units, aria2.conf template
 scripts/         Android SDK setup, headless emulators
-docs/            design systems (TV, phone), PENDING.md (changes waiting for a build)
+docs/            design systems (TV, phone, web), web-copies.md, PENDING.md (changes waiting for a build)
 ```
 
 ## How it runs
 
 ```
-link ─▶ :8780 downloads UI + API (Tailscale only) ─▶ aria2 RPC 127.0.0.1:6800 ─▶ /srv/data/media
+link ─▶ :8780 site + API (Tailscale only) ─▶ aria2 RPC 127.0.0.1:6800 ─▶ /srv/data/media
                                                                                      │
 TV / phone app ◀─ :8790 player API /api/v1, streaming, WebDAV /dav (home LAN + Tailscale) ◀─ catalog
 ```
 
-- The engine never transcodes. Files are streamed as they are, with HTTP ranges, and the apps decode them (Media3, plus FFmpeg decoders for DTS and TrueHD).
+- The engine never transcodes while you watch. The apps get files as they are, with HTTP ranges, and decode them (Media3, plus FFmpeg decoders for DTS and TrueHD). Browsers get copies made ahead of time.
 - Library layout: `Movies/<Title> (<Year>)/…`, `TV Shows/<Show>/Season 01/<Show> - S01E01.ext` and `Music/<Artist>/<Album>/`. The catalog skips dot-folders.
 - Two systemd user services, `media-core-engine` and `media-core-aria2`, plus the nightly `media-core-backup.timer`.
 

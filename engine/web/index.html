@@ -3,124 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Media Core">
-<meta name="theme-color" content="#f2f3ed" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#151513" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0e1014">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preload" href="/fonts/serif.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/app.css">
-<title>Media Core Engine</title>
+<title>Media Core</title>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-mark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" stroke-width="2.5"/><circle cx="12" cy="12" r="2.8" fill="currentColor" stroke="none"/></symbol>
-  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 8h16M4 16h16"/><circle cx="15" cy="8" r="2" class="fillbg"/><circle cx="9" cy="16" r="2" class="fillbg"/></symbol>
-  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
-  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
-  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
-  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
-  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></symbol>
-  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
-  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4.2h4.2"/></symbol>
-  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></symbol>
-  <symbol id="i-top" viewBox="0 0 24 24"><path d="M6 5h12M12 19V9M7.5 13.5 12 9l4.5 4.5"/></symbol>
-  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 7h11M9 12h11M9 17h11"/><rect x="3.5" y="5.5" width="3" height="3" rx=".6"/><rect x="3.5" y="10.5" width="3" height="3" rx=".6"/><rect x="3.5" y="15.5" width="3" height="3" rx=".6"/></symbol>
-  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="9" rx="1.2"/><rect x="13.5" y="4" width="6.5" height="9" rx="1.2"/><path d="M4 17h6.5M13.5 17h6.5M4 20h4M13.5 20h4"/></symbol>
-  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7M10 10.5v6M14 10.5v6"/></symbol>
+<symbol id="i-Play" viewBox="0 0 24 24"><path d="M5 5.27c0-1.7 1.83-2.79 3.33-1.97l12.36 6.72a2.25 2.25 0 0 1 0 3.96L8.33 20.7A2.25 2.25 0 0 1 5 18.73V5.27Z"/></symbol>
+<symbol id="i-Pause" viewBox="0 0 24 24"><path d="M5.75 3C4.78 3 4 3.78 4 4.75v14.5c0 .97.78 1.75 1.75 1.75h3.5c.96 0 1.75-.78 1.75-1.75V4.75C11 3.78 10.2 3 9.25 3h-3.5Zm9 0C13.78 3 13 3.78 13 4.75v14.5c0 .97.78 1.75 1.75 1.75h3.5c.96 0 1.75-.78 1.75-1.75V4.75C20 3.78 19.2 3 18.25 3h-3.5Z"/></symbol>
+<symbol id="i-Replay" viewBox="0 0 24 24"><path d="M19 12A7 7 0 0 0 8.4 6H9a1 1 0 0 1 0 2H6a1 1 0 0 1-1-1V4a1 1 0 0 1 2 0v.52a9 9 0 1 1-3.93 6.36 1 1 0 1 1 1.98.24A7 7 0 1 0 19 12Z"/></symbol>
+<symbol id="i-Check" viewBox="0 0 24 24"><path d="m8.5 16.59-3.8-3.8a1 1 0 0 0-1.4 1.42l4.5 4.5a1 1 0 0 0 1.4 0l11-11a1 1 0 0 0-1.4-1.42L8.5 16.6Z"/></symbol>
+<symbol id="i-Info" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 8.5a.75.75 0 0 0-.75.75v5a.75.75 0 0 0 1.5 0v-5a.75.75 0 0 0-.75-.75ZM12 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/></symbol>
+<symbol id="i-Audio" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 0 1 17 0v2h-2.25a.75.75 0 0 0-.75.75v6.5c0 .41.34.75.75.75H19a3 3 0 0 0 3-3v-7a10 10 0 0 0-20 0v7a3 3 0 0 0 3 3h.75c.41 0 .75-.34.75-.75v-6.5a.75.75 0 0 0-.75-.75H3.5v-2Zm9.25-.25a.75.75 0 0 0-1.5 0v10.5a.75.75 0 0 0 1.5 0v-10.5Zm-4 2.25c.41 0 .75.34.75.75v4.5a.75.75 0 0 1-1.5 0v-4.5c0-.41.34-.75.75-.75Zm7.25.75a.75.75 0 0 0-1.5 0v4.5a.75.75 0 0 0 1.5 0v-4.5Z"/></symbol>
+<symbol id="i-Subtitles" viewBox="0 0 24 24"><path d="M2 7.25C2 5.45 3.46 4 5.25 4h13.5C20.55 4 22 5.46 22 7.25v9.5c0 1.8-1.46 3.25-3.25 3.25H5.25A3.25 3.25 0 0 1 2 16.75v-9.5Zm3 6c0 .41.34.75.75.75h7.5a.75.75 0 0 0 0-1.5h-7.5a.75.75 0 0 0-.75.75Zm10.75-.75a.75.75 0 0 0 0 1.5h2.5a.75.75 0 0 0 0-1.5h-2.5ZM5 16.25c0 .41.34.75.75.75h3.5a.75.75 0 0 0 0-1.5h-3.5a.75.75 0 0 0-.75.75Zm6.75-.75a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z"/></symbol>
+<symbol id="i-Speed" viewBox="0 0 24 24"><path d="M11 3.56V5a1 1 0 1 0 2 0V3.56A8.5 8.5 0 0 1 20.44 11H19a1 1 0 1 0 0 2h1.44a8.5 8.5 0 0 1-2.24 4.74.75.75 0 1 0 1.1 1.02A9.92 9.92 0 0 0 22 12a10 10 0 0 0-20 0 9.92 9.92 0 0 0 2.7 6.76.75.75 0 1 0 1.1-1.02A8.5 8.5 0 0 1 3.56 13H5a1 1 0 1 0 0-2H3.56c.19-1.6.82-3.06 1.76-4.26l.97.97a1 1 0 0 0 1.42-1.42l-.97-.97A8.46 8.46 0 0 1 11 3.56Zm5.76 3.07a.65.65 0 0 0-.8.02l-.23.18a396.1 396.1 0 0 0-4.21 3.6 37.86 37.86 0 0 0-1.1 1.05c-.66.8-.52 1.98.3 2.62.83.64 2.03.5 2.68-.3a37.18 37.18 0 0 0 .78-1.3 152.48 152.48 0 0 0 2.62-4.85l.13-.24a.61.61 0 0 0-.17-.78Z"/></symbol>
+<symbol id="i-Episodes" viewBox="0 0 24 24"><path d="M5.25 3A3.25 3.25 0 0 0 2 6.25v9c0 1.8 1.46 3.25 3.25 3.25h10.5c1.8 0 3.25-1.46 3.25-3.25v-9C19 4.45 17.54 3 15.75 3H5.25ZM8 13.25v-5.5c0-.6.66-.95 1.15-.63l4.62 2.96c.31.2.31.64 0 .84l-4.62 2.96A.75.75 0 0 1 8 13.25ZM7.75 21c-1.15 0-2.16-.6-2.74-1.5h11.24A3.75 3.75 0 0 0 20 15.75V6.01c.9.58 1.5 1.59 1.5 2.74v7c0 2.9-2.35 5.25-5.25 5.25h-8.5Z"/></symbol>
+<symbol id="i-SkipNext" viewBox="0 0 24 24"><path d="M3 4.75c0-1.4 1.58-2.24 2.74-1.44l10.5 7.2c1 .68 1.01 2.17 0 2.87l-10.5 7.3A1.75 1.75 0 0 1 3 19.25V4.75Zm18-1a.75.75 0 0 0-1.5 0v16.5a.75.75 0 0 0 1.5 0V3.75Z"/></symbol>
+<symbol id="i-SkipAhead" viewBox="0 0 24 24"><path d="M13.97 4.36A1.5 1.5 0 0 0 11.5 5.5v4L5.47 4.35A1.5 1.5 0 0 0 3 5.51V18.5c0 .88.7 1.48 1.46 1.5h.09c.32 0 .64-.12.92-.36l6.03-5.13v3.99a1.5 1.5 0 0 0 2.47 1.14l7.41-6.3c.82-.7.82-1.97 0-2.67l-7.4-6.3Z"/></symbol>
+<symbol id="i-SkipBack" viewBox="0 0 24 24"><path d="M10.03 4.36A1.5 1.5 0 0 1 12.5 5.5v4l6.03-5.14A1.5 1.5 0 0 1 21 5.51V18.5c0 .88-.7 1.48-1.46 1.5h-.09c-.32 0-.64-.12-.92-.36l-6.03-5.13v3.99a1.5 1.5 0 0 1-2.47 1.14l-7.41-6.3a1.75 1.75 0 0 1 0-2.67l7.41-6.3Zm-7.41 6.3.49.58Z"/></symbol>
+<symbol id="i-Search" viewBox="0 0 24 24"><path d="M14.84 16.37a8 8 0 1 1 1.43-1.4l4.43 4.31a1 1 0 1 1-1.4 1.44l-4.46-4.35ZM16 10a6 6 0 1 0-12 0 6 6 0 0 0 12 0Z"/></symbol>
+<symbol id="i-ExpandMore" viewBox="0 0 24 24"><path d="M4.3 8.3a1 1 0 0 1 1.4 0l6.3 6.29 6.3-6.3a1 1 0 1 1 1.4 1.42l-7 7a1 1 0 0 1-1.4 0l-7-7a1 1 0 0 1 0-1.42Z"/></symbol>
+<symbol id="i-Refresh" viewBox="0 0 24 24"><path d="M5 12a7 7 0 0 1 10.6-6H15a1 1 0 1 0 0 2h3a1 1 0 0 0 1-1V4a1 1 0 1 0-2 0v.52a9 9 0 1 0 3.93 6.36 1 1 0 1 0-1.98.24A7 7 0 1 1 5 12Z"/></symbol>
+<symbol id="i-Backspace" viewBox="0 0 24 24"><path d="M18.75 4a3.25 3.25 0 0 1 3.24 3.07l.01.18v9.5a3.25 3.25 0 0 1-3.07 3.24l-.18.01h-8.5c-.77 0-1.5-.27-2.09-.76l-.15-.13-5-4.75a3.25 3.25 0 0 1-.11-4.6L3 9.64l5-4.75a3.25 3.25 0 0 1 2.03-.88l.2-.01h8.51Zm-7.3 4.4a.75.75 0 0 0-1.05 1.05l.07.08L12.94 12l-2.47 2.47-.07.08a.75.75 0 0 0 1.05 1.05l.08-.07L14 13.06l2.47 2.47.08.07a.75.75 0 0 0 1.05-1.05l-.07-.08L15.06 12l2.47-2.47.07-.08a.75.75 0 0 0-1.05-1.05l-.08.07L14 10.94l-2.47-2.47-.08-.07Z"/></symbol>
+<symbol id="i-Volume" viewBox="0 0 24 24"><path d="M15 4.25049V19.7461C15 20.8247 13.7255 21.397 12.9194 20.6802L8.42793 16.6865C8.29063 16.5644 8.11329 16.497 7.92956 16.497H4.25C3.00736 16.497 2 15.4896 2 14.247V9.74907C2 8.50643 3.00736 7.49907 4.25 7.49907H7.92961C8.11333 7.49907 8.29065 7.43165 8.42794 7.30958L12.9195 3.31631C13.7255 2.59964 15 3.17187 15 4.25049ZM18.9916 5.89782C19.3244 5.65128 19.7941 5.72126 20.0407 6.05411C21.2717 7.71619 22 9.77439 22 12.0005C22 14.2266 21.2717 16.2848 20.0407 17.9469C19.7941 18.2798 19.3244 18.3497 18.9916 18.1032C18.6587 17.8567 18.5888 17.387 18.8353 17.0541C19.8815 15.6416 20.5 13.8943 20.5 12.0005C20.5 10.1067 19.8815 8.35945 18.8353 6.9469C18.5888 6.61404 18.6587 6.14435 18.9916 5.89782ZM17.143 8.36982C17.5072 8.17262 17.9624 8.30806 18.1596 8.67233C18.6958 9.66294 19 10.7973 19 12.0005C19 13.2037 18.6958 14.338 18.1596 15.3287C17.9624 15.6929 17.5072 15.8284 17.143 15.6312C16.7787 15.434 16.6432 14.9788 16.8404 14.6146C17.2609 13.8378 17.5 12.9482 17.5 12.0005C17.5 11.0528 17.2609 10.1632 16.8404 9.38642C16.6432 9.02216 16.7787 8.56701 17.143 8.36982Z"/></symbol>
+<symbol id="i-Mute" viewBox="0 0 24 24"><path d="M15 4.25049C15 3.17187 13.7255 2.59964 12.9195 3.31631L8.42794 7.30958C8.29065 7.43165 8.11333 7.49907 7.92961 7.49907H4.25C3.00736 7.49907 2 8.50643 2 9.74907V14.247C2 15.4896 3.00736 16.497 4.25 16.497H7.92956C8.11329 16.497 8.29063 16.5644 8.42793 16.6865L12.9194 20.6802C13.7255 21.397 15 20.8247 15 19.7461V4.25049ZM16.2197 9.22016C16.5126 8.92727 16.9874 8.92727 17.2803 9.22016L19 10.9398L20.7197 9.22016C21.0126 8.92727 21.4874 8.92727 21.7803 9.22016C22.0732 9.51305 22.0732 9.98793 21.7803 10.2808L20.0607 12.0005L21.7803 13.7202C22.0732 14.0131 22.0732 14.4879 21.7803 14.7808C21.4874 15.0737 21.0126 15.0737 20.7197 14.7808L19 13.0611L17.2803 14.7808C16.9874 15.0737 16.5126 15.0737 16.2197 14.7808C15.9268 14.4879 15.9268 14.0131 16.2197 13.7202L17.9393 12.0005L16.2197 10.2808C15.9268 9.98793 15.9268 9.51305 16.2197 9.22016Z"/></symbol>
+<symbol id="i-Full" viewBox="0 0 24 24"><path d="M5 6C5 5.44772 5.44772 5 6 5H8C8.55228 5 9 4.55228 9 4C9 3.44772 8.55228 3 8 3H6C4.34315 3 3 4.34315 3 6V8C3 8.55228 3.44772 9 4 9C4.55228 9 5 8.55228 5 8V6ZM5 18C5 18.5523 5.44772 19 6 19H8C8.55228 19 9 19.4477 9 20C9 20.5523 8.55228 21 8 21H6C4.34315 21 3 19.6569 3 18V16C3 15.4477 3.44772 15 4 15C4.55228 15 5 15.4477 5 16V18ZM18 5C18.5523 5 19 5.44772 19 6V8C19 8.55228 19.4477 9 20 9C20.5523 9 21 8.55228 21 8V6C21 4.34315 19.6569 3 18 3H16C15.4477 3 15 3.44772 15 4C15 4.55228 15.4477 5 16 5H18ZM19 18C19 18.5523 18.5523 19 18 19H16C15.4477 19 15 19.4477 15 20C15 20.5523 15.4477 21 16 21H18C19.6569 21 21 19.6569 21 18V16C21 15.4477 20.5523 15 20 15C19.4477 15 19 15.4477 19 16V18Z"/></symbol>
+<symbol id="i-Unfull" viewBox="0 0 24 24"><path d="M9 4C9 3.44772 8.55228 3 8 3C7.44772 3 7 3.44772 7 4V6.5C7 6.77614 6.77614 7 6.5 7H4C3.44772 7 3 7.44772 3 8C3 8.55228 3.44772 9 4 9H6.5C7.88071 9 9 7.88071 9 6.5V4ZM9 20C9 20.5523 8.55228 21 8 21C7.44772 21 7 20.5523 7 20V17.5C7 17.2239 6.77614 17 6.5 17H4C3.44772 17 3 16.5523 3 16C3 15.4477 3.44772 15 4 15H6.5C7.88071 15 9 16.1193 9 17.5V20ZM16 3C15.4477 3 15 3.44772 15 4V6.5C15 7.88071 16.1193 9 17.5 9H20C20.5523 9 21 8.55228 21 8C21 7.44772 20.5523 7 20 7H17.5C17.2239 7 17 6.77614 17 6.5V4C17 3.44772 16.5523 3 16 3ZM15 20C15 20.5523 15.4477 21 16 21C16.5523 21 17 20.5523 17 20V17.5C17 17.2239 17.2239 17 17.5 17H20C20.5523 17 21 16.5523 21 16C21 15.4477 20.5523 15 20 15H17.5C16.1193 15 15 16.1193 15 17.5V20Z"/></symbol>
+<symbol id="i-Add" viewBox="0 0 24 24"><path d="M11.8834 3.00673L12 3C12.5128 3 12.9355 3.38604 12.9933 3.88338L13 4V11H20C20.5128 11 20.9355 11.386 20.9933 11.8834L21 12C21 12.5128 20.614 12.9355 20.1166 12.9933L20 13H13V20C13 20.5128 12.614 20.9355 12.1166 20.9933L12 21C11.4872 21 11.0645 20.614 11.0067 20.1166L11 20V13H4C3.48716 13 3.06449 12.614 3.00673 12.1166L3 12C3 11.4872 3.38604 11.0645 3.88338 11.0067L4 11H11V4C11 3.48716 11.386 3.06449 11.8834 3.00673L12 3L11.8834 3.00673Z"/></symbol>
+<symbol id="i-Close" viewBox="0 0 24 24"><path d="M4.2097 4.3871L4.29289 4.29289C4.65338 3.93241 5.22061 3.90468 5.6129 4.2097L5.70711 4.29289L12 10.585L18.2929 4.29289C18.6834 3.90237 19.3166 3.90237 19.7071 4.29289C20.0976 4.68342 20.0976 5.31658 19.7071 5.70711L13.415 12L19.7071 18.2929C20.0676 18.6534 20.0953 19.2206 19.7903 19.6129L19.7071 19.7071C19.3466 20.0676 18.7794 20.0953 18.3871 19.7903L18.2929 19.7071L12 13.415L5.70711 19.7071C5.31658 20.0976 4.68342 20.0976 4.29289 19.7071C3.90237 19.3166 3.90237 18.6834 4.29289 18.2929L10.585 12L4.29289 5.70711C3.93241 5.34662 3.90468 4.77939 4.2097 4.3871L4.29289 4.29289L4.2097 4.3871Z"/></symbol>
+<symbol id="i-Delete" viewBox="0 0 24 24"><path d="M10 5H14C14 3.89543 13.1046 3 12 3C10.8954 3 10 3.89543 10 5ZM8.5 5C8.5 3.067 10.067 1.5 12 1.5C13.933 1.5 15.5 3.067 15.5 5H21.25C21.6642 5 22 5.33579 22 5.75C22 6.16421 21.6642 6.5 21.25 6.5H19.9309L18.7589 18.6112C18.5729 20.5334 16.9575 22 15.0263 22H8.97369C7.04254 22 5.42715 20.5334 5.24113 18.6112L4.06908 6.5H2.75C2.33579 6.5 2 6.16421 2 5.75C2 5.33579 2.33579 5 2.75 5H8.5ZM10.5 9.75C10.5 9.33579 10.1642 9 9.75 9C9.33579 9 9 9.33579 9 9.75V17.25C9 17.6642 9.33579 18 9.75 18C10.1642 18 10.5 17.6642 10.5 17.25V9.75ZM14.25 9C13.8358 9 13.5 9.33579 13.5 9.75V17.25C13.5 17.6642 13.8358 18 14.25 18C14.6642 18 15 17.6642 15 17.25V9.75C15 9.33579 14.6642 9 14.25 9Z"/></symbol>
+<symbol id="i-Back" viewBox="0 0 24 24"><path d="M10.2949 19.7152C10.6883 20.1028 11.3215 20.0981 11.7091 19.7047C12.0967 19.3113 12.092 18.6782 11.6986 18.2906L6.32827 12.9992H19.9995C20.5517 12.9992 20.9995 12.5514 20.9995 11.9992C20.9995 11.4469 20.5517 10.9992 19.9995 10.9992H6.33488L11.6986 5.71428C12.092 5.32666 12.0967 4.69351 11.7091 4.3001C11.3215 3.9067 10.6883 3.90201 10.2949 4.28963L3.37073 11.112C2.87382 11.6016 2.87382 12.4032 3.37073 12.8928L10.2949 19.7152Z"/></symbol>
+<symbol id="i-Settings" viewBox="0 0 24 24"><path d="M12.0122 2.25C12.7462 2.25846 13.4773 2.34326 14.1937 2.50304C14.5064 2.57279 14.7403 2.83351 14.7758 3.15196L14.946 4.67881C15.0231 5.37986 15.615 5.91084 16.3206 5.91158C16.5103 5.91188 16.6979 5.87238 16.8732 5.79483L18.2738 5.17956C18.5651 5.05159 18.9055 5.12136 19.1229 5.35362C20.1351 6.43464 20.8889 7.73115 21.3277 9.14558C21.4223 9.45058 21.3134 9.78203 21.0564 9.9715L19.8149 10.8866C19.4607 11.1468 19.2516 11.56 19.2516 11.9995C19.2516 12.4389 19.4607 12.8521 19.8157 13.1129L21.0582 14.0283C21.3153 14.2177 21.4243 14.5492 21.3297 14.8543C20.8911 16.2685 20.1377 17.5649 19.1261 18.6461C18.9089 18.8783 18.5688 18.9483 18.2775 18.8206L16.8712 18.2045C16.4688 18.0284 16.0068 18.0542 15.6265 18.274C15.2463 18.4937 14.9933 18.8812 14.945 19.3177L14.7759 20.8444C14.741 21.1592 14.5122 21.4182 14.204 21.4915C12.7556 21.8361 11.2465 21.8361 9.79803 21.4915C9.48991 21.4182 9.26105 21.1592 9.22618 20.8444L9.05736 19.32C9.00777 18.8843 8.75434 18.498 8.37442 18.279C7.99451 18.06 7.5332 18.0343 7.1322 18.2094L5.72557 18.8256C5.43422 18.9533 5.09403 18.8833 4.87678 18.6509C3.86462 17.5685 3.11119 16.2705 2.6732 14.8548C2.57886 14.5499 2.68786 14.2186 2.94485 14.0293L4.18818 13.1133C4.54232 12.8531 4.75147 12.4399 4.75147 12.0005C4.75147 11.561 4.54232 11.1478 4.18771 10.8873L2.94516 9.97285C2.6878 9.78345 2.5787 9.45178 2.67337 9.14658C3.11212 7.73215 3.86594 6.43564 4.87813 5.35462C5.09559 5.12236 5.43594 5.05259 5.72724 5.18056L7.12762 5.79572C7.53056 5.97256 7.9938 5.94585 8.37577 5.72269C8.75609 5.50209 9.00929 5.11422 9.05817 4.67764L9.22824 3.15196C9.26376 2.83335 9.49786 2.57254 9.8108 2.50294C10.5281 2.34342 11.26 2.25865 12.0122 2.25ZM11.9997 8.99995C10.3428 8.99995 8.9997 10.3431 8.9997 12C8.9997 13.6568 10.3428 15 11.9997 15C13.6565 15 14.9997 13.6568 14.9997 12C14.9997 10.3431 13.6565 8.99995 11.9997 8.99995Z"/></symbol>
+<symbol id="i-Retry" viewBox="0 0 24 24"><path d="M16.0518 5.0285C15.7169 5.46765 15.8014 6.09515 16.2405 6.43007C17.9675 7.74714 19 9.78703 19 12C19 15.4973 16.4352 18.3956 13.084 18.9166L13.7929 18.2071C14.1834 17.8166 14.1834 17.1834 13.7929 16.7929C13.4024 16.4024 12.7692 16.4024 12.3787 16.7929L9.87868 19.2929C9.48816 19.6834 9.48816 20.3166 9.87868 20.7071L12.3787 23.2071C12.7692 23.5976 13.4024 23.5976 13.7929 23.2071C14.1834 22.8166 14.1834 22.1834 13.7929 21.7929L12.9497 20.9505C17.4739 20.476 21 16.6498 21 12C21 9.15644 19.6712 6.53122 17.4533 4.83978C17.0142 4.50486 16.3867 4.58936 16.0518 5.0285ZM14.1213 3.29289L11.6213 0.792893C11.2308 0.402369 10.5976 0.402369 10.2071 0.792893C9.84662 1.15338 9.81889 1.72061 10.1239 2.1129L10.2071 2.20711L11.0503 3.04951C6.52615 3.52399 3 7.35021 3 12C3 14.7198 4.21515 17.2432 6.2716 18.9419C6.6974 19.2936 7.32771 19.2335 7.67943 18.8077C8.03116 18.3819 7.97111 17.7516 7.54531 17.3999C5.94404 16.0772 5 14.1168 5 12C5 8.50269 7.56475 5.60441 10.916 5.08343L10.2071 5.79289C9.81658 6.18342 9.81658 6.81658 10.2071 7.20711C10.5676 7.56759 11.1348 7.59532 11.5271 7.2903L11.6213 7.20711L14.1213 4.70711C14.4818 4.34662 14.5095 3.77939 14.2045 3.3871L14.1213 3.29289Z"/></symbol>
+<symbol id="i-Link" viewBox="0 0 24 24"><path d="M9 7C9.55228 7 10 7.44772 10 8C10 8.51284 9.61396 8.93551 9.11662 8.99327L9 9H7C5.34315 9 4 10.3431 4 12C4 13.5977 5.24892 14.9037 6.82373 14.9949L7 15H9C9.55228 15 10 15.4477 10 16C10 16.5128 9.61396 16.9355 9.11662 16.9933L9 17H7C4.23858 17 2 14.7614 2 12C2 9.31125 4.12231 7.11818 6.78311 7.00462L7 7H9ZM17 7C19.7614 7 22 9.23858 22 12C22 14.6888 19.8777 16.8818 17.2169 16.9954L17 17H15C14.4477 17 14 16.5523 14 16C14 15.4872 14.386 15.0645 14.8834 15.0067L15 15H17C18.6569 15 20 13.6569 20 12C20 10.4023 18.7511 9.09634 17.1763 9.00509L17 9H15C14.4477 9 14 8.55228 14 8C14 7.48716 14.386 7.06449 14.8834 7.00673L15 7H17ZM7 11H17C17.5523 11 18 11.4477 18 12C18 12.5128 17.614 12.9355 17.1166 12.9933L17 13H7C6.44772 13 6 12.5523 6 12C6 11.4872 6.38604 11.0645 6.88338 11.0067L7 11H17H7Z"/></symbol>
 </svg>
-
-<header class="top">
-  <div class="brand"><svg class="mark"><use href="#i-mark"/></svg><b>Media Core</b></div>
-  <div class="status paused" id="status" role="status"><i></i><span>Connecting</span></div>
-  <button class="icon" id="openSettings" aria-label="Settings"><svg><use href="#i-sliders"/></svg></button>
-</header>
-
-<main>
-  <div class="banner" id="banner" hidden></div>
-
-  <form class="add" id="drop">
-    <textarea id="links" rows="1" placeholder="Paste links — one, or a whole list" aria-label="Download links" autocomplete="off"
-      autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go"></textarea>
-    <button class="go" id="check" type="submit" aria-label="Check links"><svg><use href="#i-up"/></svg></button>
-  </form>
-  <section id="probes"></section>
-
-  <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="active" class="on">Active<span class="count" id="nActive"></span></button>
-    <button role="tab" data-tab="history">History<span class="count" id="nHistory"></span></button>
-    <button role="tab" data-tab="library">Library</button>
-    <button class="text" id="clear" hidden>Clear finished</button>
-  </nav>
-
-  <section id="jobs" aria-live="polite"></section>
-
-  <section id="library" hidden>
-    <div class="libbar">
-      <div class="pills" id="libSec">
-        <button type="button" data-v="Movies" class="on">Films</button><button type="button" data-v="TV Shows">Shows</button><button type="button" data-v="Music">Music</button>
-      </div>
-      <label class="search"><svg><use href="#i-search"/></svg>
-        <input id="libSearch" type="search" placeholder="Search" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label class="sort"><select id="libSort" aria-label="Sort">
-        <option value="added">Newest first</option><option value="size">Biggest first</option><option value="name">A–Z</option><option value="watched">Watched first</option>
-      </select><svg><use href="#i-chev"/></svg></label>
-      <div class="viewsw" id="libView"><button type="button" data-v="list" aria-label="List"><svg><use href="#i-list"/></svg></button><button type="button" data-v="grid" aria-label="Posters"><svg><use href="#i-grid"/></svg></button></div>
-    </div>
-    <div class="libsum"><span id="libSum"></span><span class="disk" id="libDisk"></span></div>
-    <div id="libList"></div>
-  </section>
-</main>
-
-<dialog id="settings" class="sheet">
-  <form method="dialog">
-    <div class="sheethead"><h2>Settings</h2><button class="icon" aria-label="Close"><svg><use href="#i-x"/></svg></button></div>
-
-    <div class="rows">
-    <div class="row">
-      <span>Download limit <small>(MB/s)</small></span>
-      <div class="opts" data-key="limit_mbps">
-        <button type="button" data-v="0">Off</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="5">5</button>
-      </div>
-    </div>
-    <label class="row">
-      <span>Ease off while something is playing<small class="sub">Drops to 1 MB/s while the Media Core app streams</small></span>
-      <input type="checkbox" class="toggle" id="autoThrottle">
-    </label>
-    <div class="row">
-      <span>Downloads at once</span>
-      <div class="opts" data-key="max_concurrent">
-        <button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button>
-      </div>
-    </div>
-    </div>
-
-    <div class="rows">
-    <div class="row">
-      <span>Media Core app for TV &amp; phone<small class="sub">Direct play, no transcoding. Away from home it works over Tailscale. It updates itself after this.</small></span>
-      <a class="btn" href="/api/v1/app.apk" download="media-core.apk">Get APK</a>
-    </div>
-    </div>
-
-  </form>
-</dialog>
-
-<dialog id="detail" class="sheet detail"></dialog>
-
-<dialog id="ask" class="sheet small">
-  <form method="dialog">
-    <h2 id="askTitle"></h2>
-    <p class="mut" id="askText"></p>
-    <input id="askInput" class="field" type="text" inputmode="url" placeholder="https://…" autocomplete="off" autocapitalize="off" hidden>
-    <div class="askbtns" id="askBtns"></div>
-  </form>
-</dialog>
-
-<div id="toast" role="status"></div>
-<script src="/app.js" defer></script>
+<main id="page"></main>
+<div id="note" role="status"></div>
+<script src="/vendor/hls.min.js"></script>
+<script src="/pgs.js"></script>
+<script src="/player.js"></script>
+<script src="/add.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

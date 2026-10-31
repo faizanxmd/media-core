@@ -119,3 +119,14 @@ Nothing new is drawn in a separate window (no `Popup`), and nothing blurs live: 
 - The thumbnail strip stays up after letting go: Left/Right step, hold scrubs, OK lands and plays, Back cancels. Don't disturb its smoothness or look.
 - Subtitles never run across the bar, including image-based ones.
 - Menus don't cover the title.
+
+## On the web
+
+The site at mint:8780 (`engine/web`) is these rules moved to a mouse: same tokens, screens and player, with 1 rem = 10 dp on a wider canvas of 1300 dp. Hover does what focus does on the TV, and arrow keys move focus as the remote does. What differs, and why:
+
+- **Blue:** Accent #1B36A8, AccentWord #5B78FF. The TV shows blue much lighter than a laptop does, so the TV's values would nearly vanish here.
+- **Sizes:** the wider canvas holds more: Home's posters are 125 dp, wide cards 240, and the framed picture 540 x 304.
+- **Tabs:** Add sits at the far right, where the TV shows Update available, and shows download progress while one runs. It's the way into links, downloads, files and settings.
+- **Title pages:** a Back arrow where the tabs would be, since a browser window has no Back key. Esc does the same.
+- **Search:** a real text box replaces the on-screen keyboard, with posters below it.
+- **Player:** moving the mouse shows the controls, and clicking the picture plays or pauses. It adds what a mouse needs: a Back arrow, play/pause, volume and full screen. Hovering the bar shows one picture with its time; holding Left or Right brings the strip, as on the TV.
