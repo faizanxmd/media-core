@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Cases were generated from the Python version (legacy-python/core.py) so the
+// Cases were generated from the engine's first (Python) version, so the Go
 // rewrite names things the same way.
 func TestGuessMatchesPython(t *testing.T) {
 	b, err := os.ReadFile("testdata/naming_cases.json")

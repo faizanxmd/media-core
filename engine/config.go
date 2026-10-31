@@ -7,7 +7,6 @@ import (
 )
 
 const (
-	Media  = "/srv/data/media"
 	Listen = ":8780" // ufw only lets tailscale0 reach it
 	UA     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 	// MB/s used for ETAs until a real download has been measured.
@@ -18,6 +17,9 @@ const (
 )
 
 var (
+	// Media is the library root. MEDIA_CORE_LIBRARY overrides it, e.g. to run
+	// the engine against a small test library on a dev machine.
+	Media     = envOr("MEDIA_CORE_LIBRARY", "/srv/data/media")
 	home      = os.Getenv("HOME")
 	DataDir   = filepath.Join(home, ".local/share/media-core")
 	JobsDir   = filepath.Join(DataDir, "jobs")
@@ -30,6 +32,13 @@ var (
 	ArchiveExt = set("zip", "rar", "7z")
 	SubExt     = set("srt", "ass", "ssa", "sub", "idx", "vtt")
 )
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return def
+}
 
 func set(xs ...string) map[string]bool {
 	m := map[string]bool{}
