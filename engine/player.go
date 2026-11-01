@@ -41,7 +41,7 @@ func touchPlaying(r *http.Request, id string) {
 	playMu.Unlock()
 }
 
-// playingNow counts what our own app is playing (for the download throttle).
+// playingNow counts what our own apps are playing (shown in the status; background work pauses for it).
 func playingNow() int {
 	playMu.Lock()
 	defer playMu.Unlock()

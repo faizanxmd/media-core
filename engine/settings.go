@@ -10,7 +10,6 @@ import (
 
 type Settings struct {
 	LimitMBps     float64 `json:"limit_mbps"`     // 0 = unlimited
-	AutoThrottle  bool    `json:"auto_throttle"`  // drop to ThrottleMBps while Media Core is streaming
 	MaxConcurrent int     `json:"max_concurrent"` // parallel downloads
 	AvgBps        float64 `json:"avg_bps"`        // learned from finished downloads, for ETAs
 }
@@ -30,7 +29,7 @@ type settingsStore struct {
 var settingsPath = filepath.Join(DataDir, "settings.json")
 
 func loadSettings() *settingsStore {
-	st := &settingsStore{s: Settings{AutoThrottle: true, MaxConcurrent: 1}}
+	st := &settingsStore{s: Settings{MaxConcurrent: 1}}
 	if b, err := os.ReadFile(settingsPath); err == nil {
 		json.Unmarshal(b, &st.s)
 	}

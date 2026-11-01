@@ -103,7 +103,7 @@ func (h *davHandler) get(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	if VideoExt[ext(name)] {
-		touchPlaying(r, "dav/"+name) // counts for the download throttle
+		touchPlaying(r, "dav/"+name) // counts as playing, so background work pauses
 	}
 	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
 }

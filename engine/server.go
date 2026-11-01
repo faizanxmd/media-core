@@ -119,7 +119,6 @@ type Status struct {
 	DiskTotal int64    `json:"disk_total"`
 	SpeedBps  int64    `json:"speed_bps"`
 	Aria2OK   bool     `json:"aria2_ok"`
-	Throttled bool     `json:"throttled"`
 	Streams   int      `json:"streams"`
 	Settings  Settings `json:"settings"`
 }
@@ -132,7 +131,7 @@ func (s *Server) status() Status {
 	free, total := disk()
 	s.e.mu.Lock()
 	st := Status{Jobs: jobs, FreeGB: int(free / 1e9), DiskFree: free, DiskTotal: total,
-		SpeedBps: s.e.speed, Aria2OK: s.e.ariaOK, Throttled: s.e.throttled, Streams: s.e.streams,
+		SpeedBps: s.e.speed, Aria2OK: s.e.ariaOK, Streams: playingNow(),
 		Settings: s.e.settings.get()}
 	s.e.mu.Unlock()
 	return st

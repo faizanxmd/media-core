@@ -458,14 +458,13 @@ const Add = (() => {
     const s = S.settings;
     const seg = (key, vals) => `<div class="seg" data-key="${key}">${vals.map(([v, l]) => `<button data-v="${v}" class="${s[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const html = `<div class="setrow"><div>Download limit<small>MB/s</small></div>${seg("limit_mbps", [[0, "Off"], [1, "1"], [2, "2"], [3, "3"], [5, "5"]])}</div>
-      <div class="setrow"><div>Ease off while something is playing<small>Drops to 1 MB/s while Media Core streams</small></div>${seg("auto_throttle", [[true, "On"], [false, "Off"]])}</div>
       <div class="setrow"><div>Downloads at once</div>${seg("max_concurrent", [[1, "1"], [2, "2"], [3, "3"]])}</div>
       <div class="setrow"><div>Media Core for the TV<small>It updates itself after this.</small></div><a class="word" href="/api/v1/app.apk" download="media-core.apk">Get APK</a></div>
       <div class="setrow"><div>Media Core for the phone<small>It updates itself after this.</small></div><a class="word" href="/api/v1/phone-app.apk" download="media-core-phone.apk">Get APK</a></div>`;
     if (box._h === html) return;
     box._h = html; box.innerHTML = html;
     for (const o of $$(".seg", box)) for (const b of $$("button", o)) b.onclick = async () => {
-      const raw = b.dataset.v, val = raw === "true" ? true : raw === "false" ? false : +raw;
+      const val = +b.dataset.v;
       const r = await api("/api/settings", { [o.dataset.key]: val });
       if (r.error) note(r.error); else { S.settings = r; box._h = ""; renderSettings(); note("Saved"); }
     };

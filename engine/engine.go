@@ -30,8 +30,6 @@ type Engine struct {
 	ariaOK      bool
 	lastStart   time.Time
 	speed       int64
-	streams     int
-	throttled   bool
 	appliedLim  string
 	appliedConc int
 	session     string
@@ -59,13 +57,8 @@ func (e *Engine) Run() {
 			e.startPost(j.ID)
 		}
 	}
-	lastThrottle := time.Time{}
 	for {
 		active := e.sync()
-		if active && time.Since(lastThrottle) > 15*time.Second {
-			lastThrottle = time.Now()
-			e.checkThrottle()
-		}
 		wait := 5 * time.Second
 		if active {
 			wait = time.Second
@@ -447,11 +440,7 @@ func (e *Engine) deletePartial(j Job, gid string) {
 func (e *Engine) applySettings(ctx context.Context, force bool) {
 	s := e.settings.get()
 	e.mu.Lock()
-	lim := s.LimitMBps
-	if e.throttled && (lim == 0 || ThrottleMBps < lim) {
-		lim = ThrottleMBps
-	}
-	opt := limitOpt(lim)
+	opt := limitOpt(s.LimitMBps)
 	needLim := force || opt != e.appliedLim
 	needConc := force || s.MaxConcurrent != e.appliedConc
 	e.mu.Unlock()
@@ -476,36 +465,11 @@ func (e *Engine) applySettings(ctx context.Context, force bool) {
 
 func (e *Engine) SetSettings(fn func(*Settings)) Settings {
 	s := e.settings.update(fn)
-	if !s.AutoThrottle {
-		e.mu.Lock()
-		e.throttled = false
-		e.mu.Unlock()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	e.applySettings(ctx, false)
 	e.store.Notify()
 	return s
-}
-
-// checkThrottle slows downloads while someone watches in Mint: mint's 2.4 GHz
-// Wi-Fi carries both, and a stuttering movie is worse than a slower download.
-func (e *Engine) checkThrottle() {
-	s := e.settings.get()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	n := 0
-	if s.AutoThrottle {
-		n = playingNow()
-	}
-	e.mu.Lock()
-	changed := e.streams != n || e.throttled != (n > 0)
-	e.streams, e.throttled = n, n > 0
-	e.mu.Unlock()
-	if changed {
-		e.applySettings(ctx, false)
-		e.store.Notify()
-	}
 }
 
 // ---------- helpers ----------

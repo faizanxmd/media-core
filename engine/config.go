@@ -11,9 +11,6 @@ const (
 	UA     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 	// MB/s used for ETAs until a real download has been measured.
 	DefaultMBps = 3.5
-	// While Media Core streams, downloads drop to this so a movie on the 2.4 GHz
-	// Wi-Fi doesn't stutter.
-	ThrottleMBps = 1.0
 )
 
 var (

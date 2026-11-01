@@ -32,7 +32,7 @@ On :8780 only (`engine/webcopy.go`):
 
 - `GET /api/v1/web`: `{"ready": {"<id>": true}}`
 - `GET /api/v1/web/{id}`: the manifest with `"state": "ready"`, or `{"state": "none"}`
-- `GET /api/v1/web/{id}/{file}`: the files, with ranges. Fetching `.m4s` counts as playing, so downloads ease off and background jobs pause.
+- `GET /api/v1/web/{id}/{file}`: the files, with ranges. Fetching `.m4s` counts as playing, so background jobs pause.
 
 ## Still to build
 

@@ -99,7 +99,7 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 		if ctype != "" {
 			w.Header().Set("Content-Type", ctype)
 		}
-		if strings.HasSuffix(name, ".m4s") { // eases downloads and pauses background work, as the apps' streams do
+		if strings.HasSuffix(name, ".m4s") { // pauses background work, as the apps' streams do
 			touchPlaying(r, it.ID)
 		}
 		http.ServeFile(w, r, filepath.Join(webDir(it.ID), name))
