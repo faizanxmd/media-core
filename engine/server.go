@@ -166,14 +166,35 @@ func (s *Server) routes() http.Handler {
 		var b struct {
 			Probe Probe
 			Plan  Plan
+			Light *Probe // a Light copy to download right after it
 		}
 		if !readJSON(w, r, &b) {
 			return
+		}
+		var lp Plan
+		if b.Light != nil {
+			_, fn, final, err := planPaths(b.Plan)
+			if err != nil || b.Light.Plan == nil || b.Plan.Kind == "tv" && fn == "" || b.Plan.Kind == "music" {
+				errJSON(w, 400, "a Light copy goes with one film or one episode")
+				return
+			}
+			if err := lightFits(b.Probe.Media, b.Light.Media); err != nil {
+				errJSON(w, 400, err.Error())
+				return
+			}
+			lp = lightPlan(b.Plan.Kind, b.Plan.Title, rel(final), *b.Light)
+			lp.Year, lp.Season, lp.Episode = b.Plan.Year, b.Plan.Season, b.Plan.Episode
 		}
 		j, err := s.e.NewJob(b.Probe, b.Plan)
 		if err != nil {
 			errJSON(w, 400, err.Error())
 			return
+		}
+		if b.Light != nil {
+			if _, err := s.e.NewJob(*b.Light, lp); err != nil {
+				errJSON(w, 400, "the film is queued, but its Light copy isn't: "+err.Error())
+				return
+			}
 		}
 		j.Dest = preview(j.Plan).Dest
 		writeJSON(w, 200, j)
@@ -285,6 +306,7 @@ func (s *Server) routes() http.Handler {
 	})
 	s.p.mount(mux) // the app's API is reachable here too (Tailscale)
 	mountWebCopies(mux, s.p)
+	s.mountManager(mux)
 	mux.HandleFunc("GET /api/settings", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.e.settings.get())
 	})
@@ -373,6 +395,10 @@ func serve() {
 	cat := NewCatalog(tm, NewIntros(), NewThumbs())
 	watch := NewWatch()
 	e.onLibrary = cat.Refresh
+	e.onMoved = func(oldPath, newPath string) {
+		watch.Move(pathID(rel(oldPath)), pathID(rel(newPath)))
+		watch.Flush()
+	}
 	go e.Run()
 	pl := &Player{c: cat, w: watch, t: tm, e: e}
 	ps := servePlayer(pl)

@@ -34,7 +34,8 @@ type Engine struct {
 	appliedConc int
 	session     string
 
-	onLibrary func() // library changed on disk (download placed, item deleted)
+	onLibrary func()                        // library changed on disk (download placed, item deleted)
+	onMoved   func(oldPath, newPath string) // a library file got a new name (MP4 step): carry its watch state over
 }
 
 func NewEngine(st *Store, a *Aria2, set *settingsStore) *Engine {

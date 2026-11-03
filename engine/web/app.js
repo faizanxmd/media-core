@@ -1,6 +1,6 @@
 "use strict";
 // Media Core in a browser: the TV app's screens (docs/design-system.md), moved to a mouse and a keyboard.
-// Home, Films, Shows, Search and title pages live here, the player in player.js, adding links in add.js.
+// Home, Films, Shows, Search and title pages live here, the player in player.js, Manager in manager.js.
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -50,9 +50,9 @@ const gb = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.round(b / 1e6) + 
 // ---------- pieces ----------
 const tabsDef = [["#/search", "Search"], ["#/", "Home"], ["#/films", "Films"], ["#/shows", "Shows"]];
 function tabs(current) {
-  const dl = window.Add?.summary?.();
+  const busy = window.Manager?.busy?.();
   return `<nav class="tabs">${tabsDef.map(([h, l]) => `<a class="tab ${l === current ? "on" : ""}" href="${h}">${l}</a>`).join("")}
-    <a class="tab end ${current === "Add" ? "on" : ""}" href="#/add" id="addTab">${dl ? `<i class="dot"></i>${esc(dl)}` : "Add"}</a></nav>`;
+    <a class="tab ${current === "Manager" ? "on" : ""}" href="#/manager" id="mgrTab">${busy ? `<i class="dot"></i>` : ""}Manager</a></nav>`;
 }
 const track = f => `<div class="track"><i style="width:${(f * 100).toFixed(1)}%"></i></div>`;
 
@@ -140,7 +140,7 @@ async function home(refresh) {
   const keep = refresh ? $$(".cards", page()).map(c => c.scrollLeft) : null;
   const shows = h.shows || [], movies = h.movies || [];
   const f = [...(h.continue || []), ...(h.recent || []), ...shows, ...movies][0];
-  const none = !movies.length && !shows.length ? `<p class="mut" style="padding:0 var(--side)">Nothing in the library yet. <a href="#/add" style="color:var(--ink)">Add links</a>.</p>` : "";
+  const none = !movies.length && !shows.length ? `<p class="mut" style="padding:0 var(--side)">Nothing in the library yet. <a href="#/manager" style="color:var(--ink)">Add links</a>.</p>` : "";
   const html = tabs("Home") + (f ? stage(f, shows) : "") +
     row("Continue Watching", h.continue, wideCard) + row("Recently Added", h.recent, posterCard) +
     row("Shows", shows, posterCard) + row("Films", movies, posterCard) + none;
@@ -365,7 +365,7 @@ function focusables() {
 }
 document.addEventListener("keydown", e => {
   if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
-  if ($("#player") || $(".scrim") || route.key === "add") return;
+  if ($("#player") || $(".scrim") || route.key === "manager") return;
   const a = document.activeElement;
   if (a && a.matches("input, textarea, select") && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
   const all = focusables();
@@ -411,7 +411,8 @@ function route() {
     case "shows": route.key = "shows"; library(true); break;
     case "search": route.key = "search"; search(); break;
     case "title": route.key = "title" + parts[1]; title(parts[1]); break;
-    case "add": route.key = "add"; Add.page(); break;
+    case "manager": route.key = "manager"; Manager.page(); break;
+    case "add": location.replace("#/manager"); break;
     default: location.hash = "#/";
   }
   requestAnimationFrame(() => scrollTo(0, scrolls[h] || 0));
@@ -421,7 +422,7 @@ addEventListener("hashchange", route);
 // links arrive as ?url= / ?text= from the bookmarklet, share sheet or Android share target
 const qs = new URLSearchParams(location.search);
 const shared = [qs.get("url"), qs.get("text"), qs.get("title")].filter(Boolean).join(" ");
-if (shared) { window.sharedLinks = shared; history.replaceState(null, "", "/#/add"); }
+if (shared) { window.sharedLinks = shared; history.replaceState(null, "", "/#/manager"); }
 if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js");
-Add.connect();
+Manager.connect();
 route();

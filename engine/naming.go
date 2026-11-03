@@ -41,6 +41,14 @@ type Plan struct {
 	Episode Flex   `json:"episode"`
 	Ext     string `json:"ext"`
 	Archive bool   `json:"archive"`
+	// Manager's choices. MP4: make an MP4 after downloading (video untouched).
+	// Light: this download is the Light copy of the file or film folder at Into
+	// (a library path). Kind "convert" makes an MP4 of the library file at Path,
+	// with nothing to download.
+	MP4   bool   `json:"mp4,omitempty"`
+	Light bool   `json:"light,omitempty"`
+	Into  string `json:"into,omitempty"`
+	Path  string `json:"path,omitempty"`
 }
 
 var (
@@ -130,6 +138,27 @@ func planPaths(p Plan) (dir, file, final string, err error) {
 			return base
 		}
 		return base + "." + p.Ext
+	}
+	if p.Kind == "convert" {
+		if p.Path == "" {
+			return "", "", "", errors.New("no file to convert")
+		}
+		f := filepath.Join(Media, filepath.Clean("/" + p.Path)[1:])
+		return filepath.Dir(f), filepath.Base(f), f, nil
+	}
+	if p.Light {
+		if p.Into == "" {
+			return "", "", "", errors.New("a Light copy needs its title")
+		}
+		if p.Archive {
+			return "", "", "", errors.New("a Light copy has to be a link to one video file")
+		}
+		into := filepath.Join(Media, filepath.Clean("/" + p.Into)[1:])
+		dir, base := filepath.Join(filepath.Dir(into), ".light"), baseName(into)
+		if VideoExt[ext(into)] == false { // a film's folder
+			dir, base = filepath.Join(into, ".light"), filepath.Base(into)
+		}
+		return dir, withExt(base), filepath.Join(dir, withExt(base)), nil
 	}
 	switch p.Kind {
 	case "movie":

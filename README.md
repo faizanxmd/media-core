@@ -5,7 +5,7 @@ A private Plex replacement. A server on the home box ("mint") downloads links st
 | Part | Where | What |
 |---|---|---|
 | **media-core-engine** | `engine/` | Go server, standard library only, with its web UI embedded. Downloads through aria2, unpacks, renames, fixes Dolby Vision, keeps the catalog with TMDB metadata, records watch progress, finds intros, makes scrub thumbnails, streams files and serves WebDAV. |
-| **Web player** | `engine/web` | The site at `mint:8780`: the TV app's screens and player in a browser (hls.js, plain JS), with adding links, downloads and files under Add. Plays browser copies, not the originals: see [docs/web-copies.md](docs/web-copies.md). |
+| **Web player** | `engine/web` | The site at `mint:8780`: the TV app's screens and player in a browser (plain JS), and Manager: paste a link and see what it is before it downloads, the downloads, the library's files with where each plays, and mint's disk and health. Browsers play MP4s and Light copies directly ([docs/browser-playback.md](docs/browser-playback.md)). |
 | **TV app** | `android/app` | Kotlin, Jetpack Compose and Media3. Id `app.mediacore`. Updates itself from the engine. |
 | **Phone app** | `android/phone` | Its own screens and player. Id `app.mediacore.phone`. Has offline downloads. |
 | **Shared core** | `android/core` | Used by both apps: the engine API, its data, offline copies and scrub pictures. |
@@ -15,7 +15,7 @@ engine/          Go module: *.go, web/ (embedded UI), testdata/
 android/         Gradle project: app/ (TV), phone/, core/ (shared), brand/ (logo sources), build.sh
 deploy/          install.sh, backup-state.sh, systemd user units, aria2.conf template
 scripts/         Android SDK setup, headless emulators
-docs/            design systems (TV, phone, web), web-copies.md, PENDING.md (changes waiting for a build)
+docs/            design systems (TV, phone, web), browser-playback.md, PENDING.md (changes waiting for a build)
 ```
 
 ## How it runs
@@ -125,4 +125,4 @@ UUID=<uuid> /mnt/media-core-usb exfat noauto,nofail,x-systemd.automount,x-system
 - `main` is the only branch. Each published app build is tagged, for example `tv-2026.10.30-2319` and `phone-2026.10.31-0019`.
 - Changes that are committed but not yet built and tested are listed in [docs/PENDING.md](docs/PENDING.md). That list is cleared after each tested build.
 - UI rules: [docs/design-system.md](docs/design-system.md) (TV) and [docs/design-system-phone.md](docs/design-system-phone.md).
-- Engine API, briefly: `POST /api/probe {url}`, `POST /api/jobs {probe,plan}`, `GET /api/jobs`, `POST /api/quick {url[,kind,title]}`, live events at `/api/events`. CLI: `media-core-engine add <url> [movie|tv|music] [title]` and `media-core-engine ls`.
+- Engine API, briefly: `POST /api/probe {url}` (also reads the video details), `POST /api/jobs {probe,plan[,light]}`, `GET /api/manager/titles`, `POST /api/manager/mp4 {id}`, `POST /api/manager/light {id,probe}`, `GET /api/system`, `GET /api/jobs`, `POST /api/quick {url[,kind,title]}`, live events at `/api/events`. CLI: `media-core-engine add <url> [movie|tv|music] [title]` and `media-core-engine ls`.

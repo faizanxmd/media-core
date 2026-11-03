@@ -1,23 +1,28 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 )
 
-// Browser copies: what the web player plays (docs/web-copies.md). This file only
-// finds and serves them; each lives in its own folder under DataDir/web, named
-// after the item's id, and a copy counts once its manifest.json is there.
+// What the web player plays (docs/browser-playback.md): a library file or its Light copy
+// directly, else an old HLS browser copy. A copy lives in its own folder under
+// DataDir/web, named after the item's id, and counts once its manifest.json is there.
 
 // webManifest is a copy's manifest.json. The track lists are in the playlists'
 // and files' order, with the source's own language and title, so the player
 // can name them.
 type webManifest struct {
 	State       string     `json:"state"`
+	Src         string     `json:"src,omitempty"` // played directly: the library file or its Light copy
 	SourceSize  int64      `json:"source_size"`
 	SourceMtime int64      `json:"source_mtime"`
 	Audio       []webAudio `json:"audio,omitempty"`
@@ -61,10 +66,80 @@ func webCopy(it *Item) *webManifest {
 	return &m
 }
 
+// webDirect is how a browser plays an item without a copy: the file itself
+// when it plays in browsers, else its Light copy when that does.
+func webDirect(it *Item) (src, file string) {
+	switch {
+	case it == nil || it.file == "":
+	case playsInBrowser(it.Info):
+		return "/api/v1/stream/" + it.ID, it.file
+	case it.Light != nil && playsInBrowser(it.Light.Info):
+		return "/api/v1/stream/" + it.ID + "?v=light", it.Light.file
+	}
+	return "", ""
+}
+
+// directManifest lists a directly played file's audio (from the file, in its
+// order) and the subtitle files beside it: text ones as x<n>.vtt, pictures as p<n>.sup.
+func directManifest(it *Item) *webManifest {
+	src, file := webDirect(it)
+	if src == "" {
+		return nil
+	}
+	m := &webManifest{State: "ready", Src: src}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if streams, err := probeStreams(ctx, file); err == nil {
+		for _, s := range streams {
+			if s.Type == "audio" {
+				m.Audio = append(m.Audio, webAudio{Lang: s.Tags.Language, Title: s.Tags.Title, Codec: s.Codec, Channels: s.Channels})
+			}
+		}
+	}
+	for i, s := range it.Subs {
+		if s.Mime == "application/x-subrip" || s.Mime == "text/vtt" {
+			m.Subs = append(m.Subs, webSub{File: fmt.Sprintf("x%d.vtt", i), Lang: s.Lang, Title: s.Label, Forced: s.Forced})
+		}
+	}
+	for i, f := range supSidecars(it.file) {
+		lang, _, _ := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(filepath.Base(f), baseName(it.file)), "."), ".")
+		m.Subs = append(m.Subs, webSub{File: fmt.Sprintf("p%d.sup", i), Lang: lang, Forced: strings.Contains(filepath.Base(f), ".forced.")})
+	}
+	return m
+}
+
+// supSidecars: picture subtitles saved beside a video by the MP4 step.
+func supSidecars(video string) []string {
+	var out []string
+	ents, _ := os.ReadDir(filepath.Dir(video))
+	for _, e := range ents {
+		if ext(e.Name()) == "sup" && strings.HasPrefix(e.Name(), baseName(video)+".") {
+			out = append(out, filepath.Join(filepath.Dir(video), e.Name()))
+		}
+	}
+	return out
+}
+
+var reSrtTime = regexp.MustCompile(`(\d{2}:\d{2}:\d{2}),(\d{3})`)
+
+// srtToVTT: browsers read WebVTT; an .srt only differs in its header and commas.
+func srtToVTT(b []byte) []byte {
+	s := strings.ReplaceAll(strings.TrimPrefix(string(b), "\ufeff"), "\r", "")
+	if strings.HasPrefix(s, "WEBVTT") {
+		return []byte(s)
+	}
+	return []byte("WEBVTT\n\n" + reSrtTime.ReplaceAllString(s, "$1.$2"))
+}
+
 func mountWebCopies(mux *http.ServeMux, p *Player) {
 	// which items have a copy, for a title page's episodes and the player's queue
 	mux.HandleFunc("GET /api/v1/web", func(w http.ResponseWriter, r *http.Request) {
 		ready := map[string]bool{}
+		for _, it := range p.c.All() {
+			if src, _ := webDirect(it); src != "" {
+				ready[it.ID] = true
+			}
+		}
 		ents, _ := os.ReadDir(filepath.Join(DataDir, "web"))
 		for _, e := range ents {
 			if webCopy(p.c.Get(e.Name())) != nil {
@@ -79,6 +154,10 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 			errJSON(w, 404, "not in the library (rescanned?)")
 			return
 		}
+		if m := directManifest(it); m != nil { // the original's own picture beats a copy
+			writeJSON(w, 200, m)
+			return
+		}
 		if m := webCopy(it); m != nil {
 			writeJSON(w, 200, m)
 			return
@@ -88,6 +167,26 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 	mux.HandleFunc("GET /api/v1/web/{id}/{file}", func(w http.ResponseWriter, r *http.Request) {
 		it := p.c.Get(r.PathValue("id"))
 		name := r.PathValue("file")
+		if src, _ := webDirect(it); src != "" { // subtitles beside a directly played file
+			var n int
+			if _, err := fmt.Sscanf(name, "x%d.vtt", &n); err == nil && n >= 0 && n < len(it.Subs) {
+				b, err := os.ReadFile(it.Subs[n].file)
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+				w.Write(srtToVTT(b))
+				return
+			}
+			if _, err := fmt.Sscanf(name, "p%d.sup", &n); err == nil {
+				if sups := supSidecars(it.file); n >= 0 && n < len(sups) {
+					w.Header().Set("Content-Type", "application/octet-stream")
+					http.ServeFile(w, r, sups[n])
+					return
+				}
+			}
+		}
 		if webCopy(it) == nil || !filepath.IsLocal(name) || strings.ContainsAny(name, `/\`) {
 			http.NotFound(w, r)
 			return

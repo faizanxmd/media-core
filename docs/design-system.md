@@ -126,7 +126,7 @@ The site at mint:8780 (`engine/web`) is these rules moved to a mouse: same token
 
 - **Blue:** Accent #1B36A8, AccentWord #5B78FF. The TV shows blue much lighter than a laptop does, so the TV's values would nearly vanish here.
 - **Sizes:** the wider canvas holds more: Home's posters are 125 dp, wide cards 240, and the framed picture 540 x 304.
-- **Tabs:** Add sits at the far right, where the TV shows Update available, and shows download progress while one runs. It's the way into links, downloads, files and settings.
+- **Tabs:** Manager comes after Shows, with a small dot while something downloads or is being worked on. It holds a link box (a checked link shows its quality, video, file, audio, length and size, then at most two choices: make it MP4, or add a Light copy), and Downloads, Library and System. Library lists files biggest first with where each plays; a title's sheet holds its few actions. System shows the library disk and how mint is doing, then the two settings.
 - **Title pages:** a Back arrow where the tabs would be, since a browser window has no Back key. Esc does the same.
 - **Search:** a real text box replaces the on-screen keyboard, with posters below it.
 - **Player:** moving the mouse shows the controls, and clicking the picture plays or pauses. It adds what a mouse needs: a Back arrow, play/pause, volume and full screen. Hovering the bar shows one picture with its time; holding Left or Right brings the strip, as on the TV.

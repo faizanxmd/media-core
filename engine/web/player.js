@@ -99,11 +99,14 @@ const Player = (() => {
     setMode("hidden"); drawFull();
     manifest = await api(`/api/v1/web/${it.id}`);
     if (mine !== opened) return;
-    if (manifest.state !== "ready") { showError("Not ready for browsers", "This title doesn't have a browser copy yet.", ""); return; }
+    if (manifest.state !== "ready") { showError("Not ready for browsers", "Manager can make it play here: as an MP4, or with a Light copy.", ""); return; }
     thumbs = it.thumbs > 0 ? new Thumbs(it.id) : null;
     const resume = !fromStart && !it.watch?.watched && it.watch?.pos > 0 ? it.watch.pos / 1000 : 0;
     const src = `/api/v1/web/${it.id}/master.m3u8`;
-    if (window.Hls && Hls.isSupported()) {
+    if (manifest.src) { // the library file or its Light copy, played as it is
+      v.src = manifest.src;
+      v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true });
+    } else if (window.Hls && Hls.isSupported()) {
       hls = new Hls({ startPosition: resume > 0 ? resume : -1, maxBufferLength: 60, maxMaxBufferLength: 180, backBufferLength: 60, renderTextTracksNatively: false, subtitleDisplay: false });
       hls.on(Hls.Events.ERROR, (_, e) => {
         if (!e.fatal) return;

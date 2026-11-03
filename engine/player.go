@@ -343,7 +343,15 @@ func (p *Player) stream(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := os.Open(it.file)
+	file := it.file
+	if r.URL.Query().Get("v") == "light" {
+		if it.Light == nil {
+			http.NotFound(w, r)
+			return
+		}
+		file = it.Light.file
+	}
+	f, err := os.Open(file)
 	if err != nil {
 		http.Error(w, "file missing; rescan", 404)
 		p.c.Refresh()
@@ -359,11 +367,11 @@ func (p *Player) stream(w http.ResponseWriter, r *http.Request) {
 		touchPlaying(r, it.ID)
 	}
 	h := w.Header()
-	if m := videoMime[ext(it.file)]; m != "" {
+	if m := videoMime[ext(file)]; m != "" {
 		h.Set("Content-Type", m)
 	}
 	if r.URL.Query().Get("dl") != "" { // phone "download for offline"
-		h.Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(filepath.Base(it.file), `"`, "")+`"`)
+		h.Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(filepath.Base(file), `"`, "")+`"`)
 	}
 	http.ServeContent(w, r, "", fi.ModTime(), f)
 }

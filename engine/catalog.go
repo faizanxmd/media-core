@@ -33,6 +33,7 @@ type Item struct {
 	Intro   *Span   `json:"intro,omitempty"`   // skip-intro marker (episodes)
 	Credits *Span   `json:"credits,omitempty"` // end credits start (from chapters)
 	Thumbs  int     `json:"thumbs,omitempty"`  // scrub pictures available (/api/v1/thumbs/{id})
+	Light   *Light  `json:"light,omitempty"`   // a smaller copy for browsers and slow connections
 	Count   int     `json:"count,omitempty"`   // episodes in a show / season
 	Meta    *TMeta  `json:"meta,omitempty"`
 	Watch   *WState `json:"watch,omitempty"`  // filled per response
@@ -42,6 +43,13 @@ type Item struct {
 
 	file   string // absolute path of the video (movies, episodes)
 	folder string // movie / show folder, relative to Media (for TMDB matching)
+}
+
+// Light is a title's smaller copy (mp4.go), streamed with ?v=light.
+type Light struct {
+	Size int64  `json:"size"`
+	Info *MInfo `json:"info,omitempty"`
+	file string
 }
 
 // XSub is a sidecar subtitle file (Movie.en.srt and friends).
@@ -272,6 +280,11 @@ func (c *Catalog) scan() {
 			it.Info = mediaInfo(it.file, fi)
 		}
 		it.Subs = sidecarSubs(it.file)
+		if lf := findLight(it.file); lf != "" {
+			if fi, err := os.Stat(lf); err == nil {
+				it.Light = &Light{Size: fi.Size(), Info: mediaInfo(lf, fi), file: lf}
+			}
+		}
 		it.Thumbs = c.thumbs.Count(it.file)
 		if it.Info != nil {
 			it.Intro = chapterIntro(it.Info.Chapters)
@@ -379,6 +392,17 @@ func (c *Catalog) Get(id string) *Item {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.items[id]
+}
+
+// All returns every item (films, shows, seasons, episodes).
+func (c *Catalog) All() []*Item {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]*Item, 0, len(c.items))
+	for _, it := range c.items {
+		out = append(out, it)
+	}
+	return out
 }
 
 func (c *Catalog) Lists() (movies, shows []*Item) {

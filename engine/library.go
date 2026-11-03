@@ -213,9 +213,31 @@ func (e *Engine) DeleteFromLibrary(p string) (freed int64, err error) {
 	} else if err == nil {
 		freed = info.Size()
 	}
+	var extra []string // a video's Light copy and its subtitle files go with it
+	if info, err := os.Lstat(abs); err == nil && !info.IsDir() && VideoExt[ext(abs)] {
+		if lf := findLight(abs); lf != "" {
+			extra = append(extra, lf)
+		}
+		ents, _ := os.ReadDir(filepath.Dir(abs))
+		for _, en := range ents {
+			n := en.Name()
+			if (SubExt[ext(n)] || ext(n) == "sup") && strings.HasPrefix(n, baseName(abs)+".") {
+				extra = append(extra, filepath.Join(filepath.Dir(abs), n))
+			}
+		}
+	}
+	for _, x := range extra {
+		if fi, err := os.Stat(x); err == nil {
+			freed += fi.Size()
+		}
+	}
 	if err := os.RemoveAll(abs); err != nil {
 		return 0, fmt.Errorf("delete failed: %v", err)
 	}
+	for _, x := range extra {
+		os.Remove(x)
+	}
+	os.Remove(lightDir(abs)) // only if empty
 	root := filepath.Join(Media, section)
 	parent := filepath.Dir(abs)
 	for parent != root && within(parent, root) && os.Remove(parent) == nil { // only succeeds when empty

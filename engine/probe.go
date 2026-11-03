@@ -33,6 +33,13 @@ type Probe struct {
 	Plan        *Plan    `json:"plan,omitempty"`
 	Preview     *Preview `json:"preview,omitempty"`
 	FreeGB      int      `json:"free_gb,omitempty"`
+	// The file's picture and sound, read from the link before downloading
+	// (nil for archives and links ffprobe can't read: shown after the download).
+	Media   *MInfo `json:"media,omitempty"`
+	Browser bool   `json:"browser"` // plays in browsers as it is
+	CanMP4  bool   `json:"can_mp4"` // an MP4 after downloading would make it play in browsers
+	Heavy   bool   `json:"heavy"`   // 4K or HDR: worth a Light copy
+	PGS     bool   `json:"pgs"`     // picture subtitles, which an MP4 can only keep beside the file
 }
 
 var (
@@ -224,6 +231,11 @@ func (e *Engine) Probe(ctx context.Context, raw string) Probe {
 	if _, fn, final, err := planPaths(p); err == nil && fn != "" {
 		if _, err := os.Stat(final); err == nil {
 			r.Warnings = append(r.Warnings, "Already in the library: "+rel(final))
+		}
+	}
+	if !p.Archive && VideoExt[p.Ext] {
+		if m := linkMedia(ctx, u); m != nil && m.VCodec != "" {
+			r.Media, r.Browser, r.CanMP4, r.Heavy, r.PGS = m, playsInBrowser(m), canMP4(m), heavy(m), m.PGS
 		}
 	}
 	r.FreeGB = freeGB()

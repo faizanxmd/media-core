@@ -42,6 +42,12 @@ func (e *Engine) startPost(id string) {
 			e.mu.Unlock()
 			cancel()
 		}()
+		if err := e.waitForFilm(ctx, id); err != nil { // a Light copy waits for its film, outside the queue
+			if ctx.Err() == nil {
+				e.fail(id, err.Error())
+			}
+			return
+		}
 		select { // wait for our turn
 		case e.postSem <- struct{}{}:
 		case <-ctx.Done():
@@ -137,6 +143,29 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	switch {
+	case j.Plan.Light:
+		if err := e.acceptLight(ctx, c, j, videos); err != nil {
+			return err
+		}
+	case j.Plan.MP4 || j.Plan.Kind == "convert":
+		for i, v := range videos {
+			m := probeMediaCtx(ctx, v)
+			if !canMP4(m) {
+				if j.Plan.Kind == "convert" {
+					return errors.New("an MP4 wouldn't make this play in browsers (4K, HDR or an unusual video format)")
+				}
+				c.log(filepath.Base(v) + ": kept as it is (an MP4 wouldn't help it play in browsers)")
+				continue
+			}
+			v2, err := e.toMP4(ctx, c, v)
+			if err != nil {
+				return err
+			}
+			videos[i] = v2
+			c.set(true, func(j *Job) { j.Files = append([]string(nil), videos...) })
+		}
+	}
 
 	if e.onLibrary != nil {
 		e.onLibrary()
@@ -144,6 +173,8 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	where := final
 	if fn == "" && len(videos) > 0 {
 		where = filepath.Dir(videos[0])
+	} else if len(videos) == 1 {
+		where = videos[0] // the MP4 step may have renamed it
 	}
 	c.set(true, func(j *Job) {
 		j.State, j.Phase, j.Progress, j.Finished = Done, "", 100, now()

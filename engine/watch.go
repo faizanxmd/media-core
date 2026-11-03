@@ -60,6 +60,19 @@ func (w *Watch) Flush() {
 	}
 }
 
+// Move hands an item's progress to its new id, when its file was renamed.
+func (w *Watch) Move(from, to string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if s := w.m[from]; s != nil && from != to {
+		if w.m[to] == nil {
+			w.m[to] = s
+		}
+		delete(w.m, from)
+		w.dirty = true
+	}
+}
+
 func (w *Watch) Get(id string) *WState {
 	w.mu.Lock()
 	defer w.mu.Unlock()

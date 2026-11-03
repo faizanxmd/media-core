@@ -1,0 +1,94 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// filmBusy: another job is still bringing in the film a Light job belongs to.
+func (e *Engine) filmBusy(light Job) bool {
+	want := strings.TrimSuffix(light.Plan.Into, filepath.Ext(light.Plan.Into))
+	for _, j := range e.store.List() {
+		if j.ID == light.ID || !j.busy() || j.Plan.Light {
+			continue
+		}
+		if _, _, final, err := planPaths(j.Plan); err == nil {
+			r := rel(final)
+			if r == light.Plan.Into || strings.TrimSuffix(r, filepath.Ext(r)) == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// waitForFilm holds a Light job until its film is in the library (it may
+// still be downloading, or waiting for the MP4 step). Other jobs aren't held up.
+func (e *Engine) waitForFilm(ctx context.Context, id string) error {
+	j, ok := e.store.Get(id)
+	if !ok || !j.Plan.Light {
+		return nil
+	}
+	c := jobCtx{e, id}
+	for i := 0; ; i++ {
+		j, _ = e.store.Get(id)
+		if !e.filmBusy(j) && mainVideo(j.Plan.Into) != "" {
+			return nil
+		}
+		if !e.filmBusy(j) && i > 0 {
+			return errors.New("its film isn't in the library, so the Light copy has nothing to belong to")
+		}
+		if i == 0 {
+			c.phase(Processing, "Waiting for the film")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Second):
+		}
+	}
+}
+
+// acceptLight keeps a downloaded Light copy only if it's the same cut as its
+// film, makes it an MP4 if that's what lets it play in browsers, and removes
+// any older Light copy of the same title.
+func (e *Engine) acceptLight(ctx context.Context, c jobCtx, j Job, videos []string) error {
+	if len(videos) == 0 {
+		return errors.New("no video downloaded")
+	}
+	light := videos[0]
+	film := mainVideo(j.Plan.Into)
+	if film == "" {
+		os.Remove(light)
+		return errors.New("its film isn't in the library")
+	}
+	c.phase(Processing, "Checking the Light copy")
+	a, b := duration(ctx, light), duration(ctx, film)
+	if !sameCut(a, b) {
+		os.Remove(light)
+		return fmt.Errorf("not the same cut: the Light copy runs %s, the film %s, so it was removed", dur(int64(a)), dur(int64(b)))
+	}
+	if j.Plan.MP4 && canMP4(probeMediaCtx(ctx, light)) {
+		v, err := e.toMP4(ctx, c, light)
+		if err != nil {
+			return err
+		}
+		light = v
+	}
+	base := baseName(light)
+	ents, _ := os.ReadDir(filepath.Dir(light))
+	for _, en := range ents { // an older Light copy in another format
+		p := filepath.Join(filepath.Dir(light), en.Name())
+		if p != light && baseName(en.Name()) == base && VideoExt[ext(en.Name())] {
+			os.Remove(p)
+		}
+	}
+	c.set(true, func(j *Job) { j.Files = []string{light} })
+	c.log("Light copy ready: plays in browsers and on slow connections")
+	return nil
+}

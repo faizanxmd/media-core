@@ -2,9 +2,12 @@ package main
 
 import "syscall"
 
-func disk() (free, total int64) {
+func disk() (free, total int64) { return diskAt(Media) }
+
+// diskAt is the free and total space of the filesystem holding path.
+func diskAt(path string) (free, total int64) {
 	var st syscall.Statfs_t
-	if syscall.Statfs(Media, &st) != nil {
+	if syscall.Statfs(path, &st) != nil {
 		return 0, 0
 	}
 	return int64(st.Bavail) * st.Bsize, int64(st.Blocks) * st.Bsize

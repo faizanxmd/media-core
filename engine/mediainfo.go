@@ -31,9 +31,16 @@ type MInfo struct {
 	Width    int       `json:"w,omitempty"`
 	Chapters []Chapter `json:"chapters,omitempty"`
 	Height   int       `json:"h,omitempty"`
+	// What Manager needs to say where a file plays: the container, the first
+	// audio track's codec (a browser plays the first one), the video's bit depth
+	// and whether any subtitles are pictures (PGS), which MP4 can't hold.
+	Container string `json:"container,omitempty"` // mkv, mp4, ...
+	ACodec    string `json:"acodec,omitempty"`    // ffprobe's name: aac, flac, dts...
+	VBits     int    `json:"vbits,omitempty"`
+	PGS       bool   `json:"pgs,omitempty"`
 }
 
-const miVersion = 4 // bump when MInfo gains fields, so cached entries are re-read
+const miVersion = 5 // bump when MInfo gains fields, so cached entries are re-read
 
 // ffprobe reads only the file's header, but on the HDD that's still a seek
 // per file, so results are cached by size+mtime in mediainfo.json.
@@ -115,11 +122,21 @@ func saveMediaInfo(seen map[string]bool) {
 func probeMedia(path string) *MInfo {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries",
-		"format=bit_rate,duration:stream=codec_type,codec_name,profile,width,height,color_transfer,channels,avg_frame_rate,r_frame_rate,"+
+	return probeMediaCtx(ctx, path)
+}
+
+// probeMediaCtx also reads a download link: ffprobe fetches only the header
+// (a few MB) with range requests, so a link's details show before downloading.
+func probeMediaCtx(ctx context.Context, path string) *MInfo {
+	pre := []string{"-v", "error"}
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		pre = append(pre, "-user_agent", UA, "-rw_timeout", "15000000")
+	}
+	out, err := exec.CommandContext(ctx, "ffprobe", append(pre, "-show_entries",
+		"format=bit_rate,duration,format_name:stream=codec_type,codec_name,profile,width,height,color_transfer,channels,avg_frame_rate,r_frame_rate,"+
 			"bits_per_raw_sample,bits_per_sample,sample_rate:stream_tags=language,title:"+
 			"stream_side_data=dv_profile,dv_bl_signal_compatibility_id:stream_disposition=default,forced,attached_pic",
-		"-show_chapters", "-of", "json", path).Output()
+		"-show_chapters", "-of", "json", path)...).Output()
 	if err != nil {
 		return nil
 	}
@@ -132,6 +149,7 @@ func probeMedia(path string) *MInfo {
 		Format struct {
 			BitRate  string `json:"bit_rate"`
 			Duration string `json:"duration"`
+			Name     string `json:"format_name"`
 		}
 		Streams []struct {
 			Type     string `json:"codec_type"`
@@ -160,7 +178,7 @@ func probeMedia(path string) *MInfo {
 	if json.Unmarshal(out, &r) != nil {
 		return nil
 	}
-	m := &MInfo{}
+	m := &MInfo{Container: containerName(r.Format.Name, path)}
 	var br float64
 	fmt.Sscan(r.Format.BitRate, &br)
 	m.Mbps = float64(int(br/1e5+0.5)) / 10
@@ -178,6 +196,9 @@ func probeMedia(path string) *MInfo {
 		if s.Type == "video" && video < 0 && s.Disp.Pic == 0 && s.Codec != "mjpeg" && s.Codec != "png" { // skip cover art
 			video = i
 		}
+		if s.Type == "audio" && m.ACodec == "" {
+			m.ACodec = s.Codec
+		}
 		if s.Type == "audio" && (audio < 0 || s.Disp.Default == 1 && r.Streams[audio].Disp.Default == 0) {
 			audio = i
 		}
@@ -189,6 +210,9 @@ func probeMedia(path string) *MInfo {
 			}
 			m.Tracks = append(m.Tracks, t)
 		case "subtitle":
+			if s.Codec == "hdmv_pgs_subtitle" || s.Codec == "dvd_subtitle" {
+				m.PGS = true
+			}
 			l := langName(s.Tags.Language)
 			if l == "" {
 				l = "Unknown"
@@ -230,6 +254,13 @@ func probeMedia(path string) *MInfo {
 		if m.VCodec == "" {
 			m.VCodec = strings.ToUpper(v.Codec)
 		}
+		m.VBits, _ = strconv.Atoi(v.RawBits)
+		if m.VBits == 0 {
+			m.VBits = 8
+			if strings.Contains(v.Profile, "10") {
+				m.VBits = 10
+			}
+		}
 		if v.Profile == "Main 10" {
 			m.VCodec += " Main 10"
 		}
@@ -255,6 +286,29 @@ func probeMedia(path string) *MInfo {
 		}
 	}
 	return m
+}
+
+// containerName turns ffprobe's "matroska,webm" / "mov,mp4,m4a,..." into the
+// file's own kind, preferring the extension when it's one of them.
+func containerName(format, path string) string {
+	e := ext(strings.SplitN(path, "?", 2)[0])
+	switch {
+	case strings.HasPrefix(format, "matroska"):
+		if e == "webm" {
+			return "webm"
+		}
+		return "mkv"
+	case strings.HasPrefix(format, "mov,mp4"):
+		if e == "mov" || e == "m4v" {
+			return e
+		}
+		return "mp4"
+	case format == "mpegts":
+		return "ts"
+	case format == "":
+		return e
+	}
+	return strings.SplitN(format, ",", 2)[0]
 }
 
 func audioLabel(codec, profile string, ch int) string {
