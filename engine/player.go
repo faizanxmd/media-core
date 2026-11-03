@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"log"
 	"net"
@@ -91,6 +92,7 @@ func (p *Player) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/img/{size}/{file}", p.t.serveImage)
 	mux.HandleFunc("GET /api/v1/match/{id}", p.matchSearch)
 	mux.HandleFunc("POST /api/v1/match", p.rematch)
+	mux.HandleFunc("GET /api/v1/speedtest", speedTest)
 	mux.HandleFunc("GET /api/v1/app", appInfo("media-core"))
 	mux.HandleFunc("GET /api/v1/app.apk", serveAPK("media-core"))
 	mux.HandleFunc("GET /api/v1/phone-app", appInfo("media-core-phone"))
@@ -479,4 +481,30 @@ func servePlayer(p *Player) *http.Server {
 		}
 	}()
 	return hs
+}
+
+// speedBlock is what a speed test sends: random, so nothing on the way can compress it.
+var speedBlock = func() []byte {
+	b := make([]byte, 1<<20)
+	rand.Read(b)
+	return b
+}()
+
+// speedTest sends ?bytes= of data (1 to 50 MB) for the apps to time: it's how they
+// tell whether the connection carries a title's Original or needs its Light copy.
+// It doesn't count as playing.
+func speedTest(w http.ResponseWriter, r *http.Request) {
+	n, _ := strconv.ParseInt(r.URL.Query().Get("bytes"), 10, 64)
+	n = min(max(n, 1<<20), 50<<20)
+	h := w.Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Length", strconv.FormatInt(n, 10))
+	for n > 0 {
+		k := min(n, int64(len(speedBlock)))
+		if _, err := w.Write(speedBlock[:k]); err != nil {
+			return
+		}
+		n -= k
+	}
 }

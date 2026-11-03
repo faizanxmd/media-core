@@ -2,6 +2,17 @@
 
 Changes committed but not yet built or tested. Cleared after each build the user has tested.
 
+## Original or Light, by connection (TV and phone)
+
+Both apps measure the connection to mint in the background and play a title's Light copy when the connection can't carry the Original. When playback gets stuck, a "Slow connection · Switch to Light" card offers the switch. The engine side (the speed test and Light copies) is already live on mint. Not compiled yet: the next build is its first check.
+
+### To test
+1. A title without a Light copy plays as before, at home and away.
+2. Add a Light copy to a film in Manager. At home it still plays the Original.
+3. On 4G (or a slow link), the same film starts on the Light copy.
+4. On a connection that slows down mid-film, the card appears after about 15 s of buffering. OK switches at the same spot; Back keeps the Original and it doesn't ask again for that film.
+5. Skipping around, and the first load of a film, never bring the card up.
+
 Last published builds: TV 2026.10.30-2319, phone 2026.10.31-0019.
 
 ## Shared code in android/core

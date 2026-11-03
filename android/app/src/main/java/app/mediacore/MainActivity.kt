@@ -34,6 +34,7 @@ import androidx.core.content.FileProvider
 import app.mediacore.core.Api
 import app.mediacore.core.Home
 import app.mediacore.core.Offline
+import app.mediacore.core.Speed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
@@ -97,6 +98,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Api.init(this)
+        Speed.start(this) // measures this connection in the background, for Original or Light
         Offline.init(this, overMetered = true)
         enableEdgeToEdge()
         val tv = isTv(this)

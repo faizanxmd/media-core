@@ -119,6 +119,8 @@ Nothing new is drawn in a separate window (no `Popup`), and nothing blurs live: 
 - The thumbnail strip stays up after letting go: Left/Right step, hold scrubs, OK lands and plays, Back cancels. Don't disturb its smoothness or look.
 - Subtitles never run across the bar, including image-based ones.
 - Menus don't cover the title.
+- **Original or Light:** a title with a Light copy plays the Light copy when the connection's last measured speed is under 1.3x the Original's bitrate, or on a network not measured yet. The speed is measured in the background (`core/Speed.kt`): a few seconds after the app opens, when the network changes, and when a title starts and the last result is over 10 minutes old.
+- **Slow connection:** buffering for 15 s at once, or three stalls of a second or more within two minutes (not the loading at the start or after a skip), while data arrives slower than the title's bitrate, shows "Slow connection · Switch to Light" in the Skip Intro capsule, without its arrow. OK switches to the Light copy at the same spot; Back keeps the Original. Once per film, gone after 30 s, never switched without asking.
 
 ## On the web
 

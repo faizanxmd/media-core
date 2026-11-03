@@ -53,6 +53,7 @@ Shape: 6 everywhere. Space: 4, 8, 12, 16, 24. Side margin 16, row title to cards
 
 ## Player
 
+- Original or Light, and the slow-connection card, work as on the TV (docs/design-system.md, Player). On the phone the card is the same Ink capsule as Skip intro; a tap switches.
 - A tap shows the title, the bar and the controls; another hides them. They leave by themselves 3 s after play resumes.
 - A double tap on either side skips 10 s with a small mark, and each further tap adds to it.
 - A sideways drag anywhere moves through the film (the whole screen is 6 minutes). The bar is for long jumps: a finger on it goes straight there, with no knob.

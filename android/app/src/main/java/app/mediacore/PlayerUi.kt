@@ -201,7 +201,7 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boo
         if (offer != null && st.sheet == null && st.error == null && !scrubbing) {
             Box(Modifier.align(Alignment.BottomEnd).padding(end = Side, bottom = if (full) 170.dp else Side)) {
                 if (offer.kind == "next") NextCard(offer, st.countdown, armed = tv && !full, onClick = a::takeOffer)
-                else SkipCapsule(offer.title, armed = tv && !full, onClick = a::takeOffer)
+                else SkipCapsule(offer.title, armed = tv && !full, skip = offer.kind != "slow", onClick = a::takeOffer)
             }
         }
 
@@ -547,8 +547,8 @@ private fun FocusBar(st: PlayerState, a: PlayerActions, fr: FocusRequester, down
 
 /** "Skip Intro": a worded button, lit while it's what OK would do. */
 @Composable
-private fun SkipCapsule(label: String, armed: Boolean, onClick: () -> Unit) {
-    WordButton(label, lit = armed, icon = AppIcons.SkipNext, onClick = onClick)
+private fun SkipCapsule(label: String, armed: Boolean, skip: Boolean = true, onClick: () -> Unit) {
+    WordButton(label, lit = armed, icon = if (skip) AppIcons.SkipNext else null, onClick = onClick)
 }
 
 /** Up next in the credits: still, title, and a ring counting down to it. */

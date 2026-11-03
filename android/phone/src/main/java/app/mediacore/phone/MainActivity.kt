@@ -22,6 +22,7 @@ import app.mediacore.core.Api
 import app.mediacore.core.Home
 import app.mediacore.core.Item
 import app.mediacore.core.Offline
+import app.mediacore.core.Speed
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
@@ -84,6 +85,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Api.init(this)
+        Speed.start(this) // measures this connection in the background, for Original or Light
         Offline.init(this)
         // always light icons: the app is dark whatever the phone's own theme is
         val bars = SystemBarStyle.dark(Color.TRANSPARENT)

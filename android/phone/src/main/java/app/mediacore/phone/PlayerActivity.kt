@@ -31,6 +31,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -46,6 +47,8 @@ import androidx.media3.ui.SubtitleView
 import app.mediacore.core.Api
 import app.mediacore.core.Item
 import app.mediacore.core.Offline
+import app.mediacore.core.Speed
+import app.mediacore.core.StallWatch
 import app.mediacore.core.ThumbStore
 import app.mediacore.core.mins
 import app.mediacore.core.objects
@@ -72,6 +75,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var finishedCurrent = false
     private var released = false
     private val localIds = mutableSetOf<String>() // playing a downloaded copy
+    private val lightIds = mutableSetOf<String>() // playing the Light copy (a slow connection)
+    private val stall = StallWatch()
+    private var slowFor = "" // the title the slow-connection card was offered for: once per film
+    private var slowAt = 0L // when it was offered; it goes after 30 s
+    private val meter by lazy { DefaultBandwidthMeter.getSingletonInstance(this) }
     private var dismissedNext = "" // Back on the next-episode card: let the credits run
     private var nextLeftMs = 0L
     private var lastTick = 0L
@@ -111,6 +119,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.playing = player.isPlaying
         st.buffering = player.playbackState == Player.STATE_BUFFERING
         st.hasNext = player.hasNextMediaItem()
+        stall.state(st.buffering, player.playbackState == Player.STATE_READY, player.playWhenReady)
+        if (slowFor != currentId && stall.stuck()) checkSlow()
         val o = offer()
         if (o?.kind == "next" && st.offer?.kind != "next") nextLeftMs = 10_000
         st.offer = o
@@ -131,6 +141,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val intro = j.optJSONObject("intro")
         val creditsAt = j.optJSONObject("credits")?.optDouble("start") ?: (if (dur > 0) dur - 40 else Double.MAX_VALUE)
         return when {
+            slowFor == currentId && slowAt > 0 && System.currentTimeMillis() - slowAt < 30_000 && currentId !in lightIds ->
+                Offer("slow", "Slow connection · Switch to Light", "", null)
             intro != null && pos >= intro.optDouble("start") && pos < intro.optDouble("end") - 2 -> Offer("intro", "Skip intro", "", null)
             player.hasNextMediaItem() && j.optString("type") == "episode" && dismissedNext != currentId &&
                 pos >= creditsAt && dur - pos > 3 -> {
@@ -227,8 +239,32 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         poke()
     }
 
+    /** Stuck on a connection that can't carry this title: offer its Light copy, once per film. */
+    private fun checkSlow() {
+        val j = current ?: return
+        if (currentId in lightIds || currentId in localIds || j.optJSONObject("light") == null) return
+        val need = (j.optJSONObject("info")?.optDouble("mbps", 0.0) ?: 0.0) * 1e6
+        if (need > 0 && meter.bitrateEstimate >= need) { stall.clear(); return } // the connection keeps up: a hiccup
+        slowFor = currentId
+        slowAt = System.currentTimeMillis()
+    }
+
+    /** Reopens the same title's Light copy where it was, which takes a few seconds. */
+    private fun switchToLight() {
+        val j = current ?: return
+        val index = queue.indexOf(j)
+        val pos = player.currentPosition
+        lightIds += currentId
+        slowAt = 0L
+        stall.clear()
+        player.setMediaItems(queue.map(::mediaItem), index, pos)
+        player.prepare()
+        player.playWhenReady = true
+    }
+
     override fun takeOffer() {
         when (st.offer?.kind) {
+            "slow" -> switchToLight()
             "intro" -> current?.optJSONObject("intro")?.let { seekExact((it.optDouble("end") * 1000).toLong()) }
             "next" -> {
                 send(currentId, 0, 0, ended = true)
@@ -326,6 +362,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         Api.init(this)
+        Speed.start(this)
+        Speed.freshen() // an old result on this network: measure again while it plays
         Offline.init(this)
         val arr = JSONArray(intent.getStringExtra("queue") ?: "[]")
         for (i in 0 until arr.length()) queue += arr.getJSONObject(i)
@@ -350,6 +388,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                     st.error != null -> finish()
                     st.sheet != null -> closeSheet()
                     st.offer?.kind == "next" -> { dismissedNext = currentId; st.offer = null }
+                    st.offer?.kind == "slow" -> { slowAt = 0L; st.offer = null } // keep this one
                     else -> finish()
                 }
             }
@@ -374,6 +413,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val p = ExoPlayer.Builder(this, renderers)
             .setTrackSelector(DefaultTrackSelector(this))
             .setLoadControl(load)
+            .setBandwidthMeter(meter) // how fast data is arriving, for the slow-connection card
             // http(s) through OkHttp; file:// (offline downloads) through the plain file reader
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, OkHttpDataSource.Factory(Api.http))))
             .setAudioAttributes(
@@ -520,6 +560,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val id = j.optString("id")
         val local = Offline.localVideo(id)
         if (local != null) localIds += id
+        // Original or Light, by this connection's last measured speed; once switched to Light, it stays
+        val light = local == null && (id in lightIds || Speed.useLight(j))
+        if (light) lightIds += id
         val subs = j.optJSONArray("subs").objects().mapIndexed { n, s ->
             val subUri = if (local != null) Offline.localSub(id, n)?.let { Uri.fromFile(it) } else null
             MediaItem.SubtitleConfiguration.Builder(subUri ?: Uri.parse(Api.sub(id, n)))
@@ -537,7 +580,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
         val (title, sub) = titles(j)
         return MediaItem.Builder()
-            .setUri(local?.let { Uri.fromFile(it) } ?: Uri.parse(Api.stream(id)))
+            .setUri(local?.let { Uri.fromFile(it) } ?: Uri.parse(if (light) Api.stream(id) + "?v=light" else Api.stream(id)))
             .setMediaId(id)
             .setSubtitleConfigurations(subs)
             .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setSubtitle(sub).build())
@@ -574,6 +617,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             current?.let { showTitle(it); loadThumbs(it) }
             buildEpisodes()
             if (changed) {
+                stall.clear()
                 st.firstFrame = false
                 st.mode = Mode.Hidden
                 // a track picked for one episode doesn't exist in the next; the language preference carries over
@@ -583,6 +627,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         override fun onRenderedFirstFrame() { st.firstFrame = true }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) stall.reset() // loading after a skip isn't a stall
+        }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             st.playing = isPlaying
