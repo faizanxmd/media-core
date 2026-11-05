@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -28,8 +29,12 @@ type Watch struct {
 
 var watchPath = filepath.Join(DataDir, "watch.json")
 
-func NewWatch() *Watch {
-	w := &Watch{m: map[string]*WState{}, path: watchPath}
+func NewWatch() *Watch { return newWatchAt(watchPath) }
+
+// newWatchAt keeps progress in its own file (a guest's, under guests/).
+func newWatchAt(path string) *Watch {
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	w := &Watch{m: map[string]*WState{}, path: path}
 	readJSONFile(w.path, &w.m)
 	w.repair()
 	go func() { // progress ticks arrive every few seconds; write at most every 15 s

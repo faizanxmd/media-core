@@ -146,6 +146,11 @@ func (s *Server) routes() http.Handler {
 		}
 		http.NotFound(w, r)
 	})
+	// who's asking: the site hides Manager from guests (guest.go)
+	mux.HandleFunc("GET /api/whoami", func(w http.ResponseWriter, r *http.Request) {
+		g := guestFrom(r)
+		writeJSON(w, 200, map[string]any{"guest": g != "", "name": strings.SplitN(g, "@", 2)[0]})
+	})
 	mux.HandleFunc("GET /api/jobs", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.status()) })
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.status()) })
 	mux.HandleFunc("GET /api/events", s.events)
@@ -400,14 +405,14 @@ func serve() {
 		watch.Flush()
 	}
 	go e.Run()
-	pl := &Player{c: cat, w: watch, t: tm, e: e}
+	pl := &Player{c: cat, w: watch, t: tm, e: e, gate: newGate()}
 	ps := servePlayer(pl)
 	srv := &Server{e: e, p: pl, assets: loadAssets()}
 	addr := Listen
 	if v := os.Getenv("MEDIA_CORE_LISTEN"); v != "" {
 		addr = v
 	}
-	hs := &http.Server{Addr: addr, Handler: srv.routes(), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Addr: addr, Handler: pl.gate.wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-shutdownSignal()
 		log.Print("stopping")
