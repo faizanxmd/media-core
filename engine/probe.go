@@ -236,7 +236,14 @@ func (e *Engine) Probe(ctx context.Context, raw string) Probe {
 	if !p.Archive && VideoExt[p.Ext] {
 		if m := linkMedia(ctx, u); m != nil && m.VCodec != "" {
 			r.Media, r.Browser, r.CanMP4, r.Heavy, r.PGS = m, playsInBrowser(m), canMP4(m), heavy(m), m.PGS
+		} else if p.Ext != "mp4" && p.Ext != "m4v" {
+			// a slow link (one connection, other downloads running) can't be
+			// read in time: offer the MP4 anyway, and the step after the
+			// download checks the file itself and keeps 4K or HDR as it is
+			r.CanMP4 = true
 		}
+		// on unless picture subtitles would be lost on TV and phone; /api/quick takes it as it is
+		r.Plan.MP4 = r.CanMP4 && !r.PGS
 	}
 	r.FreeGB = freeGB()
 	r.OK = true

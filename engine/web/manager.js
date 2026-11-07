@@ -309,6 +309,7 @@ const Manager = (() => {
   };
   function mp4Detail(m) {
     const words = ["So it also plays in browsers. The picture stays untouched."];
+    if (!m) words.push("The link couldn't be read yet, so this is checked after the download: 4K or HDR is kept as it is.");
     if (m && !["aac", "mp3", "opus", "flac"].includes(m.acodec)) words.push(`An AAC copy of the sound goes first, because browsers can't play ${esc(m.audio || "this audio")}.`);
     if (m?.pgs) words.push("Its picture subtitles would only show in browsers after this, not on TV or phone.");
     else if ((m?.subs || []).length) words.push("Subtitles are saved beside the file.");
