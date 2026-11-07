@@ -106,11 +106,41 @@ func get(ctx context.Context, u, rng string, timeout time.Duration) (hop, error)
 	return hop{resp.StatusCode, resp.Header, resp.Request.URL}, nil
 }
 
-func filenameFrom(raw string, h hop) string {
-	if _, params, err := mime.ParseMediaType(h.h.Get("Content-Disposition")); err == nil {
-		if fn := strings.TrimSpace(params["filename"]); fn != "" {
-			return path.Base(strings.ReplaceAll(fn, "\\", "/"))
+var (
+	reDispExt   = regexp.MustCompile(`(?i)filename\*\s*=\s*([^;]+)`)
+	reDispQuote = regexp.MustCompile(`(?i)filename\s*=\s*"([^"]*)"`)
+	reDispBare  = regexp.MustCompile(`(?i)filename\s*=\s*([^;"]+)`)
+)
+
+// dispositionName reads the file name from a Content-Disposition header. Go's
+// parser is strict and drops the whole header when the encoded name holds
+// characters RFC 5987 doesn't allow (' ( ) [ ]), which file servers send all
+// the time, so a loose reading follows it.
+func dispositionName(d string) string {
+	if _, params, err := mime.ParseMediaType(d); err == nil {
+		return strings.TrimSpace(params["filename"])
+	}
+	if m := reDispExt.FindStringSubmatch(d); m != nil {
+		v := strings.Trim(strings.TrimSpace(m[1]), `"`)
+		if i := strings.Index(v, "''"); i >= 0 { // charset'lang'value
+			v = v[i+2:]
 		}
+		if s, err := url.PathUnescape(v); err == nil && strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	if m := reDispQuote.FindStringSubmatch(d); m != nil {
+		return strings.TrimSpace(m[1])
+	}
+	if m := reDispBare.FindStringSubmatch(d); m != nil {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+func filenameFrom(raw string, h hop) string {
+	if fn := dispositionName(h.h.Get("Content-Disposition")); fn != "" {
+		return path.Base(strings.ReplaceAll(fn, "\\", "/"))
 	}
 	base := func(s string) string {
 		u, err := url.Parse(s)

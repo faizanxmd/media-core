@@ -53,3 +53,23 @@ func TestNormalizeURL(t *testing.T) {
 		}
 	}
 }
+
+func TestDispositionName(t *testing.T) {
+	want := "Georgie & Mandy's First Marriage (2024) - S01E14 - A Sportsbook and a Breakup [WEBDL-1080p][EAC3 5.1][h264]-FLUX.mkv"
+	for _, d := range []string{
+		// what workers.dev file proxies send: the encoded name keeps ' ( ), which Go's parser rejects
+		`inline; filename="` + want + `"; filename*=UTF-8''Georgie%20%26%20Mandy's%20First%20Marriage%20(2024)%20-%20S01E14%20-%20A%20Sportsbook%20and%20a%20Breakup%20%5BWEBDL-1080p%5D%5BEAC3%205.1%5D%5Bh264%5D-FLUX.mkv`,
+		`attachment; filename="` + want + `"`,
+		`attachment; filename*=UTF-8''Georgie%20%26%20Mandy's%20First%20Marriage%20(2024)%20-%20S01E14%20-%20A%20Sportsbook%20and%20a%20Breakup%20%5BWEBDL-1080p%5D%5BEAC3%205.1%5D%5Bh264%5D-FLUX.mkv`,
+	} {
+		if got := dispositionName(d); got != want {
+			t.Errorf("%s\n got %q", d, got)
+		}
+	}
+	if got := dispositionName(`attachment; filename=Plain.Name.mkv`); got != "Plain.Name.mkv" {
+		t.Errorf("bare: %q", got)
+	}
+	if got := dispositionName(""); got != "" {
+		t.Errorf("empty: %q", got)
+	}
+}
