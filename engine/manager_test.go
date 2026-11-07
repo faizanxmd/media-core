@@ -96,6 +96,32 @@ func TestMP4ArgsPutsABrowserTrackFirst(t *testing.T) {
 	}
 }
 
+func TestMP4ArgsPutsEnglishFirst(t *testing.T) {
+	// a French release: French dub marked default, English original second
+	st := []probeStream{
+		{Index: 0, Type: "video", Codec: "h264"},
+		{Index: 1, Type: "audio", Codec: "eac3", Channels: 6},
+		{Index: 2, Type: "audio", Codec: "eac3", Channels: 6},
+		{Index: 3, Type: "audio", Codec: "ac3", Channels: 2},
+	}
+	st[1].Disp.Default = 1
+	st[1].Tags.Language = "fre"
+	st[2].Tags.Language = "eng"
+	st[3].Tags.Language = "eng"
+	st[3].Tags.Title = "Director's Commentary"
+	args, _, err := mp4Args("/x/F.mkv", "/x/w/new.mp4", st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := strings.Join(args, " ")
+	for _, want := range []string{"-map 0:2 -c:a:0 aac -b:a:0 192k -ac:a:0 2", "-map 0:2 -c:a:1 copy",
+		"-map 0:1 -c:a:2 copy", "-map 0:3 -c:a:3 copy", "-disposition:a:0 default"} {
+		if !strings.Contains(a, want) {
+			t.Errorf("missing %q in %s", want, a)
+		}
+	}
+}
+
 // makeClip writes a short test video with ffmpeg.
 func makeClip(t *testing.T, path string, secs string, extra ...string) {
 	t.Helper()

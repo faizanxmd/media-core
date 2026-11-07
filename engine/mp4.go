@@ -157,8 +157,18 @@ func mp4Args(src, out string, streams []probeStream) (args []string, subs map[st
 	if video < 0 {
 		return nil, nil, errors.New("no video stream")
 	}
-	// the main track first: the one marked default, else the first
-	slices.SortStableFunc(audio, func(a, b probeStream) int { return b.Disp.Default - a.Disp.Default })
+	// the main track first: English, then the one marked default, else the
+	// first. Foreign releases (a French WEB-DL with the English original as a
+	// second track) mark their own dub default, and the browser-safe AAC copy
+	// and every player's first pick follow the main track.
+	main := func(s probeStream) int {
+		r := s.Disp.Default
+		if isEnglish(s.Tags.Language) && !isCommentary(s.Tags.Title) {
+			r += 2
+		}
+		return r
+	}
+	slices.SortStableFunc(audio, func(a, b probeStream) int { return main(b) - main(a) })
 
 	args = []string{"-nostdin", "-loglevel", "error", "-nostats", "-progress", "pipe:2", "-i", src,
 		"-map", "0:" + itoa(video), "-c:v", "copy"}
@@ -333,6 +343,13 @@ func (e *Engine) toMP4(ctx context.Context, c jobCtx, path string) (string, erro
 	c.log("Made " + filepath.Base(final))
 	return final, nil
 }
+
+func isEnglish(lang string) bool {
+	l := strings.ToLower(lang)
+	return l == "eng" || l == "en" || strings.HasPrefix(l, "en-")
+}
+
+func isCommentary(title string) bool { return strings.Contains(strings.ToLower(title), "comment") }
 
 func hasAudio(streams []probeStream) bool {
 	for _, s := range streams {
