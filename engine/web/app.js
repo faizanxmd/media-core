@@ -418,6 +418,9 @@ function route() {
   requestAnimationFrame(() => scrollTo(0, scrolls[h] || 0));
 }
 addEventListener("hashchange", route);
+// unlock the player's video on any click or Enter, so Safari lets it start once it has loaded (player.js, prime)
+addEventListener("click", Player.prime, true);
+addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") Player.prime(); }, true);
 
 // links arrive as ?url= / ?text= from the bookmarklet, share sheet or Android share target
 const qs = new URLSearchParams(location.search);

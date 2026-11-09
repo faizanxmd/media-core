@@ -30,4 +30,5 @@ More to be filled in from the user's reports.
 
 - Foreign releases became MP4s with the dub first and the browser AAC copy made from the dub. English now goes first (`13c0ae1`).
 - The MP4 option was missing when a slow link couldn't be read within 20 s, and quick adds never made MP4s (`6b8afa0`).
+- Safari opened the player but never started the video: the click was gone by the time the player called play() after its fetches, and each title got a new video element. One element now lasts the visit and is unlocked by the first click or Enter.
 - A link with its name only in a loosely encoded Content-Disposition header came in as a movie named after its hash (`52b8314`).

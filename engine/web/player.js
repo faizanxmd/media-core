@@ -56,6 +56,19 @@ const Player = (() => {
   }
 
   let el = null, v = null, hls = null, thumbs = null;
+  let ac = null, startAc = null; // listeners of this opening, and of this title's start
+
+  // One video element for the whole visit. Safari lets a video start with sound
+  // only from a click, and opening a title waits on mint first, so the click is
+  // long gone by then. A play() during any click unlocks the element for good
+  // (prime), so it can start on its own later.
+  const video = document.createElement("video");
+  video.setAttribute("playsinline", ""); video.preload = "auto"; video.disablePictureInPicture = true;
+  function prime() {
+    if (v || video.getAttribute("src")) return;
+    const p = video.play();
+    if (p) p.catch(() => {});
+  }
   let queue = [], ready = {}, item = null, manifest = null, logo = "", cover = "";
   let mode = "hidden", menu = null, scrub = null, holdOrigin = 0, holdResume = false, holdFrom = "hidden", holdSeeked = false;
   let holding = false, holdDir = 0, holdStart = 0, holdLast = 0, holdRaf = 0, keyDown = null, keyTimer = 0;
@@ -92,6 +105,7 @@ const Player = (() => {
 
   async function start(it, fromStart) {
     const mine = ++opened;
+    startAc?.abort(); startAc = new AbortController();
     stopMedia();
     item = it; firstFrame = false; ended = false; errorShown = false; offer = null; textCues = null; pgsTrack = null; subIndex = -1; retried = 0; dismissedNext = "";
     drawCover();
@@ -105,7 +119,7 @@ const Player = (() => {
     const src = `/api/v1/web/${it.id}/master.m3u8`;
     if (manifest.src) { // the library file or its Light copy, played as it is
       v.src = manifest.src;
-      v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true });
+      v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true, signal: startAc.signal });
     } else if (window.Hls && Hls.isSupported()) {
       hls = new Hls({ startPosition: resume > 0 ? resume : -1, maxBufferLength: 60, maxMaxBufferLength: 180, backBufferLength: 60, renderTextTracksNatively: false, subtitleDisplay: false });
       hls.on(Hls.Events.ERROR, (_, e) => {
@@ -121,7 +135,7 @@ const Player = (() => {
       hls.on(Hls.Events.MANIFEST_PARSED, () => go());
     } else if (v.canPlayType("application/vnd.apple.mpegurl")) {
       v.src = src;
-      v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true });
+      v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true, signal: startAc.signal });
     } else {
       showError("Can't play this", "This browser can't play the stream.", "");
       return;
@@ -164,6 +178,8 @@ const Player = (() => {
     thumbs?.free(); thumbs = null;
     removeEventListener("keydown", onKeyDown, true); removeEventListener("keyup", onKeyUp, true);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    ac?.abort(); startAc?.abort(); ac = startAc = null;
+    video.removeAttribute("src"); video.load();
     el.remove(); el = null; v = null; menu = null; mode = "hidden"; scrub = null; document.body.style.overflow = "";
   }
   async function leave() {
@@ -178,23 +194,26 @@ const Player = (() => {
     if (el) return;
     el = document.createElement("div");
     el.id = "player"; el.className = "quiet";
-    el.innerHTML = `<video playsinline preload="auto" disablepictureinpicture></video><canvas class="pgs" hidden></canvas><div class="subs"></div>
+    el.innerHTML = `<i class="vslot"></i><canvas class="pgs" hidden></canvas><div class="subs"></div>
       <div class="skip l"></div><div class="skip r"></div><div class="mid" hidden><div class="loading"></div></div>
       <div class="layer scrub"><div class="strip"></div><div class="now2 title fig"></div><div class="bar"><i class="all"></i><i class="buf"></i><i class="now"></i></div></div>
       <div class="layer full"></div><div class="layer cover"></div><div class="offer"></div><div class="pnote" hidden></div>`;
     document.body.append(el);
     document.body.style.overflow = "hidden";
-    v = $p("video");
+    $p(".vslot").replaceWith(video);
+    v = video;
+    ac = new AbortController();
+    const on = { signal: ac.signal };
     v.volume = +(store.get("volume") ?? 1); v.muted = store.get("muted") === "1";
-    v.addEventListener("playing", () => { firstFrame = true; $p(".cover").style.opacity = 0; $p(".cover").style.pointerEvents = "none"; busy(false); drawIcons(); });
-    v.addEventListener("pause", () => { drawIcons(); if (!ended && !holding && mode !== "scrub") { report(false); showFull(); } });
-    v.addEventListener("play", drawIcons);
-    v.addEventListener("waiting", () => busy(true));
-    v.addEventListener("canplay", () => busy(false));
-    v.addEventListener("seeked", () => { pgsTrack && (pgsTrack.at = -1); busy(false); });
-    v.addEventListener("ended", onEnded);
-    v.addEventListener("error", () => { if (!hls) showError("Can't play this", "The stream stopped and didn't come back.", v.error?.message || ""); });
-    v.addEventListener("loadedmetadata", placePGS);
+    v.addEventListener("playing", () => { firstFrame = true; $p(".cover").style.opacity = 0; $p(".cover").style.pointerEvents = "none"; busy(false); drawIcons(); }, on);
+    v.addEventListener("pause", () => { drawIcons(); if (!ended && !holding && mode !== "scrub") { report(false); showFull(); } }, on);
+    v.addEventListener("play", drawIcons, on);
+    v.addEventListener("waiting", () => busy(true), on);
+    v.addEventListener("canplay", () => busy(false), on);
+    v.addEventListener("seeked", () => { pgsTrack && (pgsTrack.at = -1); busy(false); }, on);
+    v.addEventListener("ended", onEnded, on);
+    v.addEventListener("error", () => { if (!hls) showError("Can't play this", "The stream stopped and didn't come back.", v.error?.message || ""); }, on);
+    v.addEventListener("loadedmetadata", placePGS, on);
     el.addEventListener("click", onClick);
     el.addEventListener("dblclick", e => { if (e.target === v) toggleFull(); });
     el.addEventListener("mousemove", onMove);
@@ -707,5 +726,5 @@ const Player = (() => {
     e.querySelector("button").focus();
   }
 
-  return { open, close };
+  return { open, close, prime };
 })();
