@@ -1,8 +1,16 @@
 # Playing in a browser
 
-The web player at `mint:8780` plays what a browser can decode. The rule is in `engine/mp4.go` (`playsInBrowser`):
-an MP4 of H.264 or HEVC, 1080p at most and without HDR, whose first audio track is AAC, MP3, Opus or FLAC.
-The user's browsers all play HEVC, so no H.264 copies are made. 4K and HDR aren't for browsers: those titles get a Light copy.
+The web player at `mint:8780` plays what this browser can decode, and the browser says what that is. When the page loads, it asks
+the browser which picture and sound formats it plays (`browserCan` in `web/player.js`: H.264, HEVC, AV1, VP9, HDR, Dolby Vision,
+AAC, Dolby Digital, DD+, FLAC and more, and whether it can switch audio tracks) and sends the list with every question as `?can=`.
+The engine decides with it (`engine/browser.go`, `playsIn`): an MP4 whose picture this browser decodes, including its HDR or Dolby
+Vision, and whose sound it can play: the first track, or any track when it can switch tracks. There's no resolution limit.
+
+Safari on the user's M1 MacBook Air is the browser this is designed for: it plays 4K HEVC, HDR, Dolby Vision, DD+ and switches tracks,
+so most MP4s play as they are. Chrome can't play Dolby audio or switch tracks, so it needs an AAC first track. A page that sends
+nothing gets the old fixed rule (`playsInBrowser` in `engine/mp4.go`: 1080p at most, no HDR, AAC, MP3, Opus or FLAC first).
+MKV never plays in a browser: Make MP4 rewraps it. Make MP4 is still offered only for 1080p SDR files until it keeps the
+original sound tracks (it turns DTS and TrueHD into AAC, which the TV would lose).
 
 ## What a browser plays, in order
 

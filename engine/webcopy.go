@@ -34,6 +34,7 @@ type webAudio struct {
 	Title    string `json:"title,omitempty"`
 	Codec    string `json:"codec,omitempty"`
 	Channels int    `json:"channels,omitempty"`
+	Plays    bool   `json:"plays"` // this browser can play it (by what it reported)
 }
 
 type webSub struct {
@@ -67,13 +68,13 @@ func webCopy(it *Item) *webManifest {
 }
 
 // webDirect is how a browser plays an item without a copy: the file itself
-// when it plays in browsers, else its Light copy when that does.
-func webDirect(it *Item) (src, file string) {
+// when this browser plays it, else its Light copy when that plays (browser.go).
+func webDirect(it *Item, c Caps) (src, file string) {
 	switch {
 	case it == nil || it.file == "":
-	case playsInBrowser(it.Info):
+	case playsIn(it.Info, c):
 		return "/api/v1/stream/" + it.ID, it.file
-	case it.Light != nil && playsInBrowser(it.Light.Info):
+	case it.Light != nil && playsIn(it.Light.Info, c):
 		return "/api/v1/stream/" + it.ID + "?v=light", it.Light.file
 	}
 	return "", ""
@@ -81,8 +82,8 @@ func webDirect(it *Item) (src, file string) {
 
 // directManifest lists a directly played file's audio (from the file, in its
 // order) and the subtitle files beside it: text ones as x<n>.vtt, pictures as p<n>.sup.
-func directManifest(it *Item) *webManifest {
-	src, file := webDirect(it)
+func directManifest(it *Item, c Caps) *webManifest {
+	src, file := webDirect(it, c)
 	if src == "" {
 		return nil
 	}
@@ -90,10 +91,18 @@ func directManifest(it *Item) *webManifest {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if streams, err := probeStreams(ctx, file); err == nil {
+		var codecs []string
 		for _, s := range streams {
 			if s.Type == "audio" {
 				m.Audio = append(m.Audio, webAudio{Lang: s.Tags.Language, Title: s.Tags.Title, Codec: s.Codec, Channels: s.Channels})
+				codecs = append(codecs, s.Codec)
 			}
+		}
+		if !c.known { // an older page: only the first track, if a browser plays it
+			c = parseCaps("aac,mp3,opus,flac")
+		}
+		for _, i := range c.playableAudio(codecs, "") {
+			m.Audio[i].Plays = true
 		}
 	}
 	for i, s := range it.Subs {
@@ -134,9 +143,10 @@ func srtToVTT(b []byte) []byte {
 func mountWebCopies(mux *http.ServeMux, p *Player) {
 	// which items have a copy, for a title page's episodes and the player's queue
 	mux.HandleFunc("GET /api/v1/web", func(w http.ResponseWriter, r *http.Request) {
+		c := capsOf(r)
 		ready := map[string]bool{}
 		for _, it := range p.c.All() {
-			if src, _ := webDirect(it); src != "" {
+			if src, _ := webDirect(it, c); src != "" {
 				ready[it.ID] = true
 			}
 		}
@@ -154,7 +164,7 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 			errJSON(w, 404, "not in the library (rescanned?)")
 			return
 		}
-		if m := directManifest(it); m != nil { // the original's own picture beats a copy
+		if m := directManifest(it, capsOf(r)); m != nil { // the original's own picture beats a copy
 			writeJSON(w, 200, m)
 			return
 		}
@@ -167,7 +177,8 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 	mux.HandleFunc("GET /api/v1/web/{id}/{file}", func(w http.ResponseWriter, r *http.Request) {
 		it := p.c.Get(r.PathValue("id"))
 		name := r.PathValue("file")
-		if src, _ := webDirect(it); src != "" { // subtitles beside a directly played file
+		copied := webCopy(it) != nil && filepath.IsLocal(name) && !strings.ContainsAny(name, `/\`) && exists(filepath.Join(webDir(it.ID), name))
+		if it != nil && it.file != "" && !copied { // subtitles beside a directly played file
 			var n int
 			if _, err := fmt.Sscanf(name, "x%d.vtt", &n); err == nil && n >= 0 && n < len(it.Subs) {
 				b, err := os.ReadFile(it.Subs[n].file)

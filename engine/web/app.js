@@ -171,7 +171,7 @@ document.addEventListener("click", async e => {
   const id = b.dataset.open;
   const it = (await api(`/api/v1/item/${id}`)).item;
   if (!it) return;
-  const st = await api(`/api/v1/web/${id}`);
+  const st = await webAPI(`/api/v1/web/${id}`);
   if (st.state === "ready") { location.hash = `#/play/${id}`; return; }
   location.hash = `#/title/${it.show_id || id}`;
 });
@@ -222,7 +222,7 @@ function audioLine(t) {
 async function title(id) {
   const key = route.key;
   loadingPage();
-  const [d, web] = await Promise.all([api(`/api/v1/item/${id}`), api("/api/v1/web")]);
+  const [d, web] = await Promise.all([api(`/api/v1/item/${id}`), webAPI("/api/v1/web")]);
   if (route.key !== key) return;
   if (d.error) { d.offline ? errorPage(() => title(id)) : show(tabs("") + `<div class="centre"><div class="title">Not in the library</div></div>`); return; }
   const main = d.item, up = d.up_next, isShow = main.type === "show";

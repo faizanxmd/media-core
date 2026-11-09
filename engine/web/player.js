@@ -2,6 +2,30 @@
 // The player: the TV's (docs/design-system.md), with a mouse added. hls.js does what Media3 does in the apps.
 // Nothing on screen while playing. A tap of Left/Right skips with a small mark, holding brings the picture strip,
 // pausing or moving the mouse shows the title, bar and controls.
+// What this browser can play, asked of the browser itself. Sent to mint with
+// every "can it play here" question, so Safari gets 4K, HDR, Dolby Vision and
+// Dolby audio as they are, and other browsers what they can take (engine/browser.go).
+const browserCan = (async () => {
+  const v = document.createElement("video");
+  const ok = t => { try { return !!window.MediaSource?.isTypeSupported?.(t) || v.canPlayType(t) === "probably"; } catch { return false; } };
+  const tests = {
+    h264: 'video/mp4; codecs="avc1.640028"', "h264-10": 'video/mp4; codecs="avc1.6e0028"', hevc: 'video/mp4; codecs="hvc1.2.4.L150.90"',
+    av1: 'video/mp4; codecs="av01.0.08M.10"', vp9: 'video/mp4; codecs="vp09.02.40.10"', dv: 'video/mp4; codecs="dvh1.05.06"',
+    aac: 'audio/mp4; codecs="mp4a.40.2"', mp3: "audio/mpeg", opus: 'audio/mp4; codecs="opus"', flac: 'audio/mp4; codecs="flac"',
+    ac3: 'audio/mp4; codecs="ac-3"', eac3: 'audio/mp4; codecs="ec-3"', alac: 'audio/mp4; codecs="alac"',
+  };
+  const can = Object.keys(tests).filter(k => ok(tests[k]));
+  try {
+    const r = await navigator.mediaCapabilities?.decodingInfo({ type: "file", video: { contentType: tests.hevc, width: 3840, height: 2160,
+      bitrate: 20e6, framerate: 24, hdrMetadataType: "smpteSt2086", colorGamut: "rec2020", transferFunction: "pq" } });
+    if (r?.supported && can.includes("hevc")) can.push("hdr");
+  } catch {}
+  if ("audioTracks" in HTMLMediaElement.prototype) can.push("switch");
+  return can.join(",");
+})();
+// a /api/v1/web URL with what this browser can play
+async function webAPI(path) { return api(`${path}${path.includes("?") ? "&" : "?"}can=${await browserCan}`); }
+
 const Player = (() => {
   const SPEEDS = [.75, 1, 1.25, 1.5, 2];
   const LANG = (() => { try { return new Intl.DisplayNames(["en"], { type: "language" }); } catch { return null; } })();
@@ -87,7 +111,7 @@ const Player = (() => {
     if (mine !== opened) return;
     if (d.error) { showError("Can't play this", d.error, ""); return; }
     const it = d.item;
-    const web = await api("/api/v1/web");
+    const web = await webAPI("/api/v1/web");
     ready = web.ready || {};
     queue = [it]; logo = it.meta?.logo || "";
     if (it.type === "episode" && it.show_id) {
@@ -111,7 +135,7 @@ const Player = (() => {
     drawCover();
     $p(".offer").innerHTML = ""; $p(".subs").textContent = ""; clearPGS();
     setMode("hidden"); drawFull();
-    manifest = await api(`/api/v1/web/${it.id}`);
+    manifest = await webAPI(`/api/v1/web/${it.id}`);
     if (mine !== opened) return;
     if (manifest.state !== "ready") { showError("Not ready for browsers", "Manager can make it play here: as an MP4, or with a Light copy.", ""); return; }
     thumbs = it.thumbs > 0 ? new Thumbs(it.id) : null;
@@ -367,6 +391,7 @@ const Player = (() => {
     return list.map((a, i) => {
       const n = langName(a.lang, a.title);
       const detail = isCommentary(a.title) ? "Commentary" : langs[n] > 1 ? (a.channels === 1 ? "Mono" : a.channels === 2 ? "Stereo" : a.channels === 6 ? "5.1" : a.channels === 8 ? "7.1" : "") : "";
+      if (a.plays === false) return { title: n, detail: "Not in this browser", selected: false, pick: () => pnote("This browser can't play that track") };
       return { title: n, detail, selected: i === audioIdx, pick: () => pickAudio(i, true) };
     });
   }
@@ -393,8 +418,10 @@ const Player = (() => {
     const pref = store.get("a:" + langKey(item));
     const mine = (navigator.language || "en").slice(0, 2);
     const speaks = code => { try { return new Intl.Locale(code || "und").language === mine || langName(code).toLowerCase() === (LANG?.of(mine) || "").toLowerCase(); } catch { return false; } };
-    let i = pref ? list.findIndex(a => a.lang === pref && !isCommentary(a.title)) : -1;
-    if (i < 0) i = list.findIndex(a => speaks(a.lang) && !isCommentary(a.title));
+    const plays = a => a.plays !== false; // only tracks this browser can play
+    let i = pref ? list.findIndex(a => plays(a) && a.lang === pref && !isCommentary(a.title)) : -1;
+    if (i < 0) i = list.findIndex(a => plays(a) && speaks(a.lang) && !isCommentary(a.title));
+    if (i < 0) i = list.findIndex(plays);
     pickAudio(i < 0 ? 0 : i, false);
   }
   async function pickSub(i, quiet) {

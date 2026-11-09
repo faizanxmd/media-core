@@ -34,13 +34,14 @@ type MInfo struct {
 	// What Manager needs to say where a file plays: the container, the first
 	// audio track's codec (a browser plays the first one), the video's bit depth
 	// and whether any subtitles are pictures (PGS), which MP4 can't hold.
-	Container string `json:"container,omitempty"` // mkv, mp4, ...
-	ACodec    string `json:"acodec,omitempty"`    // ffprobe's name: aac, flac, dts...
-	VBits     int    `json:"vbits,omitempty"`
-	PGS       bool   `json:"pgs,omitempty"`
+	Container string   `json:"container,omitempty"` // mkv, mp4, ...
+	ACodec    string   `json:"acodec,omitempty"`    // ffprobe's name: aac, flac, dts...
+	ACodecs   []string `json:"acodecs,omitempty"`   // every audio track's, in the file's order (a browser that switches tracks can use any)
+	VBits     int      `json:"vbits,omitempty"`
+	PGS       bool     `json:"pgs,omitempty"`
 }
 
-const miVersion = 5 // bump when MInfo gains fields, so cached entries are re-read
+const miVersion = 6 // bump when MInfo gains fields, so cached entries are re-read
 
 // ffprobe reads only the file's header, but on the HDD that's still a seek
 // per file, so results are cached by size+mtime in mediainfo.json.
@@ -204,6 +205,7 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 		}
 		switch s.Type {
 		case "audio":
+			m.ACodecs = append(m.ACodecs, s.Codec)
 			t := audioLabel(s.Codec, s.Profile, s.Channels)
 			if l := langName(s.Tags.Language); l != "" {
 				t += " · " + l
