@@ -2,6 +2,21 @@
 // The player: the TV's (docs/design-system.md), with a mouse added. hls.js does what Media3 does in the apps.
 // Nothing on screen while playing. A tap of Left/Right skips with a small mark, holding brings the picture strip,
 // pausing or moving the mouse shows the title, bar and controls.
+// wlog: a short line in mint's journal (POST /api/weblog), so what a browser
+// did, Safari's refusals and errors included, can be read on mint.
+const wlog = (() => {
+  let q = [], t = 0;
+  const flush = () => {
+    t = 0; if (!q.length) return;
+    const body = JSON.stringify({ ua: navigator.userAgent, events: q.splice(0, 40) });
+    fetch("/api/weblog", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+  };
+  addEventListener("pagehide", flush);
+  return msg => { q.push(String(msg)); if (!t) t = setTimeout(flush, 1500); };
+})();
+addEventListener("error", e => wlog(`script error: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno})`));
+addEventListener("unhandledrejection", e => wlog(`unhandled: ${e.reason?.name || ""} ${e.reason?.message || e.reason}`));
+
 // What this browser can play, asked of the browser itself. Sent to mint with
 // every "can it play here" question, so Safari gets 4K, HDR, Dolby Vision and
 // Dolby audio as they are, and other browsers what they can take (engine/browser.go).
@@ -21,6 +36,7 @@ const browserCan = (async () => {
     if (r?.supported && can.includes("hevc")) can.push("hdr");
   } catch {}
   if ("audioTracks" in HTMLMediaElement.prototype) can.push("switch");
+  wlog(`page loaded, can play: ${can.join(",") || "nothing reported"}`);
   return can.join(",");
 })();
 // a /api/v1/web URL with what this browser can play
@@ -136,6 +152,7 @@ const Player = (() => {
     $p(".offer").innerHTML = ""; $p(".subs").textContent = ""; clearPGS();
     setMode("hidden"); drawFull();
     manifest = await webAPI(`/api/v1/web/${it.id}`);
+    wlog(`open ${it.id} "${it.show ? it.show + " " : ""}${it.title || ""}": ${manifest.state}, ${manifest.src || (manifest.state === "ready" ? "HLS copy" : "nothing to play")}, sound ${(manifest.audio || []).map(a => `${a.lang || "?"}/${a.codec}${a.plays === false ? "(no)" : ""}`).join(" ")}`);
     if (mine !== opened) return;
     if (manifest.state !== "ready") { showError("Not ready for browsers", "Manager can make it play here: as an MP4, or with a Light copy.", ""); return; }
     thumbs = it.thumbs > 0 ? new Thumbs(it.id) : null;
@@ -173,7 +190,7 @@ const Player = (() => {
   function go() {
     v.playbackRate = speed;
     const p = v.play();
-    if (p) p.catch(() => showFull()); // a browser that wants a click first
+    if (p) p.catch(e => { wlog(`play() refused: ${e.name}: ${e.message}`); showFull(); }); // a browser that wants a click first
   }
 
   function stopMedia() {
@@ -238,6 +255,12 @@ const Player = (() => {
     v.addEventListener("ended", onEnded, on);
     v.addEventListener("error", () => { if (!hls) showError("Can't play this", "The stream stopped and didn't come back.", v.error?.message || ""); }, on);
     v.addEventListener("loadedmetadata", placePGS, on);
+    let waits = 0, played = false;
+    v.addEventListener("loadedmetadata", () => wlog(`loaded ${v.videoWidth}x${v.videoHeight}, ${Math.round(v.duration)} s, ${v.audioTracks ? v.audioTracks.length + " sound tracks" : "no track list"}`), on);
+    v.addEventListener("playing", () => { if (!played) played = true, wlog(`playing at ${Math.round(v.currentTime)} s`); }, on);
+    v.addEventListener("error", () => wlog(`video error ${v.error?.code}: ${v.error?.message || ""} (${v.currentSrc.split("/").slice(-2).join("/")})`), on);
+    v.addEventListener("stalled", () => wlog(`stalled at ${Math.round(v.currentTime)} s`), on);
+    v.addEventListener("waiting", () => { if (++waits <= 3) wlog(`waiting at ${Math.round(v.currentTime)} s`); }, on);
     el.addEventListener("click", onClick);
     el.addEventListener("dblclick", e => { if (e.target === v) toggleFull(); });
     el.addEventListener("mousemove", onMove);
@@ -407,6 +430,7 @@ const Player = (() => {
   }
   function pickAudio(i, save) {
     audioIdx = i;
+    wlog(`sound track ${i} (${manifest?.audio?.[i]?.lang || "?"}/${manifest?.audio?.[i]?.codec || "?"}), browser lists ${v?.audioTracks ? v.audioTracks.length : "none"}`);
     if (hls) hls.audioTrack = i;
     else if (v.audioTracks) for (let k = 0; k < v.audioTracks.length; k++) v.audioTracks[k].enabled = k === i;
     const a = manifest?.audio?.[i];

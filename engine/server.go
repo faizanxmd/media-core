@@ -146,6 +146,29 @@ func (s *Server) routes() http.Handler {
 		}
 		http.NotFound(w, r)
 	})
+	// what the web player saw in the browser (player.js, wlog): errors, refused plays, what it can decode.
+	// Lands in the engine's journal, so a problem in Safari can be read here on mint.
+	mux.HandleFunc("POST /api/weblog", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			UA     string   `json:"ua"`
+			Events []string `json:"events"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&b) != nil {
+			w.WriteHeader(400)
+			return
+		}
+		who := browserName(b.UA)
+		for i, e := range b.Events {
+			if i == 40 {
+				break
+			}
+			if len(e) > 400 {
+				e = e[:400] + "…"
+			}
+			log.Printf("web %s: %s", who, strings.ReplaceAll(e, "\n", " "))
+		}
+		w.WriteHeader(204)
+	})
 	mux.HandleFunc("GET /api/jobs", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.status()) })
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.status()) })
 	mux.HandleFunc("GET /api/events", s.events)
@@ -423,4 +446,30 @@ func serve() {
 		log.Fatal(err)
 	}
 	store.Flush()
+}
+
+// browserName: "Safari 18.1" or "Chrome 131" from a User-Agent, for the log.
+func browserName(ua string) string {
+	field := func(key string) string {
+		i := strings.Index(ua, key)
+		if i < 0 {
+			return ""
+		}
+		v := ua[i+len(key):]
+		if j := strings.IndexAny(v, " ;)"); j >= 0 {
+			v = v[:j]
+		}
+		return v
+	}
+	switch {
+	case strings.Contains(ua, "Edg/"):
+		return "Edge " + field("Edg/")
+	case strings.Contains(ua, "Chrome/"):
+		return "Chrome " + field("Chrome/")
+	case strings.Contains(ua, "Firefox/"):
+		return "Firefox " + field("Firefox/")
+	case strings.Contains(ua, "Safari/") && strings.Contains(ua, "Version/"):
+		return "Safari " + field("Version/")
+	}
+	return "browser"
 }
