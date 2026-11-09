@@ -64,6 +64,9 @@ func webCopy(it *Item) *webManifest {
 		return nil
 	}
 	m.State = "ready"
+	for i := range m.Audio { // a copy's sound was made for browsers (AAC)
+		m.Audio[i].Plays = true
+	}
 	return &m
 }
 

@@ -161,6 +161,10 @@ const Player = (() => {
     if (manifest.src) { // the library file or its Light copy, played as it is
       v.src = manifest.src;
       v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true, signal: startAc.signal });
+    } else if (v.canPlayType("application/vnd.apple.mpegurl") && "audioTracks" in HTMLMediaElement.prototype) {
+      // Safari: Apple's own HLS player, which hls.js only imitates (with it, Safari played sound but no picture)
+      v.src = src;
+      v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true, signal: startAc.signal });
     } else if (window.Hls && Hls.isSupported()) {
       hls = new Hls({ startPosition: resume > 0 ? resume : -1, maxBufferLength: 60, maxMaxBufferLength: 180, backBufferLength: 60, renderTextTracksNatively: false, subtitleDisplay: false });
       hls.on(Hls.Events.ERROR, (_, e) => {
@@ -255,6 +259,7 @@ const Player = (() => {
     v.addEventListener("ended", onEnded, on);
     v.addEventListener("error", () => { if (!hls) showError("Can't play this", "The stream stopped and didn't come back.", v.error?.message || ""); }, on);
     v.addEventListener("loadedmetadata", placePGS, on);
+    v.audioTracks?.addEventListener?.("addtrack", applyAudio, on);
     let waits = 0, played = false;
     v.addEventListener("loadedmetadata", () => wlog(`loaded ${v.videoWidth}x${v.videoHeight}, ${Math.round(v.duration)} s, ${v.audioTracks ? v.audioTracks.length + " sound tracks" : "no track list"}`), on);
     v.addEventListener("playing", () => { if (!played) played = true, wlog(`playing at ${Math.round(v.currentTime)} s`); }, on);
@@ -432,9 +437,14 @@ const Player = (() => {
     audioIdx = i;
     wlog(`sound track ${i} (${manifest?.audio?.[i]?.lang || "?"}/${manifest?.audio?.[i]?.codec || "?"}), browser lists ${v?.audioTracks ? v.audioTracks.length : "none"}`);
     if (hls) hls.audioTrack = i;
-    else if (v.audioTracks) for (let k = 0; k < v.audioTracks.length; k++) v.audioTracks[k].enabled = k === i;
+    else applyAudio();
     const a = manifest?.audio?.[i];
     if (save && a?.lang) store.set("a:" + langKey(item), a.lang);
+  }
+  // Safari fills its track list a moment after the video loads; applied again as each track arrives (build)
+  function applyAudio() {
+    if (!v?.audioTracks || hls) return;
+    for (let k = 0; k < v.audioTracks.length; k++) { const on = k === audioIdx; if (v.audioTracks[k].enabled !== on) v.audioTracks[k].enabled = on; }
   }
   function pickAudioPref() {
     const list = manifest?.audio || [];
