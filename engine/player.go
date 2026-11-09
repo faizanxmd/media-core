@@ -24,11 +24,10 @@ import (
 const PlayerListen = ":8790"
 
 type Player struct {
-	c    *Catalog
-	w    *Watch // the owner's progress; a guest's comes from gate.watch
-	gate *gate
-	t    *TMDB
-	e    *Engine
+	c *Catalog
+	w *Watch
+	t *TMDB
+	e *Engine
 }
 
 var (
@@ -63,11 +62,11 @@ func (p *Player) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/home", p.home)
 	mux.HandleFunc("GET /api/v1/movies", func(w http.ResponseWriter, r *http.Request) {
 		movies, _ := p.c.Lists()
-		writeJSON(w, 200, map[string]any{"items": p.list(p.watchFor(r), movies)})
+		writeJSON(w, 200, map[string]any{"items": p.list(movies)})
 	})
 	mux.HandleFunc("GET /api/v1/shows", func(w http.ResponseWriter, r *http.Request) {
 		_, shows := p.c.Lists()
-		writeJSON(w, 200, map[string]any{"items": p.list(p.watchFor(r), shows)})
+		writeJSON(w, 200, map[string]any{"items": p.list(shows)})
 	})
 	mux.HandleFunc("GET /api/v1/search", p.search)
 	mux.HandleFunc("GET /api/v1/item/{id}", p.item)
@@ -111,10 +110,10 @@ func serveAPK(name string) http.HandlerFunc {
 // list is what the poster rows and grids need: no chapters or cast, which
 // only the title page and the player use (/api/v1/item has them). Nearly half
 // of Home's size, and the TV parses all of it.
-func (p *Player) list(wt *Watch, xs []*Item) []*Item {
+func (p *Player) list(xs []*Item) []*Item {
 	out := make([]*Item, len(xs))
 	for i, x := range xs {
-		it := slimCast(wt.decorate(x, false))
+		it := slimCast(p.w.decorate(x, false))
 		if it.Info != nil && len(it.Info.Chapters) > 0 {
 			info := *it.Info
 			info.Chapters = nil
@@ -173,11 +172,10 @@ type dlRow struct {
 
 func (p *Player) home(w http.ResponseWriter, r *http.Request) {
 	movies, shows := p.c.Lists()
-	wt := p.watchFor(r)
-	cont := wt.continueRow(movies, shows)
+	cont := p.w.continueRow(movies, shows)
 	contOut := make([]*Item, len(cont))
 	for i, it := range cont {
-		contOut[i] = p.withShow(wt.decorate(it, false))
+		contOut[i] = p.withShow(p.w.decorate(it, false))
 	}
 
 	// Recently added: films by file date, shows by their newest episode.
@@ -202,10 +200,10 @@ func (p *Player) home(w http.ResponseWriter, r *http.Request) {
 	// the phone's featured card can play from Recently Added directly, so it keeps its chapters
 	recentOut := make([]*Item, len(recent))
 	for i, it := range recent {
-		recentOut[i] = slimCast(wt.decorate(it, false))
+		recentOut[i] = slimCast(p.w.decorate(it, false))
 	}
 	writeJSON(w, 200, map[string]any{
-		"continue": contOut, "recent": recentOut, "movies": p.list(wt, movies), "shows": p.list(wt, shows),
+		"continue": contOut, "recent": recentOut, "movies": p.list(movies), "shows": p.list(shows),
 		"downloading": dls,
 	})
 }
@@ -255,7 +253,7 @@ func (p *Player) search(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, 200, map[string]any{"items": p.list(p.watchFor(r), out)})
+	writeJSON(w, 200, map[string]any{"items": p.list(out)})
 }
 
 func (p *Player) item(w http.ResponseWriter, r *http.Request) {
@@ -264,20 +262,19 @@ func (p *Player) item(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "not in the library (rescanned?)")
 		return
 	}
-	wt := p.watchFor(r)
-	out := map[string]any{"item": p.withShow(wt.decorate(it, true))}
+	out := map[string]any{"item": p.withShow(p.w.decorate(it, true))}
 	if it.Type == "episode" {
 		if n := nextEpisode(p.c, it); n != nil {
-			out["next"] = p.withShow(wt.decorate(n, false))
+			out["next"] = p.withShow(p.w.decorate(n, false))
 		}
 	}
 	if it.Type == "show" || it.Type == "season" {
 		// what the big Play button starts: the in-progress or next unseen episode
 		eps := episodesOf(it)
-		pick, _ := wt.carryOn(eps) // the same episode Continue Watching offers
+		pick, _ := p.w.carryOn(eps) // the same episode Continue Watching offers
 		if pick == nil {
 			for _, e := range eps {
-				if s := wt.Get(e.ID); s == nil || !s.Watched {
+				if s := p.w.Get(e.ID); s == nil || !s.Watched {
 					pick = e
 					break
 				}
@@ -287,7 +284,7 @@ func (p *Player) item(w http.ResponseWriter, r *http.Request) {
 			pick = eps[0]
 		}
 		if pick != nil {
-			out["up_next"] = p.withShow(wt.decorate(pick, false))
+			out["up_next"] = p.withShow(p.w.decorate(pick, false))
 		}
 	}
 	writeJSON(w, 200, out)
@@ -312,7 +309,7 @@ func (p *Player) progress(w http.ResponseWriter, r *http.Request) {
 	if !b.Ended {
 		touchPlaying(r, b.ID)
 	}
-	writeJSON(w, 200, p.watchFor(r).Progress(b.ID, b.Pos, b.Dur, b.Ended, b.At))
+	writeJSON(w, 200, p.w.Progress(b.ID, b.Pos, b.Dur, b.Ended, b.At))
 }
 
 func (p *Player) watched(w http.ResponseWriter, r *http.Request) {
@@ -332,9 +329,8 @@ func (p *Player) watched(w http.ResponseWriter, r *http.Request) {
 	for _, e := range episodesOf(it) {
 		ids = append(ids, e.ID)
 	}
-	wt := p.watchFor(r)
-	wt.SetWatched(ids, b.Watched)
-	writeJSON(w, 200, map[string]any{"ok": true, "item": wt.decorate(it, true)})
+	p.w.SetWatched(ids, b.Watched)
+	writeJSON(w, 200, map[string]any{"ok": true, "item": p.w.decorate(it, true)})
 }
 
 var videoMime = map[string]string{"mkv": "video/x-matroska", "mp4": "video/mp4", "m4v": "video/mp4", "webm": "video/webm",
@@ -477,7 +473,7 @@ func servePlayer(p *Player) *http.Server {
 	if v := os.Getenv("MEDIA_CORE_PLAYER_LISTEN"); v != "" {
 		addr = v
 	}
-	hs := &http.Server{Addr: addr, Handler: p.gate.wrap(mux), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("player API listening on %s", addr)
 		if err := hs.ListenAndServe(); err != http.ErrServerClosed {
@@ -511,12 +507,4 @@ func speedTest(w http.ResponseWriter, r *http.Request) {
 		}
 		n -= k
 	}
-}
-
-// watchFor is the progress store of whoever is asking: a guest has their own.
-func (p *Player) watchFor(r *http.Request) *Watch {
-	if p.gate == nil {
-		return p.w
-	}
-	return p.gate.watch(r, p.w)
 }

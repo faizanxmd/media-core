@@ -118,19 +118,7 @@ To also keep the nightly backup on a USB stick, so it survives the main disk dyi
 UUID=<uuid> /mnt/media-core-usb exfat noauto,nofail,x-systemd.automount,x-systemd.idle-timeout=60,x-systemd.device-timeout=5,uid=1000,gid=1000,umask=077 0 0
 ```
 
-`deploy/install.sh` builds, tests and installs the binary and units, creates `aria2.conf` with a random secret the first time, and restarts the engine. Re-running it deploys engine changes. Firewall: allow 8780 on `tailscale0` only, and 8790 on the home LAN plus `tailscale0`.
-
-## Sharing with a friend
-
-mint is only reachable over Tailscale, so a friend joins through it, with no public link and no password:
-
-1. In the Tailscale admin console (Machines), open `mint`'s menu, choose **Share…**, and send the invite to the friend's email.
-2. The friend installs Tailscale, signs in with that email, and accepts.
-3. They open `http://100.75.19.19:8780` in a browser (Chrome, Safari or Edge).
-
-Anyone on another Tailscale account is a guest (`engine/guest.go`): they see Home, Films, Shows and Search and can play, with
-their own watch progress (`~/.local/share/media-core/guests/`), but Manager, downloads, files and settings answer 403. Your own
-devices and the home network are the owner, as before. Remove the share in the same menu to cut them off.
+`deploy/install.sh` builds, tests and installs the binary and units, creates `aria2.conf` with a random secret the first time, and restarts the engine. Re-running it deploys engine changes. Firewall: allow 8780 on `tailscale0` only, and 8790 on the home LAN plus `tailscale0`. On Tailscale, 8780 answers only the owner's own devices (`engine/owner.go`), so sharing mint with another account doesn't open Manager to it.
 
 ## Workflow
 

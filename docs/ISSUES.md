@@ -22,7 +22,9 @@ To be filled in from the user's reports.
 
 ## Network
 
-To be filled in from the user's reports.
+1. **Port 8790 has no owner lock** (engine). The site on 8780 turns away other Tailscale accounts, but the player API on 8790, which the TV and phone apps use, answers anyone who can reach it, including `/api/v1/match`. Only matters if mint is ever shared.
+
+More to be filled in from the user's reports.
 
 ## Fixed
 

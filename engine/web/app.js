@@ -52,7 +52,7 @@ const tabsDef = [["#/search", "Search"], ["#/", "Home"], ["#/films", "Films"], [
 function tabs(current) {
   const busy = window.Manager?.busy?.();
   return `<nav class="tabs">${tabsDef.map(([h, l]) => `<a class="tab ${l === current ? "on" : ""}" href="${h}">${l}</a>`).join("")}
-    ${window.GUEST ? "" : `<a class="tab ${current === "Manager" ? "on" : ""}" href="#/manager" id="mgrTab">${busy ? `<i class="dot"></i>` : ""}Manager</a>`}</nav>`;
+    <a class="tab ${current === "Manager" ? "on" : ""}" href="#/manager" id="mgrTab">${busy ? `<i class="dot"></i>` : ""}Manager</a></nav>`;
 }
 const track = f => `<div class="track"><i style="width:${(f * 100).toFixed(1)}%"></i></div>`;
 
@@ -140,7 +140,7 @@ async function home(refresh) {
   const keep = refresh ? $$(".cards", page()).map(c => c.scrollLeft) : null;
   const shows = h.shows || [], movies = h.movies || [];
   const f = [...(h.continue || []), ...(h.recent || []), ...shows, ...movies][0];
-  const none = !movies.length && !shows.length ? `<p class="mut" style="padding:0 var(--side)">Nothing in the library yet.${window.GUEST ? "" : ` <a href="#/manager" style="color:var(--ink)">Add links</a>.`}</p>` : "";
+  const none = !movies.length && !shows.length ? `<p class="mut" style="padding:0 var(--side)">Nothing in the library yet. <a href="#/manager" style="color:var(--ink)">Add links</a>.</p>` : "";
   const html = tabs("Home") + (f ? stage(f, shows) : "") +
     row("Continue Watching", h.continue, wideCard) + row("Recently Added", h.recent, posterCard) +
     row("Shows", shows, posterCard) + row("Films", movies, posterCard) + none;
@@ -411,7 +411,7 @@ function route() {
     case "shows": route.key = "shows"; library(true); break;
     case "search": route.key = "search"; search(); break;
     case "title": route.key = "title" + parts[1]; title(parts[1]); break;
-    case "manager": if (window.GUEST) { location.replace("#/"); break; } route.key = "manager"; Manager.page(); break;
+    case "manager": route.key = "manager"; Manager.page(); break;
     case "add": location.replace("#/manager"); break;
     default: location.hash = "#/";
   }
@@ -424,9 +424,5 @@ const qs = new URLSearchParams(location.search);
 const shared = [qs.get("url"), qs.get("text"), qs.get("title")].filter(Boolean).join(" ");
 if (shared) { window.sharedLinks = shared; history.replaceState(null, "", "/#/manager"); }
 if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js");
-// a guest (someone mint is shared with) watches, without Manager
-api("/api/whoami").then(r => {
-  window.GUEST = !!r.guest;
-  if (!window.GUEST) Manager.connect();
-  route();
-});
+Manager.connect();
+route();
