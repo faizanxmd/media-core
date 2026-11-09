@@ -24,6 +24,8 @@ To be filled in from the user's reports.
 
 1. **Port 8790 has no owner lock** (engine). The site on 8780 turns away other Tailscale accounts, but the player API on 8790, which the TV and phone apps use, answers anyone who can reach it, including `/api/v1/match`. Only matters if mint is ever shared.
 
+2. **Direct Tailscale can silently break** (network). The Deco's automatic mapping for mint can move off 41641 (it was on 41642 on 2026-11-09), and then the ISP router's forward leads nowhere and remote devices go through the DERP relay (Mumbai, slow, stalls on 20 Mb/s files). Restored with a UPnP mapping that lasts until the Deco reboots; a manual Deco rule would make it permanent. Nothing tells the user when this happens.
+
 More to be filled in from the user's reports.
 
 ## Fixed
