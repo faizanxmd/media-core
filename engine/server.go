@@ -176,7 +176,12 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/probe", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ URL string }
 		if readJSON(w, r, &b) {
-			writeJSON(w, 200, s.e.Probe(r.Context(), b.URL))
+			res := s.e.Probe(r.Context(), b.URL)
+			if res.Media != nil { // where it will play, for the browser that asked
+				res.Play = howToPlay(res.Media, nil, capsOf(r)).How
+				res.Browser = res.Play != "none"
+			}
+			writeJSON(w, 200, res)
 		}
 	})
 	mux.HandleFunc("POST /api/plan", func(w http.ResponseWriter, r *http.Request) {

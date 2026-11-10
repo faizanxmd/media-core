@@ -37,7 +37,7 @@ const (
 	streamBase   = 10.0            // added to every timestamp, so none is negative
 	audioPiece   = 2.048           // seconds: 96 AAC frames at 48 kHz, so pieces from different runs line up
 	audioFrame   = 1024.0 / 48000  // one AAC frame
-	videoBudget  = 160 << 20       // bytes of picture kept per title (the engine's unit allows it 600M in all)
+	videoBudget  = 128 << 20       // bytes of picture kept per title (the engine's unit allows it 800M in all)
 	audioBudget  = 16 << 20        // bytes of sound kept per track
 	aheadSeconds = 45.0            // how far past the player ffmpeg may run,
 	aheadBytes   = 64 << 20        // or this much picture, whichever is less

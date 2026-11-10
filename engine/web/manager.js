@@ -35,7 +35,11 @@ const Manager = (() => {
   const quality = m => !m ? "" : [m.res, m.hdr ? m.hdr.replace(/ \d.*$/, "") : ""].filter(Boolean).join(" ");
   const videoWord = m => !m?.vcodec ? "" : m.vcodec.replace(" Main 10", "") + (m.vbits >= 10 ? " 10-bit" : "");
   const box = m => (m?.container || "").toUpperCase();
-  const plays = (f) => f.browser ? "Plays everywhere" : "TV and phone only";
+  // where a file plays, for the browser that's asking (the engine decides: play.go)
+  const plays = f => f.play === "light" ? "Browsers by its Light copy" : f.browser ? "Plays everywhere" : "TV and phone only";
+  const playsIn = f => ({ direct: "Browsers, TV and phone", repack: "Browsers (repackaged as it plays), TV and phone", light: "Browsers (by the Light copy), TV and phone" })[f.play]
+    || "TV and phone. This browser can't decode its picture; a Light copy would play here";
+  const probeLink = async url => api(`/api/probe?can=${await browserCan}`, { url });
   const facts = (...rows) => `<div class="mfacts">${rows.filter(r => r[1]).map(([k, v]) => `<div><div class="caption mut">${k}</div><div class="label fig">${esc(v)}</div></div>`).join("")}</div>`;
   const mediaFacts = (m, size) => facts(["Quality", quality(m)], ["Video", videoWord(m)], ["File", box(m)], ["Audio", m?.audio || ""],
     ["Length", m?.dur ? dur(m.dur) : ""], ["Size", size != null ? bytes(size) : ""]);
@@ -95,7 +99,7 @@ const Manager = (() => {
   }
 
   async function loadTitles() {
-    const r = await api("/api/manager/titles");
+    const r = await webAPI("/api/manager/titles");
     if (!r.error) { TITLES = r.titles || []; render(); }
   }
   async function loadSystem() {
@@ -302,22 +306,15 @@ const Manager = (() => {
   const loadingHTML = u => `<div class="facts" style="margin:0"><div class="loading s"></div><span class="one mut">Reading ${esc(u.length > 90 ? u.slice(0, 90) + "…" : u)}</span></div>`;
   const verdict = p => {
     const t = downloadTime(p.size), tail = t ? ` About ${t} to download.` : "";
+    const far = p.heavy ? " Away from home it needs a fast connection, or a Light copy." : "";
     if (!p.media) return `Picture and sound details show after the download.${tail}`;
-    if (p.browser) return `Plays everywhere as it is.${tail}`;
-    if (p.heavy) return `Plays on TV and phone, at home or on a fast connection.${tail}`;
-    return `Plays on TV and phone.${tail}`;
+    if (p.play === "direct") return `Plays everywhere as it is.${far}${tail}`;
+    if (p.play === "repack") return `Plays everywhere. Browsers get it repackaged as it plays; the file stays as it is.${far}${tail}`;
+    return `Plays on TV and phone. This browser can't decode its picture; a Light copy would play here.${tail}`;
   };
-  function mp4Detail(m) {
-    const words = ["So it also plays in browsers. The picture stays untouched."];
-    if (!m) words.push("The link couldn't be read yet, so this is checked after the download: 4K or HDR is kept as it is.");
-    if (m && !["aac", "mp3", "opus", "flac"].includes(m.acodec)) words.push(`An AAC copy of the sound goes first, because browsers can't play ${esc(m.audio || "this audio")}.`);
-    if (m?.pgs) words.push("Its picture subtitles would only show in browsers after this, not on TV or phone.");
-    else if ((m?.subs || []).length) words.push("Subtitles are saved beside the file.");
-    return words.join(" ");
-  }
 
   async function probeInto(url, el) {
-    const p = await api("/api/probe", { url });
+    const p = await probeLink(url);
     if (!p.ok) {
       el.innerHTML = `<div class="head"><div class="heading">That link didn't work</div><button class="tool" data-x aria-label="Dismiss">${icon("Close")}</button></div>
         <div class="meta mut file">${esc(url)}</div><div class="warn">${esc(p.error)}</div>
@@ -327,17 +324,16 @@ const Manager = (() => {
       allBar();
       return;
     }
-    el._probe = p; el._kind = p.plan.kind; el._mp4 = p.can_mp4 && !p.pgs; el._light = null; el._wantLight = false;
+    el._probe = p; el._kind = p.plan.kind; el._light = null; el._wantLight = false;
     drawProbe(el);
     allBar();
   }
   function drawProbe(el) {
     const p = el._probe, pl = p.plan, m = p.media;
     const single = el._kind === "movie" || el._kind === "tv" && planOf(el).episode !== "";
-    const lightBox = p.heavy && single ? `<div class="mchoice">${optHTML("light", el._wantLight, "Add a Light copy", "For browsers and slow connections.")}
+    const lightBox = p.heavy && single ? `<div class="mchoice">${optHTML("light", el._wantLight, "Add a Light copy", "A smaller version for slow connections, and for browsers that can't decode this one.")}
         ${el._wantLight ? `<input class="mlink" data-lightlink placeholder="Paste the Light copy's link" value="${esc(el._light?.url || "")}" autocomplete="off" autocapitalize="off" spellcheck="false">
         <div data-lightinfo>${lightInfo(el)}</div>` : ""}</div>` : "";
-    const mp4Box = p.can_mp4 ? `<div class="mchoice">${optHTML("mp4", el._mp4, "Make it MP4 after downloading", mp4Detail(m))}</div>` : "";
     const both = el._wantLight && el._light?.probe;
     el.innerHTML = `<div class="head"><div class="heading" data-title></div><button class="tool" data-x aria-label="Dismiss" title="Dismiss">${icon("Close")}</button></div>
       ${m ? mediaFacts(m, p.size) : facts(["Size", bytes(p.size)])}
@@ -352,7 +348,7 @@ const Manager = (() => {
           <label class="c3" data-f="season">Season<input name="season" inputmode="numeric" autocomplete="off"></label>
           <label class="c3" data-f="episode">Episode (blank for a whole season)<input name="episode" inputmode="numeric" autocomplete="off"></label>
         </div></div>
-      ${mp4Box}${lightBox}
+      ${lightBox}
       <div class="btns" style="justify-content:flex-end"><button class="play" data-go>${both ? `Download both · ${bytes((p.size || 0) + (el._light.probe.size || 0))}` : "Download"}</button></div>`;
     const vals = el._vals || pl;
     for (const k of ["title", "year", "season", "episode"]) {
@@ -370,7 +366,6 @@ const Manager = (() => {
     $("[data-go]", el).onclick = () => queue(el);
     for (const o of $$("[data-opt]", el)) o.onclick = () => {
       el._vals = planOf(el);
-      if (o.dataset.opt === "mp4") el._mp4 = !el._mp4;
       if (o.dataset.opt === "light") { el._wantLight = !el._wantLight; }
       drawProbe(el);
       if (o.dataset.opt === "light" && el._wantLight) $("[data-lightlink]", el)?.focus();
@@ -399,7 +394,7 @@ const Manager = (() => {
   async function checkLight(el, url) {
     el._light = { url, loading: true };
     $("[data-lightinfo]", el).innerHTML = lightInfo(el);
-    const p = await api("/api/probe", { url });
+    const p = await probeLink(url);
     const film = el._probe.media, m = p.media;
     let error = !p.ok ? p.error : "";
     if (!error && m && !(/^(H\.264|HEVC)/.test(m.vcodec) && m.res !== "4K" && !m.hdr)) error = "A Light copy has to be H.264 or HEVC, 1080p at most and without HDR, so it plays in browsers.";
@@ -409,7 +404,7 @@ const Manager = (() => {
   }
   function planOf(el) {
     const v = n => $(`input[name=${n}]`, el)?.value.trim() ?? "";
-    return { ...el._probe.plan, kind: el._kind, title: v("title"), year: v("year"), season: v("season"), episode: v("episode"), mp4: !!(el._mp4 && el._probe.can_mp4) };
+    return { ...el._probe.plan, kind: el._kind, title: v("title"), year: v("year"), season: v("season"), episode: v("episode"), mp4: false };
   }
   function refreshPlan(el) {
     const k = el._kind;
@@ -464,7 +459,7 @@ const Manager = (() => {
     if (t.type === "show") {
       const eps = t.episodes || [], first = eps[0]?.info || {}, inB = eps.filter(e => e.browser).length;
       return [plural(t.seasons, "season"), plural(eps.length, "episode"), quality(first), videoWord(first), box(first),
-        !eps.length ? "" : inB === eps.length ? "Plays everywhere" : inB ? `${inB} of ${eps.length} in browsers` : "TV and phone only"].filter(Boolean).join(" · ");
+        !eps.length ? "" : inB === eps.length ? "Plays everywhere" : inB ? `${inB} of ${eps.length} in this browser` : "TV and phone only"].filter(Boolean).join(" · ");
     }
     const m = t.info || {};
     return [quality(m), videoWord(m), box(m), t.light ? "Light copy" : plays(t)].filter(Boolean).join(" · ");
@@ -527,15 +522,13 @@ const Manager = (() => {
     const subs = (m.subs || []).join(", ") + (m.pgs ? " (pictures)" : "");
     return `<div class="group"><div class="caption">${label}</div>
       ${[["Quality", quality(m)], ["Video", videoWord(m)], ["File", [box(m), bytes(f.size - (f.light?.size || 0))].filter(Boolean).join(" · ")], ["Audio", (m.tracks || []).map(t => t.replace(/ · .*$/, "")).filter((t, i, a) => a.indexOf(t) === i).join(", ") || m.audio || ""],
-        ["Subtitles", subs], ["Plays in", f.browser ? "Browsers, TV and phone" : "TV and phone"]].filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>
+        ["Subtitles", subs], ["Plays in", playsIn(f)]].filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>
       ${f.light ? `<div class="group"><div class="caption">Light copy</div>${[["Quality", quality(f.light.info)], ["Video", videoWord(f.light.info)], ["File", `${box(f.light.info)} · ${bytes(f.light.size)}`]]
         .filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>` : ""}`;
   };
   const fileActions = f => {
     if (f.busy) return `<p class="meta mut mline">A job is working on this. Downloads shows how it's going.</p>`;
-    const mins = dur(Math.max(60, (f.size - (f.light?.size || 0)) / 6e7));
     return `<div class="sactions">
-      ${f.can_mp4 ? `<button class="word mwide" data-a="mp4" data-id="${f.id}">Make it MP4<span class="meta mut">About ${mins}</span></button>` : ""}
       ${f.heavy && !f.light ? `<button class="word mwide" data-a="light" data-id="${f.id}">Add a Light copy</button>` : ""}
       ${f.light ? `<button class="word mwide danger" data-a="unlight" data-id="${f.id}">Delete the Light copy<span class="meta mut">Frees ${bytes(f.light.size)}</span></button>` : ""}
       <button class="word mwide danger" data-del data-path="${esc(f.path)}" data-name="${esc(f.name)}" data-size="${f.size}">Delete<span class="meta mut">Frees ${bytes(f.size)}</span></button></div>`;
@@ -573,18 +566,9 @@ const Manager = (() => {
     if (d) { if (await remove(d.dataset)) { sheetEp ? (sheetEp = "", drawSheet()) : closeSheet(); } return; }
     const a = e.target.closest("[data-a]"); if (!a) return;
     const id = a.dataset.id;
-    if (a.dataset.a === "mp4") {
-      const f = findFile(id);
-      const r = await ask({ title: "Make it MP4?", text: mp4Detail(f?.info).replace(/<[^>]+>/g, "") + " The MKV is replaced once the MP4 checks out.",
-        buttons: [{ label: "Back", value: "" }, { label: "Make it MP4", value: "go" }] });
-      if (!r.value) return;
-      const res = await api("/api/manager/mp4", { id });
-      if (res.error) { note(res.error); return; }
-      note("Making the MP4. Downloads shows how it's going."); loadTitles();
-    }
     if (a.dataset.a === "unlight") {
       const f = findFile(id);
-      const r = await ask({ title: "Delete the Light copy?", text: `This frees ${bytes(f?.light?.size)}. Browsers and slow connections lose it.`, buttons: [{ label: "Keep it", value: "" }, { label: "Delete", value: "go", cls: "danger" }] });
+      const r = await ask({ title: "Delete the Light copy?", text: `This frees ${bytes(f?.light?.size)}. Slow connections lose it, and so do browsers that can't decode the film itself.`, buttons: [{ label: "Keep it", value: "" }, { label: "Delete", value: "go", cls: "danger" }] });
       if (!r.value) return;
       const res = await api("/api/manager/light/delete", { id });
       if (res.error) { note(res.error); return; }
@@ -599,7 +583,7 @@ const Manager = (() => {
       buttons: [{ label: "Back", value: "" }, { label: "Check", value: "go" }] });
     if (!r.value || !r.input) return;
     note("Reading the link…");
-    const p = await api("/api/probe", { url: r.input });
+    const p = await probeLink(r.input);
     if (!p.ok) { note(p.error); return; }
     const m = p.media, film = f?.info;
     if (m && !(/^(H\.264|HEVC)/.test(m.vcodec) && m.res !== "4K" && !m.hdr)) { note("That file is 4K or HDR, so it can't be a Light copy."); return; }

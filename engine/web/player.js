@@ -427,7 +427,7 @@ const Player = (() => {
   }
   function subOptions() {
     const list = manifest?.subs || [];
-    if (!list.length) return [];
+    if (!list.length) return manifest?.subs_wait ? [{ title: "Being read from the file", detail: "A few minutes", selected: false, pick: () => pnote("mint is reading this file's subtitles. Open the menu again in a few minutes.") }] : [];
     return [{ title: "Off", detail: "", selected: subIndex < 0, pick: () => pickSub(-1) },
       ...list.map((s, i) => {
         const t = s.title || "";
@@ -475,6 +475,14 @@ const Player = (() => {
       const t = await r.text();
       if (item?.id === mine && subIndex === i) textCues = parseVTT(t);
     }
+  }
+  // the file's own subtitles turn up a few minutes after it's first opened: ask mint again
+  async function refreshSubs(btn) {
+    const mine = item?.id, m = await webAPI(`/api/v1/web/${mine}`);
+    if (item?.id !== mine || !manifest || m.state !== "ready") return;
+    const before = (manifest.subs || []).length;
+    manifest.subs = m.subs || []; manifest.subs_wait = m.subs_wait;
+    if (menu?.kind === "subs" && manifest.subs.length !== before) openList("subs", btn, "Subtitles", subOptions(), 28);
   }
   function clearPGS() { const c = $p("canvas.pgs"); if (c) { c.hidden = true; c.getContext("2d").clearRect(0, 0, c.width, c.height); } }
   function placePGS() {
@@ -536,7 +544,13 @@ const Player = (() => {
       else if (act === "fullscreen") toggleFull();
       else if (act === "next") { const n = nextOf(); if (n) playNext(n); }
       else if (act === "audio") menu?.kind === "audio" ? closeMenu() : openList("audio", a, "Audio", audioOptions(), 28);
-      else if (act === "subs") menu?.kind === "subs" ? closeMenu() : openList("subs", a, "Subtitles", subOptions(), 28);
+      else if (act === "subs") {
+        if (menu?.kind === "subs") closeMenu();
+        else {
+          openList("subs", a, "Subtitles", subOptions(), 28);
+          if (manifest?.subs_wait) refreshSubs(a);
+        }
+      }
       else if (act === "speed") menu?.kind === "speed" ? closeMenu() : openList("speed", a, "Speed", SPEEDS.map(s => ({ title: s === 1 ? "Normal" : s + "×", detail: "", selected: speed === s, pick: () => { speed = s; v.playbackRate = s; const c = $p('[data-a="speed"]'); if (c) c.innerHTML = s !== 1 ? s + "×" : icon("Speed"); } })), 18);
       else if (act === "episodes") menu?.kind === "episodes" ? closeMenu() : episodesPanel();
       return;

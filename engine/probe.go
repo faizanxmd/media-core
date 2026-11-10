@@ -36,10 +36,11 @@ type Probe struct {
 	// The file's picture and sound, read from the link before downloading
 	// (nil for archives and links ffprobe can't read: shown after the download).
 	Media   *MInfo `json:"media,omitempty"`
-	Browser bool   `json:"browser"` // plays in browsers as it is
-	CanMP4  bool   `json:"can_mp4"` // an MP4 after downloading would make it play in browsers
-	Heavy   bool   `json:"heavy"`   // 4K or HDR: worth a Light copy
-	PGS     bool   `json:"pgs"`     // picture subtitles, which an MP4 can only keep beside the file
+	Browser bool   `json:"browser"`        // plays in the browser that asked
+	Play    string `json:"play,omitempty"` // how: direct | repack | none (play.go)
+	CanMP4  bool   `json:"can_mp4"`        // an MP4 after downloading would make it play in browsers
+	Heavy   bool   `json:"heavy"`          // 4K or HDR: worth a Light copy
+	PGS     bool   `json:"pgs"`            // picture subtitles, which an MP4 can only keep beside the file
 }
 
 var (
@@ -272,8 +273,8 @@ func (e *Engine) Probe(ctx context.Context, raw string) Probe {
 			// download checks the file itself and keeps 4K or HDR as it is
 			r.CanMP4 = true
 		}
-		// on unless picture subtitles would be lost on TV and phone; /api/quick takes it as it is
-		r.Plan.MP4 = r.CanMP4 && !r.PGS
+		// The MP4 step is no longer the default: browsers get what they can't open as a
+		// stream made while it plays (stream.go), and the file stays as it came.
 	}
 	r.FreeGB = freeGB()
 	r.OK = true

@@ -317,6 +317,7 @@ func (c *Catalog) scan() {
 			}
 		}()
 	}
+	go fillSubs(items) // subtitles inside the files, read out for browsers
 	if c.thumbs.Pending(items) {
 		go c.thumbs.Generate(items, c.Refresh)
 	}

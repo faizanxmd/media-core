@@ -40,7 +40,7 @@ A page that sends no `?can=` gets the old fixed rule (`playsInBrowser` in `engin
   timestamps the same from run to run are explained at `args` in `stream.go`.
 - **Jumps.** A piece that isn't on its way stops the track's ffmpeg and starts one at that piece. On mint, with the 30 GB
   Dolby Vision film: about 0.3 s for the picture and 0.4 s for DTS-HD sound, of which only the plain DTS layer is decoded.
-- **Memory, not disk.** Pieces live in memory, up to 160 MB of picture around the player's position. ffmpeg is held (SIGSTOP)
+- **Memory, not disk.** Pieces live in memory, up to 128 MB of picture around the player's position. ffmpeg is held (SIGSTOP)
   once it's 45 s or 64 MB ahead, and stopped after two minutes without requests.
 - **Checked against the files.** At several positions in an MKV film, an MKV episode with 10 s between keyframes and an MP4,
   the stream's first picture is the file's frame and its sound sits within 1 ms of the file's.
@@ -52,13 +52,22 @@ file's change time, so a browser's kept pieces don't outlive the file. `STREAM_D
 To try a file outside the engine: `STREAM_FILE=/path/film.mkv STREAM_FOR=120 go test -run TestServeRealStream -timeout 0`,
 then open `http://127.0.0.1:18799/master.m3u8?can=h264,hevc,aac`.
 
+## Subtitles inside the file (`engine/subs.go`)
+
+A browser can't read an MKV's own subtitles, and they're scattered through the whole file, so each file is read through once
+(the 30 GB film took about seven minutes) and its subtitles kept in `~/.local/share/media-core/subs/`: text as WebVTT, pictures
+(PGS) as `.sup`, which the web player draws. That happens in the background when a file turns up and nothing is playing, or at
+once when a title is opened in a browser first; the subtitle menu then says they're being read. Picture subtitles are left out
+where the same language is there as text. They're served as `e<stream>.vtt` and `e<stream>.sup`. The TV and phone read
+subtitles from the file as before.
+
 ## Still made ahead of time
 
 - **A Light copy** is a second, smaller download: H.264 or HEVC, 1080p at most, no HDR. It lives in a hidden `.light` folder beside
   the file, with the same base name (`Movies/X (2020)/.light/X (2020).mp4`). It's kept only if it runs as long as the film (within
   2 s). Deleting the title deletes it too. It's for pictures a device can't decode and for slow connections.
-- **Make it MP4** (Manager) rewrites a file as an MP4 for good. Browsers no longer need it, and it still turns DTS and TrueHD into
-  AAC, which the TV loses, so it's on its way out.
+- **Make it MP4** rewrote a file as an MP4 for good, turning DTS and TrueHD into AAC, which the TV lost. Browsers no longer
+  need it, so Manager no longer offers it and links no longer ask for it. The engine's step is still there (`engine/mp4.go`).
 - **An old HLS browser copy** in `~/.local/share/media-core/web/<id>/`, made by hand before any of this. The one left is True
   Detective S01E01; the stream replaces it.
 
@@ -73,7 +82,6 @@ then open `http://127.0.0.1:18799/master.m3u8?can=h264,hevc,aac`.
 
 ## Not done yet
 
-- Subtitles inside an MKV don't reach browsers yet; only `.srt` files beside the video do.
 - Dolby Vision 5 in Safari through the stream is labelled as Dolby Vision (`dvh1`) but hasn't been tried on a real file.
 - Safari and Chrome on the Mac haven't played the finished stream; the first test of this idea there used hand-made pieces.
   Firefox on mint has: start, jumps, a sound-track switch and two minutes of playback.

@@ -22,7 +22,8 @@ type mFile struct {
 	Size    int64  `json:"size"`
 	Info    *MInfo `json:"info,omitempty"`
 	Light   *Light `json:"light,omitempty"`
-	Browser bool   `json:"browser"` // plays in a browser, as it is or by its Light copy
+	Browser bool   `json:"browser"` // plays in the browser that asked, one way or another
+	Play    string `json:"play"`    // how: direct | repack | light | none (play.go)
 	CanMP4  bool   `json:"can_mp4"`
 	Heavy   bool   `json:"heavy"`
 	Busy    bool   `json:"busy,omitempty"` // a job is working on it
@@ -75,10 +76,18 @@ func slim(m *MInfo) *MInfo {
 	return &cp
 }
 
-func fileOf(it *Item, busy map[string]bool) mFile {
+func fileOf(it *Item, busy map[string]bool, c Caps) mFile {
 	f := mFile{ID: it.ID, Path: rel(it.file), Size: it.Size, Info: slim(it.Info), Light: it.Light,
 		CanMP4: canMP4(it.Info), Heavy: heavy(it.Info)}
-	f.Browser = playsInBrowser(it.Info) || it.Light != nil && playsInBrowser(it.Light.Info) || webCopy(it) != nil
+	p, _, _ := webPlay(it, c)
+	f.Play = p.How
+	if p.Light && p.How != "none" {
+		f.Play = "light"
+	}
+	if f.Play == "none" && webCopy(it) != nil {
+		f.Play = "direct" // an old copy made ahead
+	}
+	f.Browser = f.Play != "none"
 	if it.Light != nil {
 		f.Size += it.Light.Size
 	}
@@ -86,7 +95,7 @@ func fileOf(it *Item, busy map[string]bool) mFile {
 	return f
 }
 
-func (s *Server) titles() []mTitle {
+func (s *Server) titles(c Caps) []mTitle {
 	movies, shows := s.p.c.Lists()
 	busy := s.busyFiles()
 	var out []mTitle
@@ -105,7 +114,7 @@ func (s *Server) titles() []mTitle {
 	}
 	for _, m := range movies {
 		t, y, p := name(m)
-		mt := mTitle{mFile: fileOf(m, busy), Type: "movie", Title: t, Year: y, Poster: p, Added: m.Added}
+		mt := mTitle{mFile: fileOf(m, busy, c), Type: "movie", Title: t, Year: y, Poster: p, Added: m.Added}
 		mt.Path = filepath.Dir(rel(m.file))
 		out = append(out, mt)
 	}
@@ -114,7 +123,7 @@ func (s *Server) titles() []mTitle {
 		mt := mTitle{Type: "show", Title: t, Year: y, Poster: p, Added: sh.Added, Seasons: len(sh.Seasons)}
 		mt.ID, mt.Path = sh.ID, sh.folder
 		for _, ep := range episodesOf(sh) {
-			f := fileOf(ep, busy)
+			f := fileOf(ep, busy, c)
 			et := ep.Title
 			if ep.Meta != nil && ep.Meta.Title != "" {
 				et = ep.Meta.Title
@@ -258,7 +267,7 @@ func (s *Server) system() map[string]any {
 
 func (s *Server) mountManager(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/manager/titles", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"titles": s.titles()})
+		writeJSON(w, 200, map[string]any{"titles": s.titles(capsOf(r))})
 	})
 	mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.system()) })
 	mux.HandleFunc("POST /api/manager/mp4", func(w http.ResponseWriter, r *http.Request) {

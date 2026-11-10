@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,9 +23,10 @@ import (
 // can name them.
 type webManifest struct {
 	State       string     `json:"state"`
-	Src         string     `json:"src,omitempty"`  // played directly: the library file or its Light copy
-	HLS         string     `json:"hls,omitempty"`  // repackaged while it plays (stream.go): the stream's master playlist
-	Wait        string     `json:"wait,omitempty"` // not yet: what mint is doing first
+	Src         string     `json:"src,omitempty"`       // played directly: the library file or its Light copy
+	HLS         string     `json:"hls,omitempty"`       // repackaged while it plays (stream.go): the stream's master playlist
+	Wait        string     `json:"wait,omitempty"`      // not yet: what mint is doing first
+	SubsWait    bool       `json:"subs_wait,omitempty"` // the file's own subtitles are still being read out (subs.go)
 	SourceSize  int64      `json:"source_size"`
 	SourceMtime int64      `json:"source_mtime"`
 	Audio       []webAudio `json:"audio,omitempty"`
@@ -135,6 +137,23 @@ func directManifest(it *Item, c Caps) *webManifest {
 			m.Subs = append(m.Subs, webSub{File: fmt.Sprintf("x%d.vtt", i), Lang: s.Lang, Title: s.Label, Forced: s.Forced})
 		}
 	}
+	embedded, pending := embeddedSubs(it) // the ones inside the file, once they've been read out
+	m.SubsWait = pending
+	kind := func(e embSub) string { // the same words as text and as pictures: the text is enough
+		return fmt.Sprint(e.Lang, e.Forced, strings.Contains(strings.ToLower(e.Title), "sdh"))
+	}
+	asText := map[string]bool{}
+	for _, e := range embedded {
+		if e.Kind == "vtt" {
+			asText[kind(e)] = true
+		}
+	}
+	for _, e := range embedded {
+		if e.Kind == "sup" && asText[kind(e)] {
+			continue
+		}
+		m.Subs = append(m.Subs, webSub{File: fmt.Sprintf("e%d.%s", e.Index, e.Kind), Lang: e.Lang, Title: e.Title, Forced: e.Forced})
+	}
 	for i, f := range supSidecars(it.file) {
 		lang, _, _ := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(filepath.Base(f), baseName(it.file)), "."), ".")
 		m.Subs = append(m.Subs, webSub{File: fmt.Sprintf("p%d.sup", i), Lang: lang, Forced: strings.Contains(filepath.Base(f), ".forced.")})
@@ -204,7 +223,18 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 		it := p.c.Get(r.PathValue("id"))
 		name := r.PathValue("file")
 		copied := webCopy(it) != nil && filepath.IsLocal(name) && !strings.ContainsAny(name, `/\`) && exists(filepath.Join(webDir(it.ID), name))
-		if it != nil && it.file != "" && !copied { // subtitles beside a directly played file
+		if it != nil && it.file != "" && !copied { // subtitles from inside the file, or beside it
+			if rest, ok := strings.CutPrefix(name, "e"); ok && (strings.HasSuffix(rest, ".vtt") || strings.HasSuffix(rest, ".sup")) {
+				if _, err := strconv.Atoi(rest[:len(rest)-4]); err == nil {
+					if strings.HasSuffix(rest, ".vtt") {
+						w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+					} else {
+						w.Header().Set("Content-Type", "application/octet-stream")
+					}
+					http.ServeFile(w, r, filepath.Join(subsDir(it.file), name))
+					return
+				}
+			}
 			var n int
 			if _, err := fmt.Sscanf(name, "x%d.vtt", &n); err == nil && n >= 0 && n < len(it.Subs) {
 				b, err := os.ReadFile(it.Subs[n].file)
