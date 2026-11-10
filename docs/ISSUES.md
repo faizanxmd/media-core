@@ -1,36 +1,60 @@
 # Known issues
 
-The running list of what's wrong, gathered before fixing, so the player, audio and network work can be planned as a whole rather than patched one report at a time. Each entry says where it happens (TV, phone, browser, engine), what the user sees, and the cause when it's known. Fixed entries move to the bottom with the commit that fixed them.
+Everything known to be wrong, gathered before fixing so the player, sound, browser and network work can be planned as a whole rather than patched one report at a time. Each entry says where it happens (TV app, phone app, browser, engine), what the user sees, and the cause when it's known. Fixed entries move to the bottom with their commit.
 
-## Audio and tracks
+## Start here
 
-1. **Apps don't prefer English** (TV, phone). With no saved choice for a show, the player takes the file's first or default track, so a release with a dub first (True Detective S01: Hindi, then English) starts in the dub. The choice is saved per show only after the user switches once.
-2. **Browser audio switch does nothing on MP4s** (browser, Chrome). A directly played MP4 has no `audioTracks` in Chrome, so `pickAudio` in `engine/web/player.js` changes the menu but not the sound. The menu still lists every track as if it could switch.
-3. **Browser can't play most original tracks** (browser). Only AAC, MP3, Opus and FLAC play; EAC3, AC3, DTS and TrueHD don't. An MP4 carries an AAC copy of the first track only, so every other language is listed but silent or unplayable.
-4. **Track names are inconsistent across apps** (all). The engine, web player, TV and phone each build their own label from language, title and channels, so the same file reads differently on each, and two tracks in one language can look identical.
-5. **Library files made before the English-first fix** keep their old order. Only Georgie S01E05 was rebuilt; any other MP4 from a foreign release still starts in the dub.
-6. **Light copies are separate releases** (TV, phone, browser). Their audio tracks, languages and order can differ from the Original's, so switching to Light can change the language.
+Media Core is the user's own Plex replacement: the engine (`engine/`, Go, on the box "mint") downloads into the library and serves it; the TV app (`android/app`) and phone app (`android/phone`) play files as they are with Media3; the web player (`engine/web`, served on `:8780`) plays in browsers. `README.md` has the layout, `CLAUDE.md` the rules. The ones that matter most here:
 
-## Browser playback and MP4s
+- **Never build the apps unasked.** Commit, list the change in `docs/PENDING.md`, and the user asks for a build when a batch is ready. Engine and web changes go live with `deploy/install.sh` (check nothing is playing first: it restarts the engine).
+- **Talk before changing the player.** The user wants a proper redesign, agreed first, not piecemeal changes.
+- **Safari on the user's M1 MacBook Air is the browser to design for.** Chrome and others are a fallback.
+- **The engine holds the rules** (which track, which version, what a browser can play); the apps and web player follow them. Watch progress lives only in `engine/watch.go`.
+- **The user tests on the real TV and phone**, not emulators. The web player reports what the browser did to mint's journal (`journalctl --user -u media-core-engine | grep "^.*web "`).
 
-1. **4K and HDR need a Light copy to play in a browser**, and nothing says so at download time unless the link was read in time.
-2. **MKVs already in the library** (True Detective S01) don't play in browsers until each one is made into an MP4 in Manager.
+Devices: TCL Google TV 14 (MediaTek, weak 32-bit CPU, 3 GB RAM, TV speakers only), Galaxy A55 (no Dolby Vision), MacBook Air M1 (SDR screen). The library is mostly WEB-DLs (H.264/HEVC, DD+ or Atmos, SRT, Dolby Vision 5 or 8.1); remuxes are rare.
 
-## Player (TV and phone)
+## Player (TV, phone, browser)
 
-To be filled in from the user's reports.
+1. **Skipping forward freezes on the old picture first** (reported 2026-11-10; device not stated, all three skip the same way). A tap of Right jumps at once with an exact seek (`seekExact` in both `PlayerActivity.kt`, `SeekParameters.EXACT`; `tapSkip` in `engine/web/player.js`), then jumps again 350 ms after the last tap when taps add up (`commit`). An exact seek decodes forward from the previous keyframe, which can be several seconds away in a WEB-DL, so the old frame stays up meanwhile; on the TV's weak CPU, with 4K HEVC, that's long. The second seek can repeat the stall. Worth weighing: keyframe seeks (`CLOSEST_SYNC`, already used for scrubbing) for skips, one seek per burst of taps, and keeping the skip target inside the buffer.
+2. **The player as a whole feels like an old Android player** (user's verdict, 2026-10-30: "it mimics modernity, it is not modern"). The brief, modelled on JioHotstar: nothing on screen while playing; tap Left/Right skips 10 s silently and taps add up; pause shows the controls; holding scrubs through thumbnails and that moment must look really good. No mockups: build the real thing, test on the TV, then polish.
+3. **Polish list from build 1721** (2026-10-30, not yet done): remove chapters from the UI entirely (button, row, cuts in the bar, chapter names in pause and scrub text); move the Audio and other controls from the left to the right.
+4. **More to come from the user.** They said there are many player issues; ask them to describe each with the device and what they did.
+
+## Sound and tracks
+
+1. **Apps don't prefer English** (TV, phone). With no saved choice for a show, the player takes the file's first or default track, so a release with a dub first (True Detective S01: Hindi, then English) starts in the dub. The choice is saved per show only after switching once. Needs a house language, decided in the engine.
+2. **Chrome can't switch tracks on MP4s and can't play Dolby audio** (browser). Chrome has no `audioTracks`, so only the first track is heard, and it plays only AAC, MP3, Opus and FLAC. The menu now marks unplayable tracks ("Not in this browser"). Safari switches and plays DD+.
+3. **Make MP4 downgrades the TV's sound** (engine, `mp4Args` in `engine/mp4.go`). DTS, TrueHD and PCM become AAC, so a remux made MP4 loses DTS, lossless sound and Atmos on the TV for good. It should keep every original track and only add AAC copies where some browser needs them.
+4. **Same language, several formats** (TV). An English TrueHD Atmos track next to an English DD 5.1 one: the TV can't decode TrueHD and falls back to software on its weak CPU, Atmos lost; the DD track would be the better pick there.
+5. **Track names differ across apps** (all). The engine, web player, TV and phone each build their own label, so the same file reads differently, and two tracks in one language can look identical. The engine should name each track once.
+6. **Tracks with no language tag** ("und") can't be ranked; every player just takes the first.
+7. **Library MP4s made before the English-first fix** (`13c0ae1`) keep the dub first. Only Georgie S01E05 was rebuilt.
+8. **Light copies are separate releases** (all). Their tracks and languages can differ from the Original's, so switching to Light can change the language. Check a Light copy's languages when it's added.
+
+## Picture, formats and browser playback
+
+1. **MKVs don't play in any browser** (Safari can't open MKV at all). True Detective S01 is MKV. Make MP4 rewraps them, but it's only offered for 1080p SDR files until it keeps the original sound tracks (Sound 3); after that, 4K and HDR MKVs can be rewrapped for Safari too.
+2. **Dolby Vision profile 5 breaks on the phone.** The A55 has no Dolby Vision and profile 5 has no HDR10 underneath: wrong colours or no picture. Nothing warns at download time; a Light copy is the way out.
+3. **Picture subtitles after Make MP4** (TV, phone). PGS moves to a `.sup` file only the web player reads, so the TV and phone lose it; VobSub is dropped entirely; ASS loses its styling (becomes `.srt`).
+4. **Formats with no browser path**: AV1, VP9 and H.264 10-bit never get an MP4 offer that helps, and H.264 10-bit looks like ordinary H.264 to the engine although the TV and phone can't decode it.
+5. **For a Few Dollars More** (MP4 with FLAC first, then AC-3, AAC and a data track): check it plays with sound in Safari now that the network is fixed.
+6. **The old HLS copy** of True Detective S01E01 (`~/.local/share/media-core/web/ff46061779b1`) is the last of its kind. Safari now uses its own HLS player for it; retire it once S01 is MP4.
 
 ## Network
 
-1. **Port 8790 has no owner lock** (engine). The site on 8780 turns away other Tailscale accounts, but the player API on 8790, which the TV and phone apps use, answers anyone who can reach it, including `/api/v1/match`. Only matters if mint is ever shared.
-
-2. **Direct Tailscale can silently break** (network). The Deco's automatic mapping for mint can move off 41641 (it was on 41642 on 2026-11-09), and then the ISP router's forward leads nowhere and remote devices go through the DERP relay (Mumbai, slow, stalls on 20 Mb/s files). Restored with a UPnP mapping that lasts until the Deco reboots; a manual Deco rule would make it permanent. Nothing tells the user when this happens.
-
-More to be filled in from the user's reports.
+1. **Direct Tailscale can silently break.** The Deco's automatic mapping for mint moved from 41641 to 41642 on 2026-11-09, so the ISP router's forward led nowhere and the Mac went through the DERP relay in Mumbai: anything over about 10 Mb/s stalled, and every skip stalled. Restored with a UPnP mapping that lasts until the Deco reboots (details in `~/SERVER-NOTES.md`). Open: the user adding a manual Port Forwarding rule in the Deco app (UDP 41641 → 192.168.68.101:41641), and something that notices when a device falls back to the relay.
+2. **The web player has no notion of connection speed.** The apps pick Original or Light by measured speed (`core/Speed.kt`, not yet built); the browser always plays the Original when it can decode it, even over a slow link.
+3. **Port 8790 has no owner lock.** The site on 8780 turns away other Tailscale accounts (`engine/owner.go`), but the player API on 8790, which the apps use, answers anyone who can reach it, including `/api/v1/match`. Only matters if mint is ever shared.
+4. **Waiting on a build**: speed-based Original/Light picking and the slow-connection card in both apps, and the shared `android/core` code (`docs/PENDING.md`). Nothing has been compiled yet.
 
 ## Fixed
 
 - Foreign releases became MP4s with the dub first and the browser AAC copy made from the dub. English now goes first (`13c0ae1`).
 - The MP4 option was missing when a slow link couldn't be read within 20 s, and quick adds never made MP4s (`6b8afa0`).
-- Safari opened the player but never started the video: the click was gone by the time the player called play() after its fetches, and each title got a new video element. One element now lasts the visit and is unlocked by the first click or Enter.
 - A link with its name only in a loosely encoded Content-Disposition header came in as a movie named after its hash (`52b8314`).
+- Guest sharing removed for now; the site answers only the owner's devices (`335dfab`).
+- Safari opened the player but never started the video: the click was gone by the time the player called play() after its fetches (`c056c2f`).
+- Browsers were held to 1080p without HDR. The page now reports what the browser can decode and the engine decides with it, so Safari gets 4K, HDR, Dolby Vision and DD+ MP4s as they are (`52e7b4e`).
+- Safari played the HLS copy with sound but no picture through hls.js; it now uses its own HLS player. Copy tracks were marked unplayable; Safari's track list fills in late, so the chosen track is applied as tracks arrive (`4f44302`).
+- The Deco's mapping drift that sent remote devices through the Mumbai relay (2026-11-09, router-side; see Network 1).
