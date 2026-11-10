@@ -251,7 +251,19 @@ func (s *Server) system() map[string]any {
 	s.e.mu.Lock()
 	ariaOK := s.e.ariaOK
 	s.e.mu.Unlock()
+	load, cores := loadAvg()
+	now := s.p.playingList()
+	if now == nil {
+		now = []Playing{}
+	}
+	devs := devices()
+	if devs == nil {
+		devs = []Device{}
+	}
 	return map[string]any{
+		"load": load, "cores": cores,
+		"now":     now,  // what's playing, and on what
+		"devices": devs, // the owner's other machines, and whether each reaches mint directly
 		"library": map[string]any{"free": free, "total": total,
 			"films": scanTree(filepath.Join(Media, "Movies")).Size, "shows": scanTree(filepath.Join(Media, "TV Shows")).Size,
 			"music": scanTree(filepath.Join(Media, "Music")).Size, "light": light},

@@ -269,7 +269,7 @@ async function title(id) {
   const kind = isShow ? "Show" : "Film";
   const head = [kind, ...(main.meta?.genres || []).slice(0, 2), main.meta?.cert].filter(Boolean).map(esc).join(" · ");
   const draw = () => {
-    show(`<div class="tpage">${main.meta?.backdrop ? `<div class="banner"><img src="${img(main.meta.backdrop, "original")}" alt=""></div>` : ""}
+    show(`<div class="tpage">${main.meta?.backdrop ? `<div class="banner"><img src="${img(main.meta.backdrop, "w1280")}" alt=""></div>` : ""}
       <button class="ctl pback" id="pBack" aria-label="Back" title="Back (Esc)">${icon("Back")}</button>
       <div class="top">${titleMark(main.meta?.logo, displayTitle(main))}
         <div class="meta mut" style="margin-top:1.2rem">${head}</div>

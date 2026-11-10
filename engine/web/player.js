@@ -42,6 +42,33 @@ const browserCan = (async () => {
 // a /api/v1/web URL with what this browser can play
 async function webAPI(path) { return api(`${path}${path.includes("?") ? "&" : "?"}can=${await browserCan}`); }
 
+// How fast mint reaches this browser, measured a few seconds after the page loads and again when
+// it's ten minutes old. A title with a Light copy plays that when the link can't carry the film.
+const Link = (() => {
+  let mbps = 0, at = 0, busy = false;
+  try { const m = JSON.parse(sessionStorage.getItem("link") || "null"); if (m) { mbps = m.mbps; at = m.at; } } catch {}
+  async function pull(bytes) {
+    const t0 = performance.now();
+    const r = await fetch(`/api/v1/speedtest?bytes=${bytes}`, { cache: "no-store" });
+    const n = (await r.arrayBuffer()).byteLength, s = (performance.now() - t0) / 1000;
+    return [n * 8 / 1e6 / s, s];
+  }
+  async function measure() {
+    if (busy) return;
+    busy = true;
+    try {
+      let [v, s] = await pull(2 << 20);
+      if (s < 1) [v] = await pull(12 << 20); // a quick link needs a longer pull to read true
+      mbps = Math.round(v * 10) / 10; at = Date.now();
+      try { sessionStorage.setItem("link", JSON.stringify({ mbps, at })); } catch {}
+      wlog(`link to mint: ${mbps} Mb/s`);
+    } catch {}
+    busy = false;
+  }
+  setTimeout(() => { if (!at || Date.now() - at > 600000) measure(); }, 4000);
+  return { mbps: () => mbps, freshen() { if (Date.now() - at > 600000) measure(); } };
+})();
+
 const Player = (() => {
   const SPEEDS = [.75, 1, 1.25, 1.5, 2];
   const LANG = (() => { try { return new Intl.DisplayNames(["en"], { type: "language" }); } catch { return null; } })();
@@ -116,6 +143,7 @@ const Player = (() => {
   let offer = null, dismissedNext = "", nextLeft = 10000, lastTick = 0, ended = false, retried = 0;
   let textCues = null, pgsTrack = null, subIndex = -1, speed = 1, opened = 0, errorShown = false, audioIdx = 0;
   let lastGood = 0, recoveries = 0, cleanSince = 0, stallT = 0, clickT = 0, lastSub = -1, seekPicT = 0, airplay = false;
+  let quality = "auto"; // auto | orig | light, for this visit
 
   const $p = s => el.querySelector(s);
   const langKey = it => it.show_id || it.id;
@@ -152,7 +180,13 @@ const Player = (() => {
     drawCover();
     $p(".offer").innerHTML = ""; $p(".subs").textContent = ""; clearPGS();
     setMode("hidden"); drawFull();
-    manifest = man || await webAPI(`/api/v1/web/${it.id}`);
+    // Original or Light: as chosen, or by the link's speed when the film needs more than it carries
+    Link.freshen();
+    const need = it.info?.mbps || 0, have = Link.mbps();
+    const slow = quality === "auto" && it.light && have > 0 && need > 0 && have < need * 1.3;
+    if (quality === "light" || slow) manifest = await webAPI(`/api/v1/web/${it.id}?v=light`);
+    else manifest = man || await webAPI(`/api/v1/web/${it.id}`);
+    if (slow && manifest.light && mine === opened) pnote(`Slow connection (${Math.round(have)} Mb/s): playing the Light copy`);
     wlog(`open ${it.id} "${it.show ? it.show + " " : ""}${it.title || ""}": ${manifest.state}, ${manifest.src || (manifest.hls ? "stream" : manifest.state === "ready" ? "HLS copy" : "nothing to play")}, sound ${(manifest.audio || []).map(a => `${a.lang || "?"}/${a.codec}${a.plays === false ? "(no)" : ""}`).join(" ")}`);
     if (mine !== opened) return;
     if (manifest.state === "wait") { showError("Getting this ready", manifest.wait || "mint is preparing this title. Try again in a few minutes.", ""); return; }
@@ -384,6 +418,7 @@ const Player = (() => {
             <button class="ctl" data-a="audio" aria-label="Audio" title="Audio">${icon("Audio")}</button>
             <button class="ctl" data-a="subs" aria-label="Subtitles" title="Subtitles">${icon("Subtitles")}</button>
             <button class="ctl" data-a="speed" aria-label="Speed" title="Speed">${speed !== 1 ? speed + "×" : icon("Speed")}</button>
+            ${item.light ? `<button class="ctl" data-a="quality" aria-label="Quality" title="Quality">${icon("Settings")}</button>` : ""}
             ${many ? `<button class="ctl" data-a="episodes" aria-label="Episodes" title="Episodes">${icon("Episodes")}</button>` : ""}
             ${next ? `<button class="ctl" data-a="next" aria-label="Next episode" title="Next episode">${icon("SkipNext")}</button>` : ""}
             <button class="ctl" data-a="airplay" aria-label="AirPlay" title="AirPlay" ${airplay ? "" : "hidden"}>${icon("AirPlay")}</button>
@@ -495,6 +530,13 @@ const Player = (() => {
       if (a.plays === false) return { title: n, detail: "Not in this browser", selected: false, pick: () => pnote("This browser can't play that track") };
       return { title: n, detail, selected: i === audioIdx, pick: () => pickAudio(i, true) };
     });
+  }
+  function qualityOptions() {
+    const words = i => [i?.res, i?.mbps ? Math.round(i.mbps) + " Mb/s" : ""].filter(Boolean).join(" · ");
+    const set = q => { if (q === quality) return; quality = q; start(item, false, null, v.currentTime); };
+    return [{ title: "Auto", detail: Link.mbps() ? `Link ${Math.round(Link.mbps())} Mb/s` : "", selected: quality === "auto", pick: () => set("auto") },
+      { title: "Original", detail: words(item.info), selected: quality === "orig", pick: () => set("orig") },
+      { title: "Light", detail: words(item.light?.info), selected: quality === "light", pick: () => set("light") }];
   }
   function subOptions() {
     const list = manifest?.subs || [];
@@ -610,11 +652,12 @@ const Player = (() => {
     const a = e.target.closest("[data-a]");
     if (a) {
       const act = a.dataset.a;
-      if (e.detail > 0 && act !== "audio" && act !== "subs" && act !== "speed" && act !== "episodes") a.blur(); // Space keeps meaning pause after a click
+      if (e.detail > 0 && act !== "audio" && act !== "subs" && act !== "speed" && act !== "episodes" && act !== "quality") a.blur(); // Space keeps meaning pause after a click
       if (act === "toggle") toggle();
       else if (act === "leave") leave();
       else if (act === "mute") { v.muted = !v.muted; store.set("muted", v.muted ? "1" : "0"); drawFull(); showFull(); }
       else if (act === "fullscreen") toggleFull();
+      else if (act === "quality") menu?.kind === "quality" ? closeMenu() : openList("quality", a, "Quality", qualityOptions(), 30);
       else if (act === "airplay") v.webkitShowPlaybackTargetPicker?.();
       else if (act === "pip") togglePip();
       else if (act === "next") { const n = nextOf(); if (n) playNext(n); }

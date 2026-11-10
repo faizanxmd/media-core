@@ -203,6 +203,7 @@ input[type=search]::-webkit-search-cancel-button { display: none; }
 .panel { background: var(--raised); border-radius: var(--r); padding: 1.6rem; margin-top: 1.6rem; }
 .panel .file { color: var(--muted); margin-top: .4rem; word-break: break-all; }
 .panel .facts { margin-top: .8rem; flex-wrap: wrap; color: var(--muted); }
+.warnc { color: #F4B4AE; }
 .warn { margin-top: .8rem; color: #F4B4AE; font-size: 1.3rem; line-height: 1.6rem; font-weight: 500; }
 .kinds { display: flex; gap: 2.4rem; margin-top: 1.6rem; }
 .kind { color: var(--muted); font-weight: 600; height: 2.4rem; position: relative; }

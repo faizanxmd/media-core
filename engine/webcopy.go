@@ -26,6 +26,7 @@ type webManifest struct {
 	Src         string     `json:"src,omitempty"`       // played directly: the library file or its Light copy
 	HLS         string     `json:"hls,omitempty"`       // repackaged while it plays (stream.go): the stream's master playlist
 	Wait        string     `json:"wait,omitempty"`      // not yet: what mint is doing first
+	Light       bool       `json:"light,omitempty"`     // it's the title's Light copy that plays
 	SubsWait    bool       `json:"subs_wait,omitempty"` // the file's own subtitles are still being read out (subs.go)
 	SourceSize  int64      `json:"source_size"`
 	SourceMtime int64      `json:"source_mtime"`
@@ -78,13 +79,21 @@ func webCopy(it *Item) *webManifest {
 }
 
 // webPlay decides how this browser gets an item (play.go) and which file it is.
-func webPlay(it *Item, c Caps) (p Play, file string, info *MInfo) {
+// want "light" asks for the Light copy when it has one that plays here: the
+// player does that on a connection too slow for the film itself.
+func webPlay(it *Item, c Caps, want ...string) (p Play, file string, info *MInfo) {
 	if it == nil || it.file == "" {
 		return Play{How: "none"}, "", nil
 	}
 	var light *MInfo
 	if it.Light != nil {
 		light = it.Light.Info
+	}
+	if len(want) > 0 && want[0] == "light" && light != nil {
+		if p := howToPlay(light, nil, c); p.How != "none" {
+			p.Light = true
+			return p, it.Light.file, light
+		}
 	}
 	p = howToPlay(it.Info, light, c)
 	if p.Light {
@@ -97,9 +106,9 @@ func webPlay(it *Item, c Caps) (p Play, file string, info *MInfo) {
 // made ahead: where it is (the file as it is, or its stream), its sound tracks
 // in the file's order, and the subtitle files beside it: text ones as
 // x<n>.vtt, pictures as p<n>.sup.
-func directManifest(it *Item, c Caps) *webManifest {
-	p, file, _ := webPlay(it, c)
-	m := &webManifest{State: "ready"}
+func directManifest(it *Item, c Caps, want ...string) *webManifest {
+	p, file, _ := webPlay(it, c, want...)
+	m := &webManifest{State: "ready", Light: p.Light}
 	switch p.How {
 	case "direct":
 		m.Src = "/api/v1/stream/" + it.ID
@@ -222,7 +231,7 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 			errJSON(w, 404, "not in the library (rescanned?)")
 			return
 		}
-		if m := directManifest(it, capsOf(r)); m != nil { // the original's own picture beats a copy
+		if m := directManifest(it, capsOf(r), r.URL.Query().Get("v")); m != nil { // the original's own picture beats a copy
 			writeJSON(w, 200, m)
 			return
 		}

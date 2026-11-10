@@ -429,6 +429,7 @@ func serve() {
 	}
 	go e.Run()
 	pl := &Player{c: cat, w: watch, t: tm, e: e}
+	go pl.watchRelay()
 	gate := newOwnerGate()
 	ps := servePlayer(pl, gate)
 	srv := &Server{e: e, p: pl, assets: loadAssets()}

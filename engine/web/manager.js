@@ -617,6 +617,7 @@ const Manager = (() => {
     const other = Math.max(0, used - L.films - L.shows - L.music);
     const s = S.settings, seg = (key, vals) => `<div class="seg">${vals.map(([v, l]) => `<button data-set="${key}" data-v="${v}" class="${s[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const temp = SYS.temp_c ? `${Math.round(SYS.temp_c)}°C` : "";
+    const relayed = (SYS.now || []).filter(n => n.relayed).map(n => n.device);
     const html = `<div class="msys"><section><div class="title fig">${bytes(L.free)} free</div><div class="meta mut" style="margin-top:.4rem">of ${bytes(L.total)} on the library disk</div>
         <div class="mbar">${parts.map(([, n, c]) => `<i style="width:${pct(n)}%;background:${c}"></i>`).join("")}</div>
         ${parts.map(([k, n, c]) => `<div class="spec mkey"><span><i class="mdot" style="background:${c}"></i>${k}</span><span class="fig">${bytes(n)}</span></div>`).join("")}
@@ -624,9 +625,14 @@ const Manager = (() => {
         ${other > 5e9 ? `<div class="meta mut mline">Another ${bytes(other)} on that disk isn't the library.</div>` : ""}
         ${D.web ? `<div class="meta mut mline">Browser copies use ${bytes(D.web)} on the system disk, which has ${bytes(D.free)} free.</div>` : ""}</section>
       <section><div class="caption mut">mint</div>
-        ${[["Engine", "Running"], ["Downloader", SYS.aria2 ? "Running" : "Not answering"], ["Playing now", SYS.playing ? plural(SYS.playing, "stream") : "Nothing"],
+        ${[["Engine", "Running"], ["Downloader", SYS.aria2 ? "Running" : "Not answering"],
+          ["Playing now", (SYS.now || []).length ? SYS.now.map(n => `${n.title} on ${n.device}`).join(", ") : "Nothing"],
+          ["Processor", SYS.cores ? `${Math.min(100, Math.round(SYS.load / SYS.cores * 100))}% busy` : ""],
           ["Temperature", temp], ["Memory free", `${bytes(SYS.mem_avail)} of ${bytes(SYS.mem_total)}`], ["Last backup", SYS.backup_at ? ago(SYS.backup_at) : "None yet"],
-          ["Up for", dur(SYS.uptime_s).replace(/ \d+ min$/, "") || ""]].filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span class="fig">${esc(v)}</span></div>`).join("")}</section></div>
+          ["Up for", dur(SYS.uptime_s).replace(/ \d+ min$/, "") || ""]].filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span class="fig">${esc(v)}</span></div>`).join("")}
+        ${(SYS.devices || []).length ? `<div class="caption mut" style="margin-top:2.4rem">Your devices, away from home</div>
+          ${SYS.devices.map(d => `<div class="spec"><span>${esc(d.name)}</span><span class="${d.active && !d.direct ? "warnc" : ""}">${!d.online ? "Offline" : !d.active ? "Idle" : d.direct ? "Connected directly" : "Through the relay: too slow for films"}</span></div>`).join("")}` : ""}
+        ${relayed.length ? `<div class="warn">${esc(relayed.join(", "))} ${relayed.length > 1 ? "are" : "is"} playing through Tailscale's relay, which carries about 10 Mb/s. The direct path to mint has dropped: the router's port forward for 41641 is the usual cause.</div>` : ""}</section></div>
       <div class="group" style="margin-top:3.2rem"><div class="setrow" style="border-top:0"><div>Download limit<small>MB/s</small></div>${seg("limit_mbps", [[0, "Off"], [5, "5"], [10, "10"], [20, "20"]])}</div>
         <div class="setrow"><div>Downloads at once</div>${seg("max_concurrent", [[1, "1"], [2, "2"], [3, "3"]])}</div>
         <div class="setrow"><div>Media Core for TV and phone<small>Installs the app. It updates itself after that.</small></div>
