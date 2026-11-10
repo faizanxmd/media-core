@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Where a file plays. The user's browsers all play HEVC, and 4K HDR isn't
@@ -133,6 +134,38 @@ func probeStreams(ctx context.Context, p string) ([]probeStream, error) {
 		}
 	}
 	return r.Streams, nil
+}
+
+// probeStreamsKept: the same, remembered until the file changes. Opening a
+// title asks for its tracks every time, and ffprobe is a disk seek on mint.
+var (
+	probeKeptMu sync.Mutex
+	probeKept   = map[string]keptProbe{}
+)
+
+type keptProbe struct {
+	size, mtime int64
+	streams     []probeStream
+}
+
+func probeStreamsKept(ctx context.Context, p string) ([]probeStream, error) {
+	size, mtime, ok := fileKey(p)
+	probeKeptMu.Lock()
+	k, have := probeKept[p]
+	probeKeptMu.Unlock()
+	if ok && have && k.size == size && k.mtime == mtime {
+		return k.streams, nil
+	}
+	s, err := probeStreams(ctx, p)
+	if err == nil && ok {
+		probeKeptMu.Lock()
+		if len(probeKept) > 500 {
+			clear(probeKept)
+		}
+		probeKept[p] = keptProbe{size, mtime, s}
+		probeKeptMu.Unlock()
+	}
+	return s, err
 }
 
 var textSubs = set("subrip", "ass", "ssa", "webvtt", "mov_text", "text")

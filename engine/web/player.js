@@ -103,7 +103,7 @@ const Player = (() => {
   // long gone by then. A play() during any click unlocks the element for good
   // (prime), so it can start on its own later.
   const video = document.createElement("video");
-  video.setAttribute("playsinline", ""); video.preload = "auto"; video.disablePictureInPicture = true;
+  video.setAttribute("playsinline", ""); video.setAttribute("x-webkit-airplay", "allow"); video.preload = "auto";
   function prime() {
     if (v || video.getAttribute("src")) return;
     const p = video.play();
@@ -115,6 +115,7 @@ const Player = (() => {
   let skipped = 0, skippedT = 0, commitT = 0, hideT = 0, reportT = 0, tickT = 0, noteT = 0, firstFrame = false;
   let offer = null, dismissedNext = "", nextLeft = 10000, lastTick = 0, ended = false, retried = 0;
   let textCues = null, pgsTrack = null, subIndex = -1, speed = 1, opened = 0, errorShown = false, audioIdx = 0;
+  let lastGood = 0, recoveries = 0, cleanSince = 0, stallT = 0, clickT = 0, lastSub = -1, seekPicT = 0, airplay = false;
 
   const $p = s => el.querySelector(s);
   const langKey = it => it.show_id || it.id;
@@ -123,27 +124,27 @@ const Player = (() => {
   async function open(id, { fromStart = false } = {}) {
     const mine = ++opened;
     build();
-    const d = await api(`/api/v1/item/${id}`);
+    // one round of questions, not four in a row: over a slow link each one is a wait
+    const [d, web, man] = await Promise.all([api(`/api/v1/item/${id}`), webAPI("/api/v1/web"), webAPI(`/api/v1/web/${id}`)]);
     if (mine !== opened) return;
     if (d.error) { showError("Can't play this", d.error, ""); return; }
     const it = d.item;
-    const web = await webAPI("/api/v1/web");
     ready = web.ready || {};
-    queue = [it]; logo = it.meta?.logo || "";
-    if (it.type === "episode" && it.show_id) {
+    queue = [it]; logo = it.meta?.logo || ""; recoveries = 0;
+    start(it, fromStart, man.error ? null : man);
+    if (it.type === "episode" && it.show_id) { // the other episodes: Next, and the Episodes row
       const s = await api(`/api/v1/item/${it.show_id}`);
-      if (s.item) {
-        queue = (s.item.seasons || []).flatMap(x => x.episodes || []);
-        logo = s.item.meta?.logo || logo;
-        if (!queue.some(x => x.id === id)) queue = [it];
-        else queue = queue.map(x => x.id === id ? it : x);
-      }
+      if (!el || !s.item || !item || !queue.some(x => x.id === id)) return;
+      const eps = (s.item.seasons || []).flatMap(x => x.episodes || []);
+      if (!eps.some(x => x.id === item.id)) return;
+      queue = eps.map(x => x.id === item.id ? item : x);
+      logo = s.item.meta?.logo || logo;
+      if (!menu) drawFull();
     }
-    if (mine !== opened) return;
-    start(it, fromStart);
   }
 
-  async function start(it, fromStart) {
+  // man: the answer to "how does it play here", when open already asked. at: start here (a recovery), in seconds.
+  async function start(it, fromStart, man, at) {
     const mine = ++opened;
     startAc?.abort(); startAc = new AbortController();
     stopMedia();
@@ -151,13 +152,14 @@ const Player = (() => {
     drawCover();
     $p(".offer").innerHTML = ""; $p(".subs").textContent = ""; clearPGS();
     setMode("hidden"); drawFull();
-    manifest = await webAPI(`/api/v1/web/${it.id}`);
+    manifest = man || await webAPI(`/api/v1/web/${it.id}`);
     wlog(`open ${it.id} "${it.show ? it.show + " " : ""}${it.title || ""}": ${manifest.state}, ${manifest.src || (manifest.hls ? "stream" : manifest.state === "ready" ? "HLS copy" : "nothing to play")}, sound ${(manifest.audio || []).map(a => `${a.lang || "?"}/${a.codec}${a.plays === false ? "(no)" : ""}`).join(" ")}`);
     if (mine !== opened) return;
     if (manifest.state === "wait") { showError("Getting this ready", manifest.wait || "mint is preparing this title. Try again in a few minutes.", ""); return; }
     if (manifest.state !== "ready") { showError("Can't play here", "This browser can't decode this title's picture. A Light copy, added in Manager, would play.", ""); return; }
-    thumbs = it.thumbs > 0 ? new Thumbs(it.id) : null;
-    const resume = !fromStart && !it.watch?.watched && it.watch?.pos > 0 ? it.watch.pos / 1000 : 0;
+    const resume = at > 0 ? at : !fromStart && !it.watch?.watched && it.watch?.pos > 0 ? it.watch.pos / 1000 : 0;
+    lastGood = resume; cleanSince = 0;
+    nowPlaying();
     // a stream mint makes while it plays (the file's picture untouched), or an old copy made ahead
     const src = manifest.hls || `/api/v1/web/${it.id}/master.m3u8`;
     if (manifest.src) { // the library file or its Light copy, played as it is
@@ -173,7 +175,7 @@ const Player = (() => {
         if (!e.fatal) return;
         if (e.type === Hls.ErrorTypes.NETWORK_ERROR && retried++ < 5) { setTimeout(() => hls?.startLoad(), 1500 * retried); return; }
         if (e.type === Hls.ErrorTypes.MEDIA_ERROR && retried++ < 3) { hls.recoverMediaError(); return; }
-        showError("Can't play this", "The stream stopped and didn't come back.", e.details || "");
+        recover(e.details || "the stream stopped");
       });
       hls.on(Hls.Events.FRAG_LOADED, () => { retried = 0; });
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, pickAudioPref);
@@ -199,11 +201,64 @@ const Player = (() => {
     if (p) p.catch(e => { wlog(`play() refused: ${e.name}: ${e.message}`); showFull(); }); // a browser that wants a click first
   }
 
+  // Something broke mid-film (the link dropped, a stream piece failed): load it again where it
+  // was, quietly, three times before saying so. A stretch of clean playing earns the tries back.
+  function recover(why) {
+    if (!item || !el || errorShown) return;
+    const at = Math.max(0, (v.currentTime > 1 ? v.currentTime : lastGood) - 1);
+    wlog(`broke at ${Math.round(at)} s: ${why}; try ${recoveries + 1}`);
+    if (recoveries++ >= 3) { showError("Can't play this", "It stopped and didn't come back. Check the connection to mint.", String(why || "")); return; }
+    busy(true);
+    const it = item;
+    setTimeout(() => { if (item === it && el) start(it, false, null, at); }, 800 * recoveries);
+  }
+  // jump: go to a time, and until the film is there show that moment's scrub picture instead of the old frame
+  function jump(sec) {
+    sec = Math.max(0, Math.min(Math.max(0, dur() / 1000 - 1), sec));
+    const inBuffer = [...Array(v.buffered.length).keys()].some(i => v.buffered.start(i) <= sec && sec < v.buffered.end(i) - .5);
+    v.currentTime = sec;
+    if (!inBuffer) seekPic(true, sec * 1000);
+  }
+  function seekPic(on, ms) {
+    const p = el && $p(".seekpic"); if (!p) return;
+    clearTimeout(seekPicT);
+    if (!on) { p.classList.remove("on"); return; }
+    const u = thumbs?.at(ms) || "";
+    if (!u) return;
+    p.style.backgroundImage = `url(${u})`;
+    seekPicT = setTimeout(() => { if (v?.seeking || v?.readyState < 3) p.classList.add("on"); }, 250); // only when the wait is real
+  }
+  const canPip = () => !!(document.pictureInPictureEnabled || video.webkitSupportsPresentationMode);
+  function togglePip() {
+    try {
+      if (document.pictureInPictureElement) document.exitPictureInPicture();
+      else if (v.requestPictureInPicture) v.requestPictureInPicture().catch(() => {});
+      else if (v.webkitSetPresentationMode) v.webkitSetPresentationMode(v.webkitPresentationMode === "picture-in-picture" ? "inline" : "picture-in-picture");
+    } catch {}
+  }
+  // the keyboard's media keys, the Mac's Now Playing, a headset's buttons
+  function mediaKeys() {
+    const ms = navigator.mediaSession; if (!ms) return;
+    const set = (k, fn) => { try { ms.setActionHandler(k, fn); } catch {} };
+    set("play", () => { if (v?.paused) toggle(); });
+    set("pause", () => { if (v && !v.paused) toggle(); });
+    set("seekbackward", () => v && tapSkip(-1));
+    set("seekforward", () => v && tapSkip(1));
+    set("seekto", e => { if (v && e.seekTime != null) jump(e.seekTime); });
+    set("nexttrack", () => { const n = nextOf(); if (n) playNext(n); });
+  }
+  function nowPlaying() {
+    if (!navigator.mediaSession || !window.MediaMetadata || !item) return;
+    const [title, sub] = titles(item);
+    try { navigator.mediaSession.metadata = new MediaMetadata({ title: item.type === "episode" ? item.title : title, artist: item.type === "episode" ? `${title} · S${item.season}, E${item.episode}` : sub,
+      artwork: cover ? [{ src: new URL(cover, location.href).href }] : [] }); } catch {}
+  }
+
   function stopMedia() {
     if (item && v && v.currentTime > 0 && !ended) report(false);
     if (hls) { hls.destroy(); hls = null; }
     if (v) { v.removeAttribute("src"); v.load(); }
-    thumbs?.free(); thumbs = null;
+    thumbs?.free(); thumbs = null; clearTimeout(stallT); seekPic(false);
   }
 
   function report(end) {
@@ -219,6 +274,9 @@ const Player = (() => {
     if (!el) return;
     if (item && v && v.currentTime > 0 && !ended) report(false);
     clearInterval(reportT); clearInterval(tickT); clearTimeout(hideT); clearTimeout(commitT); clearTimeout(skippedT); clearTimeout(keyTimer);
+    clearTimeout(stallT); clearTimeout(clickT); clearTimeout(seekPicT);
+    if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+    if (navigator.mediaSession) try { navigator.mediaSession.metadata = null; } catch {}
     cancelAnimationFrame(holdRaf);
     item = null;
     if (hls) { hls.destroy(); hls = null; }
@@ -245,6 +303,7 @@ const Player = (() => {
       <div class="skip l"></div><div class="skip r"></div><div class="mid" hidden><div class="loading"></div></div>
       <div class="layer scrub"><div class="strip"></div><div class="now2 title fig"></div><div class="bar"><i class="all"></i><i class="buf"></i><i class="now"></i></div></div>
       <div class="layer full"></div><div class="layer cover"></div><div class="offer"></div><div class="pnote" hidden></div>`;
+    $p("canvas.pgs").insertAdjacentHTML("beforebegin", `<div class="layer seekpic"></div>`);
     document.body.append(el);
     document.body.style.overflow = "hidden";
     $p(".vslot").replaceWith(video);
@@ -252,14 +311,23 @@ const Player = (() => {
     ac = new AbortController();
     const on = { signal: ac.signal };
     v.volume = +(store.get("volume") ?? 1); v.muted = store.get("muted") === "1";
-    v.addEventListener("playing", () => { firstFrame = true; $p(".cover").style.opacity = 0; $p(".cover").style.pointerEvents = "none"; busy(false); drawIcons(); }, on);
+    v.addEventListener("playing", () => {
+      firstFrame = true; $p(".cover").style.opacity = 0; $p(".cover").style.pointerEvents = "none"; busy(false); drawIcons(); clearTimeout(stallT);
+      if (!thumbs && item?.thumbs > 0) thumbs = new Thumbs(item.id); // after the film has started, so they don't compete with it
+    }, on);
     v.addEventListener("pause", () => { drawIcons(); if (!ended && !holding && mode !== "scrub") { report(false); showFull(); } }, on);
     v.addEventListener("play", drawIcons, on);
-    v.addEventListener("waiting", () => busy(true), on);
-    v.addEventListener("canplay", () => busy(false), on);
+    v.addEventListener("waiting", () => {
+      busy(true);
+      clearTimeout(stallT); // stuck for half a minute: load it again from where it was
+      stallT = setTimeout(() => { if (v && item && !v.paused && !ended && v.readyState < 3) recover("stuck waiting for data"); }, 30000);
+    }, on);
+    v.addEventListener("canplay", () => { busy(false); clearTimeout(stallT); }, on);
     v.addEventListener("seeked", () => { pgsTrack && (pgsTrack.at = -1); busy(false); }, on);
+    v.addEventListener("timeupdate", () => { if (!v.seeking) seekPic(false); }, on);
+    v.addEventListener("webkitplaybacktargetavailabilitychanged", e => { airplay = e.availability === "available"; const b = $p('[data-a="airplay"]'); if (b) b.hidden = !airplay; }, on);
     v.addEventListener("ended", onEnded, on);
-    v.addEventListener("error", () => { if (!hls) showError("Can't play this", "The stream stopped and didn't come back.", v.error?.message || ""); }, on);
+    v.addEventListener("error", () => { if (!hls && v.getAttribute("src")) recover(v.error?.message || `error ${v.error?.code}`); }, on);
     v.addEventListener("loadedmetadata", placePGS, on);
     v.audioTracks?.addEventListener?.("addtrack", applyAudio, on);
     let waits = 0, played = false;
@@ -269,7 +337,8 @@ const Player = (() => {
     v.addEventListener("stalled", () => wlog(`stalled at ${Math.round(v.currentTime)} s`), on);
     v.addEventListener("waiting", () => { if (++waits <= 3) wlog(`waiting at ${Math.round(v.currentTime)} s`); }, on);
     el.addEventListener("click", onClick);
-    el.addEventListener("dblclick", e => { if (e.target === v) toggleFull(); });
+    el.addEventListener("dblclick", e => { if (e.target === v || e.target.classList.contains("seekpic")) { clearTimeout(clickT); toggleFull(); } });
+    mediaKeys();
     el.addEventListener("mousemove", onMove);
     addEventListener("keydown", onKeyDown, true); addEventListener("keyup", onKeyUp, true);
     addEventListener("resize", placePGS);
@@ -317,6 +386,8 @@ const Player = (() => {
             <button class="ctl" data-a="speed" aria-label="Speed" title="Speed">${speed !== 1 ? speed + "×" : icon("Speed")}</button>
             ${many ? `<button class="ctl" data-a="episodes" aria-label="Episodes" title="Episodes">${icon("Episodes")}</button>` : ""}
             ${next ? `<button class="ctl" data-a="next" aria-label="Next episode" title="Next episode">${icon("SkipNext")}</button>` : ""}
+            <button class="ctl" data-a="airplay" aria-label="AirPlay" title="AirPlay" ${airplay ? "" : "hidden"}>${icon("AirPlay")}</button>
+            ${canPip() ? `<button class="ctl" data-a="pip" aria-label="Picture in picture" title="Picture in picture (P)">${icon("Pip")}</button>` : ""}
             <button class="ctl" data-a="fullscreen" aria-label="Full screen" title="Full screen (F)">${icon(document.fullscreenElement ? "Unfull" : "Full")}</button>
           </div></div></div>
       <div id="pmenuBox"></div>`;
@@ -367,7 +438,7 @@ const Player = (() => {
     bar.onpointermove = e => { place(e); if (bar.classList.contains("drag")) { scrub = at(e); drawClock(); } };
     bar.onpointerleave = () => { if (!bar.classList.contains("drag")) pv.classList.remove("on"); };
     bar.onpointerdown = e => { bar.setPointerCapture(e.pointerId); bar.classList.add("drag"); scrub = at(e); place(e); drawClock(); clearTimeout(hideT); };
-    bar.onpointerup = e => { bar.classList.remove("drag"); const t = at(e); scrub = null; v.currentTime = t / 1000; pv.classList.remove("on"); poke(); };
+    bar.onpointerup = e => { bar.classList.remove("drag"); const t = at(e); scrub = null; jump(t / 1000); pv.classList.remove("on"); poke(); };
     bar.onpointercancel = () => { bar.classList.remove("drag"); scrub = null; pv.classList.remove("on"); };
   }
   function setMode(m) {
@@ -417,10 +488,10 @@ const Player = (() => {
   function audioOptions() {
     const list = manifest?.audio || [];
     const langs = {};
-    list.forEach(a => { const n = langName(a.lang, a.title); langs[n] = (langs[n] || 0) + 1; });
+    list.forEach(a => { const n = a.name || langName(a.lang, a.title); langs[n] = (langs[n] || 0) + 1; });
     return list.map((a, i) => {
-      const n = langName(a.lang, a.title);
-      const detail = isCommentary(a.title) ? "Commentary" : langs[n] > 1 ? (a.channels === 1 ? "Mono" : a.channels === 2 ? "Stereo" : a.channels === 6 ? "5.1" : a.channels === 8 ? "7.1" : "") : "";
+      const n = a.name || langName(a.lang, a.title); // the engine names a track once, for every app
+      const detail = a.detail || (isCommentary(a.title) ? "Commentary" : langs[n] > 1 ? (a.channels === 1 ? "Mono" : a.channels === 2 ? "Stereo" : a.channels === 6 ? "5.1" : a.channels === 8 ? "7.1" : "") : "");
       if (a.plays === false) return { title: n, detail: "Not in this browser", selected: false, pick: () => pnote("This browser can't play that track") };
       return { title: n, detail, selected: i === audioIdx, pick: () => pickAudio(i, true) };
     });
@@ -456,12 +527,14 @@ const Player = (() => {
     const speaks = code => { try { return new Intl.Locale(code || "und").language === mine || langName(code).toLowerCase() === (LANG?.of(mine) || "").toLowerCase(); } catch { return false; } };
     const plays = a => a.plays !== false; // only tracks this browser can play
     let i = pref ? list.findIndex(a => plays(a) && a.lang === pref && !isCommentary(a.title)) : -1;
+    if (i < 0) i = list.findIndex(a => plays(a) && a.main); // the engine's pick: English, then the file's default
     if (i < 0) i = list.findIndex(a => plays(a) && speaks(a.lang) && !isCommentary(a.title));
     if (i < 0) i = list.findIndex(plays);
     pickAudio(i < 0 ? 0 : i, false);
   }
   async function pickSub(i, quiet) {
     subIndex = i; textCues = null; pgsTrack = null; clearPGS(); $p(".subs").textContent = "";
+    if (i >= 0) lastSub = i;
     const s = manifest?.subs?.[i];
     if (!quiet) store.set("t:" + langKey(item), s ? s.lang : "off");
     if (!s) return;
@@ -542,6 +615,8 @@ const Player = (() => {
       else if (act === "leave") leave();
       else if (act === "mute") { v.muted = !v.muted; store.set("muted", v.muted ? "1" : "0"); drawFull(); showFull(); }
       else if (act === "fullscreen") toggleFull();
+      else if (act === "airplay") v.webkitShowPlaybackTargetPicker?.();
+      else if (act === "pip") togglePip();
       else if (act === "next") { const n = nextOf(); if (n) playNext(n); }
       else if (act === "audio") menu?.kind === "audio" ? closeMenu() : openList("audio", a, "Audio", audioOptions(), 28);
       else if (act === "subs") {
@@ -560,7 +635,11 @@ const Player = (() => {
     if (e.target.closest(".perr")) return;
     if (menu) { closeMenu(); return; }
     if (e.pointerType === "touch") { mode === "full" ? setMode("hidden") : showFull(); return; }
-    if (e.target === v || e.target.closest(".full")) toggle();
+    if (e.target === v || e.target.closest(".full, .seekpic")) {
+      clearTimeout(clickT);
+      if (e.detail > 1) return; // the second click of a double click
+      clickT = setTimeout(toggle, 220); // a double click means full screen, not pause and play
+    }
   }
   const nextOf = () => { const i = queue.findIndex(x => x.id === item?.id); const n = i >= 0 ? queue[i + 1] : null; return n && ready[n.id] ? n : null; };
   async function playNext(n) {
@@ -594,7 +673,7 @@ const Player = (() => {
   }
   function takeOffer() {
     if (!offer) return;
-    if (offer.kind === "intro") { v.currentTime = item.intro.end; }
+    if (offer.kind === "intro") { jump(item.intro.end); }
     else { report(true); ended = true; playNext(offer.next); }
     offer = null; drawOffer();
   }
@@ -602,6 +681,11 @@ const Player = (() => {
     if (!el || !item) return;
     drawClock();
     const t = v.currentTime, d = v.duration || 0, now = Date.now();
+    if (!v.paused && !v.seeking && v.readyState >= 3 && t > 0) {
+      lastGood = t;
+      if (!cleanSince) cleanSince = now;
+      else if (now - cleanSince > 60000) recoveries = 0;
+    } else if (!v.paused) cleanSince = 0;
     let o = null;
     const creditsAt = item.credits?.start ?? (d > 0 ? d - 40 : Infinity), n = nextOf();
     if (item.intro && t >= item.intro.start && t < item.intro.end - 2) o = { kind: "intro" };
@@ -631,7 +715,7 @@ const Player = (() => {
       clearTimeout(skippedT);
       skippedT = setTimeout(() => { skipped = 0; $p(".skip.l")?.classList.remove("on"); $p(".skip.r")?.classList.remove("on"); }, 1000);
     }
-    if (first) v.currentTime = to / 1000;
+    if (first) jump(to / 1000);
     clearTimeout(commitT); clearTimeout(hideT);
     commitT = setTimeout(commit, 350);
     drawClock();
@@ -640,7 +724,7 @@ const Player = (() => {
     clearTimeout(commitT);
     if (scrub == null) return;
     const to = scrub; scrub = null;
-    if (Math.abs(v.currentTime * 1000 - to) > 200) v.currentTime = to / 1000;
+    if (Math.abs(v.currentTime * 1000 - to) > 200) jump(to / 1000);
     drawClock(); poke();
   }
   function startHold(dir) {
@@ -673,7 +757,7 @@ const Player = (() => {
     stopHold();
     const to = scrub ?? 0;
     scrub = null; setMode("hidden");
-    v.currentTime = to / 1000;
+    jump(to / 1000);
     v.play().catch(() => {});
   }
   function cancelHold() {
@@ -757,14 +841,37 @@ const Player = (() => {
         }, 350);
         return;
       }
-      case "ArrowUp": case "ArrowDown":
+      case "ArrowUp": case "ArrowDown": { // volume, as every player on a computer has it
         eat();
-        if (e.repeat) return;
         if (mode === "scrub") return;
-        if (mode === "hidden") { showFull(); if (k === "ArrowDown") $$(".crow .ctl", $p(".full"))[0]?.focus(); else $p("#bar")?.focus(); }
-        else if (k === "ArrowDown") { $$(".crow .ctl", $p(".full")).find(x => x.offsetParent)?.focus(); poke(); }
-        else { $p("#bar")?.focus(); poke(); }
+        const to = Math.max(0, Math.min(1, Math.round(((v.muted ? 0 : v.volume) + (k === "ArrowUp" ? .05 : -.05)) * 20) / 20));
+        v.volume = to; v.muted = to === 0; store.set("volume", to); store.set("muted", v.muted ? "1" : "0");
+        const vol = $p("#volume"); if (vol) { vol.value = to; vol.style.setProperty("--v", to * 100 + "%"); }
+        if ($p("#muteBtn")) $p("#muteBtn").innerHTML = icon(v.muted ? "Mute" : "Volume");
+        pnote(to ? `Volume ${Math.round(to * 100)}%` : "Muted");
         return;
+      }
+      case "Tab": if (mode === "hidden") showFull(); return; // Tab walks to the controls
+      case "j": case "l": eat(); if (!e.repeat && mode !== "scrub") tapSkip(k === "l" ? 1 : -1); return;
+      case "0": case "1": case "2": case "3": case "4": case "5": case "6": case "7": case "8": case "9":
+        eat(); if (!e.repeat && mode !== "scrub" && dur() > 0) { jump(dur() / 1000 * +k / 10); pnote(`${+k * 10}%`); } return;
+      case "c": { // subtitles on and off
+        eat();
+        const list = manifest?.subs || [];
+        if (!list.length) { pnote(manifest?.subs_wait ? "Subtitles are still being read from the file" : "No subtitles"); return; }
+        if (subIndex >= 0) { pickSub(-1); pnote("Subtitles off"); }
+        else { const i = lastSub >= 0 && lastSub < list.length ? lastSub : Math.max(0, list.findIndex(x => /^en/i.test(x.lang || ""))); pickSub(i); pnote("Subtitles on"); }
+        return;
+      }
+      case "<": case ">": {
+        eat();
+        const i = Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed) + (k === ">" ? 1 : -1)));
+        speed = SPEEDS[i]; v.playbackRate = speed;
+        const c = $p('[data-a="speed"]'); if (c) c.innerHTML = speed !== 1 ? speed + "×" : icon("Speed");
+        pnote(speed === 1 ? "Normal speed" : speed + "×");
+        return;
+      }
+      case "p": eat(); if (canPip()) togglePip(); return;
       case "f": eat(); toggleFull(); return;
       case "m": eat(); v.muted = !v.muted; store.set("muted", v.muted ? "1" : "0"); if ($p("#muteBtn")) $p("#muteBtn").innerHTML = icon(v.muted ? "Mute" : "Volume"); pnote(v.muted ? "Muted" : "Sound on"); return;
       case "n": { eat(); const n = nextOf(); if (n) playNext(n); return; }
@@ -797,8 +904,8 @@ const Player = (() => {
       const b = ev.target.closest("[data-x]"); if (!b) return;
       ev.stopPropagation();
       if (b.dataset.x === "close") { leave(); return; }
-      e.remove(); errorShown = false;
-      if (item) start(item, false); else open(location.hash.split("/")[2]);
+      e.remove(); errorShown = false; recoveries = 0;
+      if (item) start(item, false, null, lastGood); else open(location.hash.split("/")[2]);
     };
     e.querySelector("button").focus();
   }

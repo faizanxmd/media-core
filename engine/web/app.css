@@ -255,6 +255,8 @@ input[type=search]::-webkit-search-cancel-button { display: none; }
 .cover img { width: 100%; height: 100%; object-fit: cover; }
 .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(14,16,20,.35), rgba(14,16,20,.9)); }
 .cover .who { position: absolute; left: var(--side); bottom: var(--side); display: flex; align-items: center; gap: 1.4rem; z-index: 1; }
+.seekpic { background: #000 center / contain no-repeat; opacity: 0; pointer-events: none; transition: opacity var(--out) var(--ease); }
+.seekpic.on { opacity: 1; transition-duration: var(--in); }
 .subs { position: absolute; left: 8%; right: 8%; bottom: 7%; text-align: center; pointer-events: none; font-size: calc(min(100vw, 177.78vh) * .026); line-height: 1.25; font-weight: 500; color: #fff; text-shadow: 0 0 .25em #000, 0 .05em .15em #000; white-space: pre-line; transition: transform var(--in) var(--ease); }
 canvas.pgs { position: absolute; pointer-events: none; transition: transform var(--in) var(--ease); }
 #player.chrome .subs { transform: translateY(-15rem); }

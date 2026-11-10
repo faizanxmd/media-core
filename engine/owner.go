@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// The :8780 site (web player and Manager) is for the owner only. mint is
+// The :8780 site (web player and Manager) and the apps' API on :8790 are for the owner only. mint is
 // reachable over Tailscale, and if it's ever shared with another account, that
 // account's devices would otherwise get everything, Manager's delete included.
 // Tailscale tells us whose device a connection comes from; anything on
@@ -98,9 +98,11 @@ func (g *ownerGate) allowed(r *http.Request) bool {
 	g.mu.Unlock()
 	if !ok || time.Since(s.at) > 10*time.Minute {
 		s = seen{tsLogin(host), time.Now()}
-		g.mu.Lock()
-		g.logins[host] = s
-		g.mu.Unlock()
+		if s.login != "" { // a lookup that failed is asked again next time, not remembered
+			g.mu.Lock()
+			g.logins[host] = s
+			g.mu.Unlock()
+		}
 	}
 	return s.login != "" && s.login == owner
 }

@@ -429,13 +429,14 @@ func serve() {
 	}
 	go e.Run()
 	pl := &Player{c: cat, w: watch, t: tm, e: e}
-	ps := servePlayer(pl)
+	gate := newOwnerGate()
+	ps := servePlayer(pl, gate)
 	srv := &Server{e: e, p: pl, assets: loadAssets()}
 	addr := Listen
 	if v := os.Getenv("MEDIA_CORE_LISTEN"); v != "" {
 		addr = v
 	}
-	hs := &http.Server{Addr: addr, Handler: newOwnerGate().wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Addr: addr, Handler: gate.wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-shutdownSignal()
 		log.Print("stopping")

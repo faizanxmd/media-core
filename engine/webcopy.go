@@ -38,7 +38,10 @@ type webAudio struct {
 	Title    string `json:"title,omitempty"`
 	Codec    string `json:"codec,omitempty"`
 	Channels int    `json:"channels,omitempty"`
-	Plays    bool   `json:"plays"` // this browser can play it (by what it reported)
+	Name     string `json:"name,omitempty"`   // what every player calls it: "English"
+	Detail   string `json:"detail,omitempty"` // "DTS-HD MA 5.1", or "Commentary"
+	Main     bool   `json:"main,omitempty"`   // the one to start with when nothing was chosen before
+	Plays    bool   `json:"plays"`            // this browser can play it (by what it reported)
 }
 
 type webSub struct {
@@ -115,13 +118,23 @@ func directManifest(it *Item, c Caps) *webManifest {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if streams, err := probeStreams(ctx, file); err == nil {
+	if streams, err := probeStreamsKept(ctx, file); err == nil {
 		var codecs []string
+		var tracks []probeStream
 		for _, s := range streams {
 			if s.Type == "audio" {
-				m.Audio = append(m.Audio, webAudio{Lang: s.Tags.Language, Title: s.Tags.Title, Codec: s.Codec, Channels: s.Channels, Plays: p.How == "repack"})
+				a := webAudio{Lang: s.Tags.Language, Title: s.Tags.Title, Codec: s.Codec, Channels: s.Channels, Plays: p.How == "repack",
+					Name: trackName(s), Detail: audioLabel(s.Codec, s.Profile, s.Channels)}
+				if isCommentary(s.Tags.Title) {
+					a.Name, a.Detail = strings.TrimSuffix(a.Name, " commentary"), "Commentary"
+				}
+				m.Audio = append(m.Audio, a)
 				codecs = append(codecs, s.Codec)
+				tracks = append(tracks, s)
 			}
+		}
+		if len(tracks) > 0 {
+			m.Audio[mainAudio(tracks)].Main = true
 		}
 		if p.How == "direct" {
 			if !c.known { // an older page: only the first track, if a browser plays it

@@ -460,8 +460,8 @@ func appInfo(name string) http.HandlerFunc {
 }
 
 // servePlayer runs the player API on its own port. Firewall: home Wi-Fi +
-// tailscale0 only.
-func servePlayer(p *Player) *http.Server {
+// tailscale0 only, and of Tailscale only the owner's own devices (owner.go).
+func servePlayer(p *Player, gate *ownerGate) *http.Server {
 	mux := http.NewServeMux()
 	p.mount(mux)
 	mountDAV(mux)
@@ -473,7 +473,7 @@ func servePlayer(p *Player) *http.Server {
 	if v := os.Getenv("MEDIA_CORE_PLAYER_LISTEN"); v != "" {
 		addr = v
 	}
-	hs := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Addr: addr, Handler: gate.wrap(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("player API listening on %s", addr)
 		if err := hs.ListenAndServe(); err != http.ErrServerClosed {
