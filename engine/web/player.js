@@ -152,12 +152,14 @@ const Player = (() => {
     $p(".offer").innerHTML = ""; $p(".subs").textContent = ""; clearPGS();
     setMode("hidden"); drawFull();
     manifest = await webAPI(`/api/v1/web/${it.id}`);
-    wlog(`open ${it.id} "${it.show ? it.show + " " : ""}${it.title || ""}": ${manifest.state}, ${manifest.src || (manifest.state === "ready" ? "HLS copy" : "nothing to play")}, sound ${(manifest.audio || []).map(a => `${a.lang || "?"}/${a.codec}${a.plays === false ? "(no)" : ""}`).join(" ")}`);
+    wlog(`open ${it.id} "${it.show ? it.show + " " : ""}${it.title || ""}": ${manifest.state}, ${manifest.src || (manifest.hls ? "stream" : manifest.state === "ready" ? "HLS copy" : "nothing to play")}, sound ${(manifest.audio || []).map(a => `${a.lang || "?"}/${a.codec}${a.plays === false ? "(no)" : ""}`).join(" ")}`);
     if (mine !== opened) return;
-    if (manifest.state !== "ready") { showError("Not ready for browsers", "Manager can make it play here: as an MP4, or with a Light copy.", ""); return; }
+    if (manifest.state === "wait") { showError("Getting this ready", manifest.wait || "mint is preparing this title. Try again in a few minutes.", ""); return; }
+    if (manifest.state !== "ready") { showError("Can't play here", "This browser can't decode this title's picture. A Light copy, added in Manager, would play.", ""); return; }
     thumbs = it.thumbs > 0 ? new Thumbs(it.id) : null;
     const resume = !fromStart && !it.watch?.watched && it.watch?.pos > 0 ? it.watch.pos / 1000 : 0;
-    const src = `/api/v1/web/${it.id}/master.m3u8`;
+    // a stream mint makes while it plays (the file's picture untouched), or an old copy made ahead
+    const src = manifest.hls || `/api/v1/web/${it.id}/master.m3u8`;
     if (manifest.src) { // the library file or its Light copy, played as it is
       v.src = manifest.src;
       v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true, signal: startAc.signal });

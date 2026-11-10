@@ -102,6 +102,7 @@ type probeStream struct {
 	Index    int    `json:"index"`
 	Type     string `json:"codec_type"`
 	Codec    string `json:"codec_name"`
+	Profile  string `json:"profile"`
 	Channels int    `json:"channels"`
 	Tags     struct {
 		Language string `json:"language"`
@@ -117,7 +118,7 @@ type probeStream struct {
 
 func probeStreams(ctx context.Context, p string) ([]probeStream, error) {
 	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries",
-		"stream=index,codec_type,codec_name,channels:stream_tags=language,title,handler_name:stream_disposition=default,forced,attached_pic",
+		"stream=index,codec_type,codec_name,profile,channels:stream_tags=language,title,handler_name:stream_disposition=default,forced,attached_pic",
 		"-of", "json", p).Output()
 	if err != nil {
 		return nil, fmt.Errorf("can't read %s", filepath.Base(p))

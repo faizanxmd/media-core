@@ -172,7 +172,7 @@ document.addEventListener("click", async e => {
   const it = (await api(`/api/v1/item/${id}`)).item;
   if (!it) return;
   const st = await webAPI(`/api/v1/web/${id}`);
-  if (st.state === "ready") { location.hash = `#/play/${id}`; return; }
+  if (st.state === "ready" || st.state === "wait") { location.hash = `#/play/${id}`; return; }
   location.hash = `#/title/${it.show_id || id}`;
 });
 

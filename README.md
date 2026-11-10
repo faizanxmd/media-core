@@ -5,7 +5,7 @@ A private Plex replacement. A server on the home box ("mint") downloads links st
 | Part | Where | What |
 |---|---|---|
 | **media-core-engine** | `engine/` | Go server, standard library only, with its web UI embedded. Downloads through aria2, unpacks, renames, fixes Dolby Vision, keeps the catalog with TMDB metadata, records watch progress, finds intros, makes scrub thumbnails, streams files and serves WebDAV. |
-| **Web player** | `engine/web` | The site at `mint:8780`: the TV app's screens and player in a browser (plain JS), and Manager: paste a link and see what it is before it downloads, the downloads, the library's files with where each plays, and mint's disk and health. Browsers play MP4s and Light copies directly ([docs/browser-playback.md](docs/browser-playback.md)). |
+| **Web player** | `engine/web` | The site at `mint:8780`: the TV app's screens and player in a browser (plain JS), and Manager: paste a link and see what it is before it downloads, the downloads, the library's files with where each plays, and mint's disk and health. Browsers play what they can directly and get the rest as a stream made while it plays, the picture untouched ([docs/browser-playback.md](docs/browser-playback.md)). |
 | **TV app** | `android/app` | Kotlin, Jetpack Compose and Media3. Id `app.mediacore`. Updates itself from the engine. |
 | **Phone app** | `android/phone` | Its own screens and player. Id `app.mediacore.phone`. Has offline downloads. |
 | **Shared core** | `android/core` | Used by both apps: the engine API, its data, offline copies and scrub pictures. |
@@ -26,7 +26,7 @@ link ─▶ :8780 site + API (Tailscale only) ─▶ aria2 RPC 127.0.0.1:6800 �
 TV / phone app ◀─ :8790 player API /api/v1, streaming, WebDAV /dav (home LAN + Tailscale) ◀─ catalog
 ```
 
-- The engine never transcodes while you watch. The apps get files as they are, with HTTP ranges, and decode them (Media3, plus FFmpeg decoders for DTS and TrueHD). Browsers get copies made ahead of time.
+- The engine never converts the picture while you watch. The apps get files as they are, with HTTP ranges, and decode them (Media3, plus FFmpeg decoders for DTS and TrueHD). A browser that can't open a file as it is (an MKV in Safari, Dolby or DTS sound in Chrome) gets it repackaged as it plays: the picture copied, the sound made AAC only where needed.
 - Library layout: `Movies/<Title> (<Year>)/…`, `TV Shows/<Show>/Season 01/<Show> - S01E01.ext` and `Music/<Artist>/<Album>/`. The catalog skips dot-folders.
 - Two systemd user services, `media-core-engine` and `media-core-aria2`, plus the nightly `media-core-backup.timer`.
 

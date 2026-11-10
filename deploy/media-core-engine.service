@@ -12,7 +12,8 @@ UMask=0002
 # post-processing children (ffmpeg, 7z) may be mid-run on restart; the app
 # picks those jobs up again, so a quick stop is fine
 TimeoutStopSec=10
-MemoryHigh=300M
+# a stream made while a title plays keeps up to about 200M of pieces in memory (engine/stream.go)
+MemoryHigh=600M
 
 [Install]
 WantedBy=default.target

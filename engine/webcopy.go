@@ -22,7 +22,9 @@ import (
 // can name them.
 type webManifest struct {
 	State       string     `json:"state"`
-	Src         string     `json:"src,omitempty"` // played directly: the library file or its Light copy
+	Src         string     `json:"src,omitempty"`  // played directly: the library file or its Light copy
+	HLS         string     `json:"hls,omitempty"`  // repackaged while it plays (stream.go): the stream's master playlist
+	Wait        string     `json:"wait,omitempty"` // not yet: what mint is doing first
 	SourceSize  int64      `json:"source_size"`
 	SourceMtime int64      `json:"source_mtime"`
 	Audio       []webAudio `json:"audio,omitempty"`
@@ -70,42 +72,62 @@ func webCopy(it *Item) *webManifest {
 	return &m
 }
 
-// webDirect is how a browser plays an item without a copy: the file itself
-// when this browser plays it, else its Light copy when that plays (browser.go).
-func webDirect(it *Item, c Caps) (src, file string) {
-	switch {
-	case it == nil || it.file == "":
-	case playsIn(it.Info, c):
-		return "/api/v1/stream/" + it.ID, it.file
-	case it.Light != nil && playsIn(it.Light.Info, c):
-		return "/api/v1/stream/" + it.ID + "?v=light", it.Light.file
+// webPlay decides how this browser gets an item (play.go) and which file it is.
+func webPlay(it *Item, c Caps) (p Play, file string, info *MInfo) {
+	if it == nil || it.file == "" {
+		return Play{How: "none"}, "", nil
 	}
-	return "", ""
+	var light *MInfo
+	if it.Light != nil {
+		light = it.Light.Info
+	}
+	p = howToPlay(it.Info, light, c)
+	if p.Light {
+		return p, it.Light.file, it.Light.Info
+	}
+	return p, it.file, it.Info
 }
 
-// directManifest lists a directly played file's audio (from the file, in its
-// order) and the subtitle files beside it: text ones as x<n>.vtt, pictures as p<n>.sup.
+// directManifest is what the web player needs to play an item without a copy
+// made ahead: where it is (the file as it is, or its stream), its sound tracks
+// in the file's order, and the subtitle files beside it: text ones as
+// x<n>.vtt, pictures as p<n>.sup.
 func directManifest(it *Item, c Caps) *webManifest {
-	src, file := webDirect(it, c)
-	if src == "" {
+	p, file, _ := webPlay(it, c)
+	m := &webManifest{State: "ready"}
+	switch p.How {
+	case "direct":
+		m.Src = "/api/v1/stream/" + it.ID
+		if p.Light {
+			m.Src += "?v=light"
+		}
+	case "repack":
+		if _, err := keyframes(file); err == errKeysPending {
+			return &webManifest{State: "wait", Wait: "mint is reading this file for the first time. It takes a few minutes."}
+		} else if err != nil {
+			return nil
+		}
+		m.HLS = streamURL(it, p.Light, c)
+	default:
 		return nil
 	}
-	m := &webManifest{State: "ready", Src: src}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if streams, err := probeStreams(ctx, file); err == nil {
 		var codecs []string
 		for _, s := range streams {
 			if s.Type == "audio" {
-				m.Audio = append(m.Audio, webAudio{Lang: s.Tags.Language, Title: s.Tags.Title, Codec: s.Codec, Channels: s.Channels})
+				m.Audio = append(m.Audio, webAudio{Lang: s.Tags.Language, Title: s.Tags.Title, Codec: s.Codec, Channels: s.Channels, Plays: p.How == "repack"})
 				codecs = append(codecs, s.Codec)
 			}
 		}
-		if !c.known { // an older page: only the first track, if a browser plays it
-			c = parseCaps("aac,mp3,opus,flac")
-		}
-		for _, i := range c.playableAudio(codecs, "") {
-			m.Audio[i].Plays = true
+		if p.How == "direct" {
+			if !c.known { // an older page: only the first track, if a browser plays it
+				c = parseCaps("aac,mp3,opus,flac")
+			}
+			for _, i := range c.playableAudio(codecs, "") {
+				m.Audio[i].Plays = true
+			}
 		}
 	}
 	for i, s := range it.Subs {
@@ -144,12 +166,13 @@ func srtToVTT(b []byte) []byte {
 }
 
 func mountWebCopies(mux *http.ServeMux, p *Player) {
+	mountStreams(mux, p)
 	// which items have a copy, for a title page's episodes and the player's queue
 	mux.HandleFunc("GET /api/v1/web", func(w http.ResponseWriter, r *http.Request) {
 		c := capsOf(r)
 		ready := map[string]bool{}
 		for _, it := range p.c.All() {
-			if src, _ := webDirect(it, c); src != "" {
+			if p, _, _ := webPlay(it, c); p.How != "none" {
 				ready[it.ID] = true
 			}
 		}
