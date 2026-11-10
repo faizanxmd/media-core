@@ -17,7 +17,7 @@ Devices: TCL Google TV 14 (MediaTek, weak 32-bit CPU, 3 GB RAM, TV speakers only
 ## Player (TV, phone, browser)
 
 1. **Skipping forward freezes on the old picture first** (reported 2026-11-10; device not stated, all three skip the same way). A tap of Right jumps at once with an exact seek (`seekExact` in both `PlayerActivity.kt`, `SeekParameters.EXACT`; `tapSkip` in `engine/web/player.js`), then jumps again 350 ms after the last tap when taps add up (`commit`). An exact seek decodes forward from the previous keyframe, which can be several seconds away in a WEB-DL, so the old frame stays up meanwhile; on the TV's weak CPU, with 4K HEVC, that's long. The second seek can repeat the stall. Worth weighing: keyframe seeks (`CLOSEST_SYNC`, already used for scrubbing) for skips, one seek per burst of taps, and keeping the skip target inside the buffer.
-2. **The player as a whole feels like an old Android player** (user's verdict, 2026-10-30: "it mimics modernity, it is not modern"). The brief, modelled on JioHotstar: nothing on screen while playing; tap Left/Right skips 10 s silently and taps add up; pause shows the controls; holding scrubs through thumbnails and that moment must look really good. No mockups: build the real thing, test on the TV, then polish.
+2. **The player as a whole feels like an old Android player** (user's verdict, 2026-10-30: "it mimics modernity, it is not modern"). The brief, : nothing on screen while playing; tap Left/Right skips 10 s silently and taps add up; pause shows the controls; holding scrubs through thumbnails and that moment must look really good. No mockups: build the real thing, test on the TV, then polish.
 3. **Polish list from build 1721** (2026-10-30, not yet done): remove chapters from the UI entirely (button, row, cuts in the bar, chapter names in pause and scrub text); move the Audio and other controls from the left to the right.
 4. **More to come from the user.** They said there are many player issues; ask them to describe each with the device and what they did.
 
@@ -48,7 +48,25 @@ Devices: TCL Google TV 14 (MediaTek, weak 32-bit CPU, 3 GB RAM, TV speakers only
 3. **Port 8790 has no owner lock.** The site on 8780 turns away other Tailscale accounts (`engine/owner.go`), but the player API on 8790, which the apps use, answers anyone who can reach it, including `/api/v1/match`. Only matters if mint is ever shared.
 4. **Waiting on a build**: speed-based Original/Light picking and the slow-connection card in both apps, and the shared `android/core` code (`docs/PENDING.md`). Nothing has been compiled yet.
 
+## After the 2026-11-10 work (browser streams, web player, network)
+
+What that work left open or unproven. The entries above it settles are listed under Fixed.
+
+1. **Safari and Chrome haven't played the finished stream.** They played hand-made pieces of the same kind (4K Dolby Vision MKV, both labels) on 2026-11-10. The real stream and the reworked player were only driven in Firefox on mint. First thing to check on the Mac: A Clockwork Orange and a True Detective episode in both browsers, with jumps, a sound switch and subtitles. The journal has each open and jump (`grep "^web "`), and `STREAM_DEBUG=1` on the engine logs every piece.
+2. **One stall seen once.** In Firefox, after a jump to the end and back, the picture buffer stopped growing for 45 s while sound kept loading. Two repeats of the same steps didn't show it. If a browser stalls with sound still loading, that's this.
+3. **Port 8790 now refuses Tailscale devices that aren't the owner's.** The home network is unaffected. Check the phone app away from home still connects.
+4. **TV and phone still pick and name tracks themselves** (Sound 1, 4, 5 above). The engine now names each track and marks the one to start with (`name`, `detail`, `main` in `/api/v1/web/{id}`), but only the web player uses it. The apps need the same from `/api/v1/item` and a build.
+5. **The site's look is unchanged.** Manager got fixes (long details, lasting errors, the tab in the address, phone text size), not a design. The web has no design system of its own: `docs/design-system.md` moves the TV's to a mouse, and its rule that a button is only blue while focused leaves a mouse page with no resting main action. That needs agreeing with the user before building.
+6. **BBR and the other TCP settings** on mint (`~/SERVER-NOTES.md`) weren't measured before and after.
+7. **Not done from the player list:** switching to the Light copy by itself when a film keeps stalling mid-play (it's chosen at the start only), and subtitle size.
+8. **The user's line's upload speed** is still unmeasured; it caps everything away from home. The Deco port forward (Network 1) is still theirs to add.
+
 ## Fixed
+
+- MKVs, and MP4s with Dolby or DTS sound in Chrome, play in browsers as a stream made while they play; the file isn't rewritten (`f9aaaa0`; Picture 1 and 4, Sound 2 and 3).
+- Subtitles inside a file reach browsers, read out once in the background; Manager no longer offers Make MP4, and links don't become MP4s by default (`691892f`; Picture 3 for new files).
+- The web player starts with the engine's pick of sound track (English, then the file's default), names tracks as the engine does, loads a stuck stream again by itself, and has a computer's keys; port 8790 is for the owner's devices (`551f349`; Network 3, Sound 1 and 5 for the browser).
+- The web player measures the link and plays a Light copy when the film needs more than it carries; System shows each device as direct or relayed and notes relayed playing in the journal (`f7af33f`; Network 2, half of Network 1).
 
 - Foreign releases became MP4s with the dub first and the browser AAC copy made from the dub. English now goes first (`13c0ae1`).
 - The MP4 option was missing when a slow link couldn't be read within 20 s, and quick adds never made MP4s (`6b8afa0`).

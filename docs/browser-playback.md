@@ -80,6 +80,12 @@ subtitles from the file as before.
 - `GET /api/v1/web/{id}/{file}`: subtitles (`x<n>.vtt` from the `.srt` files beside the video, `p<n>.sup` for picture subtitles) or
   an old HLS copy's files.
 
+## Original or Light, by the link
+
+The page times a download from mint (`/api/v1/speedtest`, `Link` in `web/player.js`) a few seconds after it loads and again when
+that's ten minutes old. A title with a Light copy plays it when the film needs more than about three quarters of what the link
+carries (`?v=light` on `/api/v1/web/{id}`), and says so. A Quality menu (Auto, Original, Light) shows on titles that have one.
+
 ## Not done yet
 
 - Dolby Vision 5 in Safari through the stream is labelled as Dolby Vision (`dvh1`) but hasn't been tried on a real file.
