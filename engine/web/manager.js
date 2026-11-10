@@ -127,7 +127,12 @@ const Manager = (() => {
       e.preventDefault(); drop.classList.remove("drag");
       ta.value = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain"); grow(); check(grow);
     });
-    for (const b of $$(".subtabs [data-t]")) b.onclick = () => { tab = b.dataset.t; $("#body").innerHTML = ""; $("#body")._k = ""; enter(); render(); };
+    const fromHash = location.hash.split("/")[2];
+    if (["downloads", "library", "system"].includes(fromHash)) tab = fromHash;
+    for (const b of $$(".subtabs [data-t]")) b.onclick = () => {
+      tab = b.dataset.t; $("#body").innerHTML = ""; $("#body")._k = ""; enter(); render();
+      history.replaceState(null, "", tab === "downloads" ? "#/manager" : `#/manager/${tab}`);
+    };
     $("#body").addEventListener("click", bodyClick);
     $("#body").addEventListener("input", e => { if (e.target.id === "libQ") { query = e.target.value.trim().toLowerCase(); drawLibrary(); } });
     $("#body").addEventListener("change", e => { if (e.target.id === "libSort") { sort = e.target.value; drawLibrary(); } });
@@ -265,7 +270,7 @@ const Manager = (() => {
     btn.disabled = true;
     const r = await api(`/api/jobs/${id}/${act}`, body);
     btn.disabled = false;
-    if (r.error) note(r.error);
+    if (r.error) note(r.error, true);
     if (!es || es.readyState !== 1) poll();
   }
 
@@ -431,10 +436,10 @@ const Manager = (() => {
     const body = { probe: el._probe, plan: planOf(el) };
     if (el._wantLight && el._light?.probe) body.light = el._light.probe;
     const r = await api("/api/jobs", body);
-    if (r.error) { note(r.error); go.disabled = false; return false; }
+    if (r.error) { note(r.error, true); go.disabled = false; return false; }
     el.remove(); allBar();
     note("Queued: " + (r.dest || planOf(el).title));
-    tab = "downloads"; $("#body")._k = ""; render();
+    tab = "downloads"; $("#body")._k = ""; history.replaceState(null, "", "#/manager"); render();
     return true;
   }
   function allBar() {
@@ -519,10 +524,11 @@ const Manager = (() => {
   }
   const fileSpecs = (f, label = "File") => {
     const m = f.info || {};
-    const subs = (m.subs || []).join(", ") + (m.pgs ? " (pictures)" : "");
+    const langs = m.subs || [];
+    const subs = (langs.length > 6 ? `${langs.slice(0, 5).join(", ")} and ${langs.length - 5} more` : langs.join(", ")) + (langs.length && m.pgs ? " (some as pictures)" : "");
     return `<div class="group"><div class="caption">${label}</div>
       ${[["Quality", quality(m)], ["Video", videoWord(m)], ["File", [box(m), bytes(f.size - (f.light?.size || 0))].filter(Boolean).join(" · ")], ["Audio", (m.tracks || []).map(t => t.replace(/ · .*$/, "")).filter((t, i, a) => a.indexOf(t) === i).join(", ") || m.audio || ""],
-        ["Subtitles", subs], ["Plays in", playsIn(f)]].filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>
+        ["Subtitles", subs], ["Plays in", playsIn(f)]].filter(r => r[1]).map(([k, v]) => `<div class="spec ${v.length > 34 ? "long" : ""}"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>
       ${f.light ? `<div class="group"><div class="caption">Light copy</div>${[["Quality", quality(f.light.info)], ["Video", videoWord(f.light.info)], ["File", `${box(f.light.info)} · ${bytes(f.light.size)}`]]
         .filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>` : ""}`;
   };
@@ -571,7 +577,7 @@ const Manager = (() => {
       const r = await ask({ title: "Delete the Light copy?", text: `This frees ${bytes(f?.light?.size)}. Slow connections lose it, and so do browsers that can't decode the film itself.`, buttons: [{ label: "Keep it", value: "" }, { label: "Delete", value: "go", cls: "danger" }] });
       if (!r.value) return;
       const res = await api("/api/manager/light/delete", { id });
-      if (res.error) { note(res.error); return; }
+      if (res.error) { note(res.error, true); return; }
       note(`Deleted, ${bytes(res.freed)} freed`); loadTitles();
     }
     if (a.dataset.a === "light") addLight(id);
@@ -584,7 +590,7 @@ const Manager = (() => {
     if (!r.value || !r.input) return;
     note("Reading the link…");
     const p = await probeLink(r.input);
-    if (!p.ok) { note(p.error); return; }
+    if (!p.ok) { note(p.error, true); return; }
     const m = p.media, film = f?.info;
     if (m && !(/^(H\.264|HEVC)/.test(m.vcodec) && m.res !== "4K" && !m.hdr)) { note("That file is 4K or HDR, so it can't be a Light copy."); return; }
     const same = !m || !film?.dur || Math.abs(film.dur - m.dur) <= 2;
@@ -593,7 +599,7 @@ const Manager = (() => {
       buttons: same ? [{ label: "Back", value: "" }, { label: `Download · ${bytes(p.size)}`, value: "go" }] : [{ label: "Back", value: "" }] });
     if (ok.value !== "go") return;
     const res = await api("/api/manager/light", { id, probe: p });
-    if (res.error) { note(res.error); return; }
+    if (res.error) { note(res.error, true); return; }
     note("Queued the Light copy"); loadTitles();
   }
   async function remove({ path, name, size }) {
@@ -601,7 +607,7 @@ const Manager = (() => {
       buttons: [{ label: "Keep it", value: "" }, { label: `Delete ${bytes(+size)}`, value: "del", cls: "danger" }] });
     if (r.value !== "del") return false;
     const res = await api("/api/library/delete", { path });
-    if (res.error) { note(res.error); return false; }
+    if (res.error) { note(res.error, true); return false; }
     note(`Deleted ${name}, ${bytes(res.freed)} freed`);
     loadTitles(); if (sec === "music") loadMusic();
     return true;
@@ -642,7 +648,7 @@ const Manager = (() => {
   }
   async function setSetting(key, val) {
     const r = await api("/api/settings", { [key]: val });
-    if (r.error) note(r.error); else { S.settings = r; render(); note("Saved"); }
+    if (r.error) note(r.error, true); else { S.settings = r; render(); note("Saved"); }
   }
 
   return { connect, page, busy };

@@ -23,10 +23,12 @@ const store = {
 };
 
 let noteT;
-function note(msg) {
+// note: a line at the foot of the page. bad: something went wrong, so it stays until it's read (a click) or 12 s pass.
+function note(msg, bad) {
   const n = $("#note");
-  n.textContent = msg; n.classList.add("on");
-  clearTimeout(noteT); noteT = setTimeout(() => n.classList.remove("on"), 2800);
+  n.textContent = msg; n.classList.add("on"); n.classList.toggle("bad", !!bad);
+  n.onclick = () => n.classList.toggle("on", false);
+  clearTimeout(noteT); noteT = setTimeout(() => n.classList.toggle("on", false), bad ? 12000 : 2800);
 }
 
 // ---------- words ----------

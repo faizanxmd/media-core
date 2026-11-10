@@ -139,6 +139,8 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 .spec { min-height: 3rem; display: flex; align-items: center; justify-content: space-between; gap: 1.6rem; }
 .spec > :first-child { color: var(--muted); flex: none; }
 .spec > :last-child { font-weight: 600; text-align: right; min-width: 0; }
+.spec.long { display: block; padding: .5rem 0; }
+.spec.long > :last-child { display: block; text-align: left; margin-top: .2rem; }
 .menu { background: var(--raised); border-radius: var(--r); padding: .8rem; width: 28rem; max-height: 36rem; overflow-y: auto; }
 .menu .caption { color: var(--muted); padding: .4rem 0 .4rem 3.6rem; display: block; }
 .opt { display: flex; align-items: center; height: 3.6rem; width: 100%; padding: 0 .8rem; border-radius: var(--r); text-align: left; }
@@ -157,6 +159,8 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 .ring-later { animation: fade 1ms 500ms backwards; }
 #note { position: fixed; left: 50%; bottom: 3.2rem; transform: translateX(-50%); background: var(--raised); border-radius: var(--r); padding: .8rem 1.6rem; font-size: 1.3rem; line-height: 1.6rem; font-weight: 500; z-index: 50; max-width: calc(100vw - 3.2rem); opacity: 0; pointer-events: none; transition: opacity var(--out) var(--ease); }
 #note.on { opacity: 1; transition-duration: var(--in); }
+#note.bad { color: #F4B4AE; cursor: pointer; }
+#note.bad.on { pointer-events: auto; }
 
 /* search */
 .query { display: flex; align-items: center; gap: .8rem; height: 4.4rem; background: var(--overlay); border-radius: var(--r); padding: 0 1.2rem; margin: .8rem var(--side) 2.4rem; width: 36rem; max-width: calc(100vw - 2 * var(--side)); }
@@ -327,6 +331,7 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 
 /* a phone or a small window */
 @media (max-width: 760px) {
+  html { font-size: 11px; } /* at 10 px, body text was 14.5 px and captions 11.5: too small on a phone */
   :root { --side: 1.6rem; }
   .tabs { gap: 1.6rem; overflow-x: auto; scrollbar-width: none; }
   .stage { flex-direction: column-reverse; gap: 1.6rem; }
