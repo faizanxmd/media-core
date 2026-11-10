@@ -42,6 +42,15 @@ func playsIn(m *MInfo, c Caps) bool {
 	if m == nil || m.Container != "mp4" && m.Container != "m4v" {
 		return false
 	}
+	return c.playsVideo(m) && (len(c.playableAudio(m.ACodecs, m.ACodec)) > 0 || len(m.ACodecs) == 0 && m.ACodec == "")
+}
+
+// playsVideo: this browser decodes the file's picture, its HDR or Dolby Vision
+// included, whatever the file is wrapped in.
+func (c Caps) playsVideo(m *MInfo) bool {
+	if m == nil {
+		return false
+	}
 	v := ""
 	switch {
 	case strings.HasPrefix(m.VCodec, "H.264"):
@@ -71,7 +80,7 @@ func playsIn(m *MInfo, c Caps) bool {
 			return false
 		}
 	}
-	return len(c.playableAudio(m.ACodecs, m.ACodec)) > 0 || len(m.ACodecs) == 0 && m.ACodec == ""
+	return true
 }
 
 // playableAudio: the indexes of the tracks this browser can play. Without
