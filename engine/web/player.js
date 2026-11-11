@@ -139,6 +139,7 @@ const Player = (() => {
   let queue = [], ready = {}, item = null, manifest = null, logo = "", cover = "";
   let mode = "hidden", menu = null, scrub = null, jumpedTo = null, holdOrigin = 0, holdResume = false, holdFrom = "hidden", holdSeeked = false;
   let holding = false, holdDir = 0, holdStart = 0, holdLast = 0, holdRaf = 0, keyDown = null, keyTimer = 0;
+  let dropsEnd = () => {};
   let skipped = 0, skippedT = 0, commitT = 0, hideT = 0, reportT = 0, tickT = 0, noteT = 0, firstFrame = false;
   let offer = null, dismissedNext = "", nextLeft = 10000, lastTick = 0, ended = false, retried = 0;
   let textCues = null, pgsTrack = null, subIndex = -1, speed = 1, opened = 0, errorShown = false, audioIdx = 0;
@@ -307,6 +308,7 @@ const Player = (() => {
     opened++;
     if (!el) return;
     if (item && v && v.currentTime > 0 && !ended) report(false);
+    dropsEnd(); dropsEnd = () => {};
     clearInterval(reportT); clearInterval(tickT); clearTimeout(hideT); clearTimeout(commitT); clearTimeout(skippedT); clearTimeout(keyTimer);
     clearTimeout(stallT); clearTimeout(clickT); clearTimeout(seekPicT);
     if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
@@ -364,7 +366,15 @@ const Player = (() => {
     v.addEventListener("error", () => { if (!hls && v.getAttribute("src")) recover(v.error?.message || `error ${v.error?.code}`); }, on);
     v.addEventListener("loadedmetadata", placePGS, on);
     v.audioTracks?.addEventListener?.("addtrack", applyAudio, on);
-    let waits = 0, played = false;
+    let waits = 0, played = false, seen = null;
+    // frames the browser dropped: a line when a 10 s stretch loses more than two, so choppy playback shows in the journal
+    const drops = () => {
+      const q = v?.getVideoPlaybackQuality?.(); if (!q) return;
+      const d = q.droppedVideoFrames - (seen?.d ?? 0), t = q.totalVideoFrames - (seen?.t ?? 0);
+      if (seen && d > 2) wlog(`dropped ${d} of ${t} frames before ${Math.round(v.currentTime)} s`);
+      seen = { d: q.droppedVideoFrames, t: q.totalVideoFrames };
+    };
+    dropsEnd = () => { const q = v?.getVideoPlaybackQuality?.(); if (q?.totalVideoFrames) wlog(`frames: ${q.totalVideoFrames} shown, ${q.droppedVideoFrames} dropped`); };
     v.addEventListener("loadedmetadata", () => wlog(`loaded ${v.videoWidth}x${v.videoHeight}, ${Math.round(v.duration)} s, ${v.audioTracks ? v.audioTracks.length + " sound tracks" : "no track list"}`), on);
     v.addEventListener("playing", () => { if (!played) played = true, wlog(`playing at ${Math.round(v.currentTime)} s`); }, on);
     v.addEventListener("error", () => wlog(`video error ${v.error?.code}: ${v.error?.message || ""} (${v.currentSrc.split("/").slice(-2).join("/")})`), on);
@@ -378,7 +388,7 @@ const Player = (() => {
     addEventListener("resize", placePGS);
     clearInterval(tickT); tickT = setInterval(tick, 250);
     requestAnimationFrame(subsLoop);
-    clearInterval(reportT); reportT = setInterval(() => { if (v && !v.paused && !ended) report(false); }, 10000);
+    clearInterval(reportT); reportT = setInterval(() => { if (v && !v.paused && !ended) { report(false); drops(); } }, 10000);
   }
   function drawCover() {
     const it = item, c = $p(".cover");
