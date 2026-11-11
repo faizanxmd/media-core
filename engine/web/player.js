@@ -137,7 +137,7 @@ const Player = (() => {
     if (p) p.catch(() => {});
   }
   let queue = [], ready = {}, item = null, manifest = null, logo = "", cover = "";
-  let mode = "hidden", menu = null, scrub = null, holdOrigin = 0, holdResume = false, holdFrom = "hidden", holdSeeked = false;
+  let mode = "hidden", menu = null, scrub = null, jumpedTo = null, holdOrigin = 0, holdResume = false, holdFrom = "hidden", holdSeeked = false;
   let holding = false, holdDir = 0, holdStart = 0, holdLast = 0, holdRaf = 0, keyDown = null, keyTimer = 0;
   let skipped = 0, skippedT = 0, commitT = 0, hideT = 0, reportT = 0, tickT = 0, noteT = 0, firstFrame = false;
   let offer = null, dismissedNext = "", nextLeft = 10000, lastTick = 0, ended = false, retried = 0;
@@ -758,7 +758,7 @@ const Player = (() => {
       clearTimeout(skippedT);
       skippedT = setTimeout(() => { skipped = 0; $p(".skip.l")?.classList.remove("on"); $p(".skip.r")?.classList.remove("on"); }, 1000);
     }
-    if (first) jump(to / 1000);
+    if (first) { jump(to / 1000); jumpedTo = to; }
     clearTimeout(commitT); clearTimeout(hideT);
     commitT = setTimeout(commit, 350);
     drawClock();
@@ -766,14 +766,14 @@ const Player = (() => {
   function commit() {
     clearTimeout(commitT);
     if (scrub == null) return;
-    const to = scrub; scrub = null;
-    if (Math.abs(v.currentTime * 1000 - to) > 200) jump(to / 1000);
+    const to = scrub, done = jumpedTo; scrub = null; jumpedTo = null;
+    if (to !== done) jump(to / 1000); // a single tap already jumped there; the film has played on since, so don't jump back
     drawClock(); poke();
   }
   function startHold(dir) {
     clearTimeout(skippedT); skipped = 0; $p(".skip.l").classList.remove("on"); $p(".skip.r").classList.remove("on");
     clearTimeout(commitT); clearTimeout(hideT);
-    holdFrom = mode; holdResume = !v.paused; holdSeeked = scrub != null;
+    holdFrom = mode; holdResume = !v.paused; holdSeeked = scrub != null; jumpedTo = null;
     if (!holdSeeked) holdOrigin = v.currentTime * 1000;
     scrub = scrub ?? v.currentTime * 1000;
     holding = true; // so the pause below doesn't bring the controls up
