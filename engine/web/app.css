@@ -397,9 +397,10 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 #player:has(.ppanel) .pwords { right: calc(42rem + 3.2rem); }
 #player:has(.ppanel) .crow .ctls, #player:has(.ppanel) #ends { visibility: hidden; }
 @keyframes panelin { from { transform: translateX(4rem); opacity: 0; } to { transform: none; opacity: 1; } }
-.phead { display: flex; align-items: center; justify-content: space-between; padding: 2.4rem 1.6rem 1.6rem 6rem; border-bottom: .1rem solid var(--overlay); }
-.plist { flex: 1; overflow-y: auto; padding: 1.2rem; }
-.ppanel .opt { height: 5.6rem; padding: 0 1.2rem; }
+.plist { flex: 1; overflow-y: auto; padding: 2rem 1.2rem; }
+.psec + .psec { border-top: .1rem solid var(--overlay); margin-top: 1.2rem; padding-top: 1.2rem; }
+.psec .caption { display: block; color: var(--muted); font-size: 1.3rem; line-height: 1.6rem; padding: .8rem 0 .8rem 4.8rem; }
+.ppanel .opt { height: 4.8rem; padding: 0 1.2rem; }
 .ppanel .opt .tick { width: 3.6rem; }
 .ppanel .opt .name { font-size: 1.7rem; line-height: 2.4rem; font-weight: 500; }
 .ppanel .opt .detail { font-size: 1.45rem; line-height: 2rem; padding-left: 1.6rem; }

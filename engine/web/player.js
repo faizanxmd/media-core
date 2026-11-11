@@ -425,14 +425,8 @@ const Player = (() => {
           <span class="sp"></span>
           <div class="ctls">
             <div class="vol"><input id="volume" type="range" min="0" max="1" step="0.02" value="${v.muted ? 0 : v.volume}" aria-label="Volume" style="--v:${(v.muted ? 0 : v.volume) * 100}%"><button class="ctl" data-a="mute" id="muteBtn" aria-label="Mute" title="Mute (M)">${icon(v.muted ? "Mute" : "Volume")}</button></div>
-            <button class="ctl" data-a="audio" aria-label="Audio" title="Audio">${icon("Audio")}</button>
-            <button class="ctl" data-a="subs" aria-label="Subtitles" title="Subtitles">${icon("Subtitles")}</button>
-            <button class="ctl" data-a="speed" aria-label="Speed" title="Speed">${speed !== 1 ? speed + "×" : icon("Speed")}</button>
-            ${item.light ? `<button class="ctl" data-a="quality" aria-label="Quality" title="Quality">${icon("Settings")}</button>` : ""}
             ${many ? `<button class="ctl" data-a="episodes" aria-label="Episodes" title="Episodes">${icon("Episodes")}</button>` : ""}
-            ${next ? `<button class="ctl" data-a="next" aria-label="Next episode" title="Next episode">${icon("SkipNext")}</button>` : ""}
-            <button class="ctl" data-a="airplay" aria-label="AirPlay" title="AirPlay" ${airplay ? "" : "hidden"}>${icon("AirPlay")}</button>
-            ${canPip() ? `<button class="ctl" data-a="pip" aria-label="Picture in picture" title="Picture in picture (P)">${icon("Pip")}</button>` : ""}
+            <button class="ctl" data-a="options" aria-label="Audio, subtitles and speed" title="Audio, subtitles and speed">${icon("Subtitles")}</button>
             <button class="ctl" data-a="fullscreen" aria-label="Full screen" title="Full screen (F)">${icon(document.fullscreenElement ? "Unfull" : "Full")}</button>
           </div></div></div>
       <div id="pmenuBox"></div>`;
@@ -518,18 +512,34 @@ const Player = (() => {
     $p(".pwords").style.visibility = "";
     if (!silent) { was.btn?.focus?.(); poke(); }
   }
-  function openList(kind, btn, title, options, widthRem) {
+  // One panel for every choice about how it plays: fixed to the screen's right edge, top to bottom, as on the phone.
+  // A pick applies at once and the panel stays, so two things can be set in one visit.
+  function openPanel(btn, keep) {
+    const speeds = SPEEDS.map(x => ({ title: x === 1 ? "Normal" : x + "×", detail: "", selected: speed === x, pick: () => { speed = x; v.playbackRate = x; } }));
+    const more = [];
+    if (canPip()) more.push({ title: "Picture in picture", detail: "P", selected: false, pick: () => { closeMenu(); togglePip(); } });
+    if (airplay) more.push({ title: "AirPlay", detail: "", selected: false, pick: () => { closeMenu(); v.webkitShowPlaybackTargetPicker?.(); } });
+    const audio = audioOptions(), subs = subOptions();
+    const sections = [["Audio", audio.length > 1 ? audio : []], ["Subtitles", subs.length > 1 ? subs : []], ["Speed", speeds],
+      ["Quality", item.light ? qualityOptions() : []], ["Also", more]].filter(x => x[1].length);
+    const flat = sections.flatMap(x => x[1]);
+    const at = keep ? $p(".plist")?.scrollTop || 0 : 0, was = keep ? $$(".opt", $p("#pmenuBox")).indexOf(document.activeElement) : -1;
     closeMenu(true);
     const box = $p("#pmenuBox");
-    btn.classList.add("lit"); // the button whose menu is open stays lit
-    // a panel fixed to the screen's right edge, top to bottom, as on the phone: part of the screen, not a box over it
-    box.innerHTML = `<div class="ppanel" role="dialog" aria-label="${esc(title)}"><div class="phead"><span class="title">${esc(title)}</span><button class="ctl" data-close aria-label="Close" title="Close (Esc)">${icon("Close")}</button></div>
-      <div class="plist">${options.length ? options.map((o, i) => `<button class="opt" data-i="${i}"><span class="tick">${o.selected ? icon("Check") : ""}</span><span class="name one">${esc(o.title)}</span>${o.detail ? `<span class="detail">${esc(o.detail)}</span>` : ""}</button>`).join("") : `<div class="mut" style="padding:1.2rem 0 0 4.8rem">None</div>`}</div></div>`;
-    box.onclick = e => { if (e.target.closest("[data-close]")) { closeMenu(); return; } const b = e.target.closest("[data-i]"); if (b) { options[+b.dataset.i].pick(); closeMenu(); } };
-    menu = { kind, btn };
+    btn.classList.add("lit"); // the button whose panel is open stays lit
+    let n = 0;
+    box.innerHTML = `<div class="ppanel" role="dialog" aria-label="Audio, subtitles and speed"><div class="plist">${sections.map(([t, opts]) => `<div class="psec"><span class="caption">${esc(t)}</span>
+      ${opts.map(o => `<button class="opt" data-i="${n++}"><span class="tick">${o.selected ? icon("Check") : ""}</span><span class="name one">${esc(o.title)}</span>${o.detail ? `<span class="detail">${esc(o.detail)}</span>` : ""}</button>`).join("")}</div>`).join("")}</div></div>`;
+    box.onclick = e => {
+      const b = e.target.closest("[data-i]"); if (!b) return;
+      flat[+b.dataset.i].pick();
+      if (menu?.kind === "options") openPanel(btn, true); // redraw the ticks, stay where we were
+    };
+    menu = { kind: "options", btn };
     clearTimeout(hideT);
-    const sel = options.findIndex(o => o.selected);
-    box.querySelector(`[data-i="${Math.max(0, sel)}"]`)?.focus();
+    const list = $$(".opt", box);
+    if (keep) { $p(".plist").scrollTop = at; list[Math.max(0, was)]?.focus({ preventScroll: true }); }
+    else (list.find(o => o.querySelector(".tick svg")) || list[0])?.focus({ preventScroll: true });
   }
   function audioOptions() {
     const list = manifest?.audio || [];
@@ -608,7 +618,7 @@ const Player = (() => {
     if (item?.id !== mine || !manifest || m.state !== "ready") return;
     const before = (manifest.subs || []).length;
     manifest.subs = m.subs || []; manifest.subs_wait = m.subs_wait;
-    if (menu?.kind === "subs" && manifest.subs.length !== before) openList("subs", btn, "Subtitles", subOptions(), 28);
+    if (menu?.kind === "options" && manifest.subs.length !== before) openPanel(btn, true);
   }
   function clearPGS() { const c = $p("canvas.pgs"); if (c) { c.hidden = true; c.getContext("2d").clearRect(0, 0, c.width, c.height); } }
   function placePGS() {
@@ -663,29 +673,20 @@ const Player = (() => {
     const a = e.target.closest("[data-a]");
     if (a) {
       const act = a.dataset.a;
-      if (e.detail > 0 && act !== "audio" && act !== "subs" && act !== "speed" && act !== "episodes" && act !== "quality") a.blur(); // Space keeps meaning pause after a click
+      if (e.detail > 0 && act !== "options" && act !== "episodes") a.blur(); // Space keeps meaning pause after a click
       if (act === "toggle") toggle();
       else if (act === "leave") leave();
       else if (act === "mute") { v.muted = !v.muted; store.set("muted", v.muted ? "1" : "0"); drawFull(); showFull(); }
       else if (act === "fullscreen") toggleFull();
-      else if (act === "quality") menu?.kind === "quality" ? closeMenu() : openList("quality", a, "Quality", qualityOptions(), 30);
-      else if (act === "airplay") v.webkitShowPlaybackTargetPicker?.();
-      else if (act === "pip") togglePip();
-      else if (act === "next") { const n = nextOf(); if (n) playNext(n); }
-      else if (act === "audio") menu?.kind === "audio" ? closeMenu() : openList("audio", a, "Audio", audioOptions(), 28);
-      else if (act === "subs") {
-        if (menu?.kind === "subs") closeMenu();
-        else {
-          openList("subs", a, "Subtitles", subOptions(), 28);
-          if (manifest?.subs_wait) refreshSubs(a);
-        }
+      else if (act === "options") {
+        if (menu?.kind === "options") closeMenu();
+        else { openPanel(a); if (manifest?.subs_wait) refreshSubs(a); }
       }
-      else if (act === "speed") menu?.kind === "speed" ? closeMenu() : openList("speed", a, "Speed", SPEEDS.map(s => ({ title: s === 1 ? "Normal" : s + "×", detail: "", selected: speed === s, pick: () => { speed = s; v.playbackRate = s; const c = $p('[data-a="speed"]'); if (c) c.innerHTML = s !== 1 ? s + "×" : icon("Speed"); } })), 18);
       else if (act === "episodes") menu?.kind === "episodes" ? closeMenu() : episodesPanel();
       return;
     }
     if (e.target.closest(".offer")) { takeOffer(); return; }
-    if (e.target.closest(".menu, .eppanel, .bar, .vol")) return;
+    if (e.target.closest(".menu, .ppanel, .eppanel, .bar, .vol")) return;
     if (e.target.closest(".perr")) return;
     if (menu) { closeMenu(); return; }
     if (e.pointerType === "touch") { mode === "full" ? setMode("hidden") : showFull(); return; }
