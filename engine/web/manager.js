@@ -639,36 +639,31 @@ const Manager = (() => {
     // the bar shows everything that fills the disk, so what's left of it is what's free
     const parts = [["Films", L.films, "var(--ink)"], ["Shows", L.shows, "var(--muted)"], ["Music", L.music, "#5E636D"], ...(other > 5e9 ? [["Not the library", other, "#4A505B"]] : [])];
     const s = S.settings, seg = (key, vals) => `<div class="seg" role="radiogroup">${vals.map(([v, l]) => `<button role="radio" aria-checked="${s[key] === v}" data-set="${key}" data-v="${v}" class="${s[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
-    const temp = SYS.temp_c ? `${Math.round(SYS.temp_c)}°C` : "";
     const relayed = (SYS.now || []).filter(n => n.relayed).map(n => n.device);
-    const row = (k, v, cls = "") => v ? `<div class="spec"><span>${k}</span><span class="fig ${cls}">${esc(v)}</span></div>` : "";
     const devs = SYS.devices || [], now = SYS.now || [];
     const days = SYS.uptime_s >= 2 * 86400 ? plural(Math.floor(SYS.uptime_s / 86400), "day") : dur(SYS.uptime_s).replace(/ \d+ min$/, "");
-    const html = `<div class="sysgrid"><div class="syscol">
-      <section class="box"><div class="boxh">Library disk</div>
-        <div class="title fig">${bytes(L.free)} free</div><div class="meta mut" style="margin-top:.4rem">of ${bytes(L.total)}</div>
+    const fig = (v, k, cls = "") => v ? `<div><div class="title fig ${cls}">${esc(v)}</div><div class="caption mut">${k}</div></div>` : "";
+    const backup = SYS.backup_at ? ago(SYS.backup_at).split(", ") : ["None yet"];
+    const line = (k, v, cls = "", sub = "") => `<div class="sline"><span class="one">${esc(k)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="meta fig ${cls}">${esc(v)}</span></div>`;
+    const html = `<div class="sys">
+      <section class="sdisk"><div class="sbig"><span class="fig">${bytes(L.free)}</span><span class="mut">free of ${bytes(L.total)}</span></div>
         <div class="mbar">${parts.map(([, n, c]) => `<i style="width:${pct(n)}%;background:${c}"></i>`).join("")}</div>
-        ${parts.map(([k, n, c]) => `<div class="spec mkey"><span><i class="mdot" style="background:${c}"></i>${k}</span><span class="fig">${bytes(n)}</span></div>`).join("")}
-        ${L.light ? `<div class="spec mkey"><span><i class="mdot" style="background:transparent"></i>Light copies, within those</span><span class="fig">${bytes(L.light)}</span></div>` : ""}
-</section>
-      <section class="box"><div class="boxh">Downloads</div>
-        <div class="setrow"><div>Speed limit</div>${seg("limit_mbps", [[0, "None"], [5, "5 MB/s"], [10, "10 MB/s"], [20, "20 MB/s"]])}</div>
-        <div class="setrow"><div>At the same time</div>${seg("max_concurrent", [[1, "1"], [2, "2"], [3, "3"]])}</div></section>
-      <section class="box"><div class="boxh">Media Core for TV and phone</div>
-        ${(SYS.apps || []).map(([name, href, file, a]) => `<div class="setrow"><div>${name}<small>${a?.version_name ? `Version ${esc(a.version_name)} · ${bytes(a.size)}` : "No build on mint yet"}</small></div>
-          ${a?.version_name ? `<a class="word" href="${href}" download="${file}">Download</a>` : ""}</div>`).join("")}
-        <p class="meta mut boxnote">Install it once. After that each app updates itself from mint.</p></section></div>
-      <div class="syscol">
-      <section class="box"><div class="boxh">mint</div>
-        ${row("Engine", "Running")}${row("Downloader", SYS.aria2 ? "Running" : "Not answering", SYS.aria2 ? "" : "warnc")}
-        ${now.length ? `<div class="spec"><span>Playing now</span><span class="nowp">${now.map(n => `<span class="one">${esc(n.title)}</span><small class="one">${esc(n.device)}</small>`).join("")}</span></div>` : row("Playing now", "Nothing")}
-        ${row("Processor", SYS.cores ? `${Math.min(100, Math.round(SYS.load / SYS.cores * 100))}% busy` : "")}${row("Temperature", temp)}
-        ${row("Memory free", `${bytes(SYS.mem_avail)} of ${bytes(SYS.mem_total)}`)}${row("Last backup", SYS.backup_at ? ago(SYS.backup_at) : "None yet")}
-        ${row("Running for", days)}</section>
-      ${devs.length ? `<section class="box"><div class="boxh">Your devices away from home</div>
-        ${devs.map(d => row(esc(d.name), !d.online ? "Offline" : !d.active ? "Connected, idle" : d.direct ? "Connected directly" : "Through the relay: too slow for films", d.active && !d.direct ? "warnc" : !d.online ? "mut" : "")).join("")}
-        ${relayed.length ? `<div class="warn">${esc(relayed.join(", "))} ${relayed.length > 1 ? "are" : "is"} playing through Tailscale's relay, which carries about 10 Mb/s. The direct path to mint has dropped: the router's port forward for 41641 is the usual cause.</div>` : ""}</section>` : ""}</div>
-      ${D.web ? `<p class="meta mut" style="grid-column:1/-1">Old browser copies use ${bytes(D.web)} on the system disk, which has ${bytes(D.free)} free.</p>` : ""}</div>`;
+        <div class="slegend">${parts.map(([k, n, c]) => `<span><i class="mdot" style="background:${c}"></i>${k}<b class="fig">${bytes(n)}</b></span>`).join("")}${L.light ? `<span class="mut">Light copies take ${bytes(L.light)} of that</span>` : ""}</div></section>
+      <section class="sfigs">${fig(SYS.cores ? `${Math.min(100, Math.round(SYS.load / SYS.cores * 100))}%` : "", "Processor")}${fig(SYS.temp_c ? `${Math.round(SYS.temp_c)}°` : "", "Temperature")}
+        ${fig(bytes(SYS.mem_avail), "Memory free")}${fig(days, "Running")}${fig(backup[0], backup[1] ? `Backed up, ${backup[1]}` : "Last backup")}
+        ${SYS.aria2 ? "" : fig("Stopped", "Downloader", "warnc")}</section>
+      <div class="scols">
+        <section><h3>Downloads</h3>
+          <div class="sline"><span>Speed limit</span>${seg("limit_mbps", [[0, "None"], [5, "5 MB/s"], [10, "10 MB/s"], [20, "20 MB/s"]])}</div>
+          <div class="sline"><span>At once</span>${seg("max_concurrent", [[1, "1"], [2, "2"], [3, "3"]])}</div></section>
+        <section><h3>Apps</h3>
+          ${(SYS.apps || []).map(([name, href, file, a]) => `<div class="sline"><span>${name}<small>${a?.version_name ? esc(a.version_name) : "No build yet"}</small></span>
+            ${a?.version_name ? `<a class="word" href="${href}" download="${file}">Download</a>` : ""}</div>`).join("")}</section>
+        ${now.length ? `<section><h3>Playing now</h3>${now.map(n => line(n.title, "", "", n.device)).join("")}</section>` : ""}
+        ${devs.length ? `<section><h3>Away from home</h3>
+          ${devs.map(d => line(d.name, !d.online ? "Offline" : !d.active ? "Idle" : d.direct ? "Direct" : "Relayed: too slow for films", d.active && !d.direct ? "warnc" : "mut")).join("")}
+          ${relayed.length ? `<div class="warn">${esc(relayed.join(", "))} ${relayed.length > 1 ? "are" : "is"} playing through Tailscale's relay, which carries about 10 Mb/s. The router's port forward for 41641 is the usual cause.</div>` : ""}</section>` : ""}
+      </div></div>`;
     if (body._k === "sys" && body._h === html) return;
     body._k = "sys"; body._h = html; body.innerHTML = html;
   }
