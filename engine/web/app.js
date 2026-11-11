@@ -68,14 +68,14 @@ const cantChip = it => cantPlay(it) ? `<span class="cant" title="${esc("Doesn't 
 const tabsDef = [["#/", "Home"], ["#/films", "Films"], ["#/shows", "Shows"]];
 function tabs(current) {
   const busy = window.Manager?.busy?.();
-  $("#bar").innerHTML = `${current === "" ? `<button class="ctl" id="pBack" aria-label="Back" title="Back (Esc)">${icon("Back")}</button>` : ""}
+  $("#topbar").innerHTML = `${current === "" ? `<button class="ctl" id="pBack" aria-label="Back" title="Back (Esc)">${icon("Back")}</button>` : ""}
     ${tabsDef.map(([h, l]) => `<a class="tab ${l === current ? "on" : ""}" href="${h}">${l}</a>`).join("")}<span class="sp"></span>
     <a class="tab ${current === "Search" ? "on" : ""}" href="#/search" aria-label="Search" title="Search">${icon("Search")}</a>
     <a class="tab ${current === "Manager" ? "on" : ""}" href="#/manager" id="mgrTab">${busy ? `<i class="dot"></i>` : ""}Manager</a>`;
   const back = $("#pBack"); if (back) back.onclick = goBack;
   return "";
 }
-const barState = () => $("#bar").classList.toggle("solid", scrollY > 24);
+const barState = () => $("#topbar").classList.toggle("solid", scrollY > 24);
 addEventListener("scroll", barState, { passive: true });
 const track = f => `<div class="track"><i style="width:${(f * 100).toFixed(1)}%"></i></div>`;
 // the picture across the top of a page: the full-size one on a sharp or wide screen
@@ -409,7 +409,7 @@ document.addEventListener("keydown", e => {
 // ---------- the keyboard: arrows move between things, as the remote does ----------
 function focusables() {
   const sel = "a[href], button:not([disabled]):not([tabindex='-1']), input, textarea, select";
-  return [...$$(sel, $("#bar")), ...$$(sel, page())]
+  return [...$$(sel, $("#topbar")), ...$$(sel, page())]
     .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
 }
 document.addEventListener("keydown", e => {

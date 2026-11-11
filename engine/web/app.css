@@ -40,13 +40,13 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* the bar: plain words over the page, and glass once the page has moved under it */
-#bar { position: fixed; top: 0; left: 0; right: 0; height: 6.4rem; padding: 0 var(--side); display: flex; gap: 2.8rem; align-items: center; z-index: 10; transition: background-color 320ms var(--ease); }
-#bar::before { content: ""; position: absolute; inset: 0 0 -3.2rem; background: linear-gradient(180deg, rgba(14,16,20,.78), rgba(14,16,20,.4) 55%, transparent); pointer-events: none; z-index: -1; transition: opacity 320ms var(--ease); }
-#bar.solid { box-shadow: 0 .1rem 0 rgba(244,245,248,.07); background: rgba(14,16,20,.8); -webkit-backdrop-filter: blur(2rem) saturate(1.6); backdrop-filter: blur(2rem) saturate(1.6); }
-#bar.solid::before { opacity: 0; }
-#bar:empty { display: none; }
-#bar .sp { flex: 1; }
-#bar .ctl { margin: 0 -.4rem 0 -1rem; }
+#topbar { position: fixed; top: 0; left: 0; right: 0; height: 6.4rem; padding: 0 var(--side); display: flex; gap: 2.8rem; align-items: center; z-index: 10; transition: background-color 320ms var(--ease); }
+#topbar::before { content: ""; position: absolute; inset: 0 0 -3.2rem; background: linear-gradient(180deg, rgba(14,16,20,.78), rgba(14,16,20,.4) 55%, transparent); pointer-events: none; z-index: -1; transition: opacity 320ms var(--ease); }
+#topbar.solid { box-shadow: 0 .1rem 0 rgba(244,245,248,.07); background: rgba(14,16,20,.8); -webkit-backdrop-filter: blur(2rem) saturate(1.6); backdrop-filter: blur(2rem) saturate(1.6); }
+#topbar.solid::before { opacity: 0; }
+#topbar:empty { display: none; }
+#topbar .sp { flex: 1; }
+#topbar .ctl { margin: 0 -.4rem 0 -1rem; }
 .tab { height: 4rem; font-size: 1.45rem; line-height: 2rem; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: .8rem; position: relative; white-space: nowrap; transition: color var(--focus) var(--ease); }
 .tab:hover, .tab:focus-visible { color: var(--ink); }
 .tab:focus-visible::after { content: ""; position: absolute; left: 0; right: 0; bottom: .4rem; height: var(--line); background: var(--ink); }
@@ -407,7 +407,7 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 @media (max-width: 760px) {
   html { font-size: 11px; } /* at 10 px, body text was 14.5 px and captions 11.5: too small on a phone */
   :root { --side: 1.6rem; }
-  #bar { gap: 2rem; height: 5.6rem; }
+  #topbar { gap: 2rem; height: 5.6rem; }
   .plain, .addpage { padding-top: 7.2rem; }
   /* a narrow page has no clear side for the words, so the picture darkens downwards under them instead */
   .hero { height: 78vh; min-height: 0; }
