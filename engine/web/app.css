@@ -368,10 +368,10 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 .bar .now { background: var(--ink); }
 .bar:hover .all, .bar:hover .buf, .bar:hover .now, .bar.drag .all, .bar.drag .buf, .bar.drag .now, .bar:focus-visible .all, .bar:focus-visible .buf, .bar:focus-visible .now { height: .8rem; margin-top: -.4rem; }
 .crow { display: flex; align-items: center; height: 4.8rem; }
-.crow .time { white-space: nowrap; margin-left: .4rem; font-size: 1.6rem; }
+.crow .time { white-space: nowrap; font-size: 1.6rem; }
 .crow .sp { flex: 1; }
-.crow .ctls { display: flex; gap: .4rem; align-items: center; margin-right: -1rem; }
-.crow > .ctl:first-child { margin-left: -1rem; }
+.crow .ctls { display: flex; gap: .4rem; align-items: center; margin-right: -1.35rem; }
+.crow > .ctl:first-child { margin-left: -1.6rem; }
 .vol { display: flex; align-items: center; }
 .vol input { width: 0; opacity: 0; height: 4.8rem; appearance: none; -webkit-appearance: none; cursor: pointer; transition: width var(--focus) var(--ease), opacity var(--focus) var(--ease); }
 .vol:hover input, .vol:focus-within input { width: 9rem; opacity: 1; margin-right: .4rem; }
@@ -380,7 +380,14 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 .vol input::-moz-range-track { height: .4rem; background: rgba(244,245,248,.28); }
 .vol input::-moz-range-progress { height: .4rem; background: var(--ink); }
 .vol input::-moz-range-thumb { width: .4rem; height: 1.2rem; background: var(--ink); border: 0; border-radius: 0; }
-.pmenu { position: absolute; bottom: 10.4rem; background: rgba(24,27,33,.9); -webkit-backdrop-filter: blur(2rem); backdrop-filter: blur(2rem); }
+.pmenu { position: absolute; bottom: 13.2rem; background: rgba(24,27,33,.9); -webkit-backdrop-filter: blur(2rem); backdrop-filter: blur(2rem); }
+/* the player's menus are read from further back than a page's, and hang from 28 dp icons: bigger rows and words */
+.pmenu { padding: 1.2rem; max-height: 52rem; }
+.pmenu .caption { font-size: 1.3rem; line-height: 1.6rem; padding: .6rem 0 1rem 4.8rem; }
+.pmenu .opt { height: 4.8rem; padding: 0 1.2rem; }
+.pmenu .opt .tick { width: 3.6rem; }
+.pmenu .opt .name { font-size: 1.6rem; line-height: 2.4rem; font-weight: 500; }
+.pmenu .opt .detail { font-size: 1.45rem; line-height: 2rem; padding-left: 1.6rem; }
 .preview { position: absolute; bottom: 14.4rem; width: 32rem; pointer-events: none; opacity: 0; transition: opacity var(--focus) var(--ease); text-align: center; }
 .preview.on { opacity: 1; }
 .preview .pic { aspect-ratio: 16 / 9; border: var(--line) solid var(--ink); border-radius: var(--r); background: var(--raised) center / cover no-repeat; margin-bottom: .8rem; }

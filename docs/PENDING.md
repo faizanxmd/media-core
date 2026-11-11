@@ -2,6 +2,13 @@
 
 Changes committed but not yet built or tested. Cleared after each build the user has tested.
 
+## A new Audio icon (TV and phone)
+
+The headphones are replaced by a sound wave in a disc, the same icon the web player now has. Only the icon's path changed in each app's `AppIcons.kt`. Not compiled yet.
+
+### To test
+1. In the TV player and the phone player, Audio shows the new icon, sharp and the same size as the icons beside it.
+
 ## Original or Light, by connection (TV and phone)
 
 Both apps measure the connection to mint in the background and play a title's Light copy when the connection can't carry the Original. When playback gets stuck, a "Slow connection · Switch to Light" card offers the switch. The engine side (the speed test and Light copies) is already live on mint. Not compiled yet: the next build is its first check.

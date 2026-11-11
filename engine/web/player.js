@@ -407,7 +407,7 @@ const Player = (() => {
       <div class="preview"><div class="pic"></div><div class="label fig"></div></div>
       <div class="pwords">
         ${logo ? `<img class="logoimg" src="${img(logo, "w500")}" alt="${esc(title)}">` : `<div class="heading one">${esc(title)}</div>`}
-        <div class="pline"><span class="label one">${esc(sub)}</span><span class="meta mut fig" id="ends" style="flex:none"></span></div>
+        <div class="pline"><span class="label one">${esc(sub)}</span><span class="body mut fig" id="ends" style="flex:none"></span></div>
         <div class="bar" id="bar" tabindex="0" role="slider" aria-label="Position"><i class="all"></i><i class="buf"></i><i class="now"></i></div>
         <div class="crow">
           <button class="ctl" data-a="toggle" id="ppBtn" aria-label="Play or pause" title="Play or pause (Space)">${icon("Pause")}</button>
@@ -514,7 +514,7 @@ const Player = (() => {
     const right = Math.max(rootPx * 1.6, innerWidth - r.right);
     const box = $p("#pmenuBox");
     btn.classList.add("lit"); // the button whose menu is open stays lit
-    box.innerHTML = `<div class="menu pmenu" style="right:${right}px;width:${widthRem}rem"><span class="caption">${esc(title)}</span>
+    box.innerHTML = `<div class="menu pmenu" style="right:${right}px;width:${widthRem * 1.25}rem"><span class="caption">${esc(title)}</span>
       ${options.length ? options.map((o, i) => `<button class="opt" data-i="${i}"><span class="tick">${o.selected ? icon("Check") : ""}</span><span class="name one body">${esc(o.title)}</span>${o.detail ? `<span class="detail">${esc(o.detail)}</span>` : ""}</button>`).join("") : `<div class="mut" style="padding:0 0 .8rem 3.6rem">None</div>`}</div>`;
     box.onclick = e => { const b = e.target.closest("[data-i]"); if (b) { options[+b.dataset.i].pick(); closeMenu(); } };
     menu = { kind, btn };
