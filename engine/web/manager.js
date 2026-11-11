@@ -23,7 +23,7 @@ const Manager = (() => {
   }
   function ago(t) {
     const d = new Date(t * 1000), now = new Date(), s = (now - d) / 1000;
-    const hm = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const hm = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
     if (s < 60) return "just now";
     if (d.toDateString() === now.toDateString()) return `Today, ${hm}`;
     if (s < 2 * 86400 && new Date(now - 86400).toDateString() === d.toDateString()) return `Yesterday, ${hm}`;
@@ -62,7 +62,9 @@ const Manager = (() => {
         <div class="btns">${buttons.map((b, i) => `<button class="word ${b.cls || ""}" data-i="${i}">${esc(b.label)}</button>`).join("")}</div>`;
       document.body.append(scrim, d);
       const inp = $("input", d);
-      const done = value => { scrim.remove(); d.remove(); removeEventListener("keydown", key, true); res({ value, input: inp ? inp.value.trim() : "" }); };
+      const leave = () => done("");
+      const done = value => { scrim.remove(); d.remove(); removeEventListener("keydown", key, true); removeEventListener("hashchange", leave); res({ value, input: inp ? inp.value.trim() : "" }); };
+      addEventListener("hashchange", leave);
       const key = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(""); } if (e.key === "Enter" && inp && document.activeElement === inp) { e.preventDefault(); done(buttons[buttons.length - 1].value); } };
       addEventListener("keydown", key, true);
       scrim.onclick = () => done("");
@@ -519,7 +521,7 @@ const Manager = (() => {
 
   // one title's sheet: its file, where it plays, and what can be done with it
   let sheetId = "", sheetEp = "";
-  function closeSheet() { sheetId = sheetEp = ""; $("#mgrSheet")?.remove(); $("#mgrScrim")?.remove(); removeEventListener("keydown", sheetKey, true); }
+  function closeSheet() { sheetId = sheetEp = ""; $("#mgrSheet")?.remove(); $("#mgrScrim")?.remove(); removeEventListener("keydown", sheetKey, true); removeEventListener("hashchange", closeSheet); }
   const sheetKey = e => { if (e.key === "Escape" && !$(".ask")) { e.preventDefault(); e.stopPropagation(); sheetEp ? (sheetEp = "", drawSheet()) : closeSheet(); } };
   function openSheet(id) {
     sheetId = id; sheetEp = "";
@@ -528,6 +530,7 @@ const Manager = (() => {
       const s = document.createElement("aside"); s.className = "sheet"; s.id = "mgrSheet"; s.tabIndex = -1;
       document.body.append(scrim, s);
       addEventListener("keydown", sheetKey, true);
+      addEventListener("hashchange", closeSheet); // the page under it changed
       s.addEventListener("click", sheetClick);
       s.focus();
     }
@@ -535,8 +538,10 @@ const Manager = (() => {
   }
   const fileSpecs = (f, label = "File") => {
     const m = f.info || {};
-    const langs = m.subs || [];
-    const subs = (langs.length > 6 ? `${langs.slice(0, 5).join(", ")} and ${langs.length - 5} more` : langs.join(", ")) + (langs.length && m.pgs ? " (some as pictures)" : "");
+    // named languages first; a track the file doesn't name is counted, not listed as "Unknown"
+    const all = m.subs || [], langs = all.filter(l => l && l !== "Unknown"), unnamed = all.length - langs.length;
+    const subs = (all.length > 6 && langs.length > 5 ? `${langs.slice(0, 5).join(", ")} and ${all.length - 5} more`
+      : [...langs, unnamed ? `${unnamed} unnamed` : ""].filter(Boolean).join(", ")) + (all.length && m.pgs ? " (some as pictures)" : "");
     return `${label === "File" ? playsRows(f.on) : ""}<div class="group"><div class="caption">${label}</div>
       ${[["Quality", quality(m)], ["Video", videoWord(m)], ["File", [box(m), bytes(f.size - (f.light?.size || 0))].filter(Boolean).join(" · ")], ["Audio", (m.tracks || []).map(t => t.replace(/ · .*$/, "")).filter((t, i, a) => a.indexOf(t) === i).join(", ") || m.audio || ""],
         ["Subtitles", subs]].filter(r => r[1]).map(([k, v]) => `<div class="spec ${v.length > 34 ? "long" : ""}"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>
@@ -556,7 +561,7 @@ const Manager = (() => {
     if (!t) { closeSheet(); return; }
     const close = `<button class="tool" data-close aria-label="Close" title="Close">${icon("Close")}</button>`;
     if (t.type === "movie") {
-      s.innerHTML = `<div class="head"><div style="min-width:0"><h2 class="title">${esc(t.title)}</h2><div class="meta mut" style="margin-top:.4rem">${[t.year, t.added ? "added " + ago(t.added).toLowerCase() : ""].filter(Boolean).join(" · ")}</div></div>${close}</div>
+      s.innerHTML = `<div class="head"><div style="min-width:0"><h2 class="title">${esc(t.title)}</h2><div class="meta mut" style="margin-top:.4rem">${[t.year, t.added ? "added " + ago(t.added).replace(/^[A-Z]/, c => c.toLowerCase()) : ""].filter(Boolean).join(" · ")}</div></div>${close}</div>
         ${fileSpecs(t)}${fileActions({ ...t, name: t.title })}`;
       return;
     }
@@ -630,8 +635,9 @@ const Manager = (() => {
     if (!SYS || !S) { if (body._k !== "sys0") { body._k = "sys0"; body.innerHTML = `<div class="empty">Loading</div>`; } return; }
     const L = SYS.library, D = SYS.data, used = L.total - L.free;
     const pct = n => L.total ? Math.max(n > 0 ? .3 : 0, n / L.total * 100).toFixed(2) : 0;
-    const parts = [["Films", L.films, "var(--ink)"], ["Shows", L.shows, "var(--muted)"], ["Music", L.music, "#5E636D"]];
     const other = Math.max(0, used - L.films - L.shows - L.music);
+    // the bar shows everything that fills the disk, so what's left of it is what's free
+    const parts = [["Films", L.films, "var(--ink)"], ["Shows", L.shows, "var(--muted)"], ["Music", L.music, "#5E636D"], ...(other > 5e9 ? [["Not the library", other, "#4A505B"]] : [])];
     const s = S.settings, seg = (key, vals) => `<div class="seg" role="radiogroup">${vals.map(([v, l]) => `<button role="radio" aria-checked="${s[key] === v}" data-set="${key}" data-v="${v}" class="${s[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const temp = SYS.temp_c ? `${Math.round(SYS.temp_c)}°C` : "";
     const relayed = (SYS.now || []).filter(n => n.relayed).map(n => n.device);
@@ -644,7 +650,7 @@ const Manager = (() => {
         <div class="mbar">${parts.map(([, n, c]) => `<i style="width:${pct(n)}%;background:${c}"></i>`).join("")}</div>
         ${parts.map(([k, n, c]) => `<div class="spec mkey"><span><i class="mdot" style="background:${c}"></i>${k}</span><span class="fig">${bytes(n)}</span></div>`).join("")}
         ${L.light ? `<div class="spec mkey"><span><i class="mdot" style="background:transparent"></i>Light copies, within those</span><span class="fig">${bytes(L.light)}</span></div>` : ""}
-        ${other > 5e9 ? `<div class="spec mkey"><span><i class="mdot" style="background:transparent"></i>Not the library</span><span class="fig">${bytes(other)}</span></div>` : ""}</section>
+</section>
       <section class="box"><div class="boxh">Downloads</div>
         <div class="setrow"><div>Speed limit</div>${seg("limit_mbps", [[0, "None"], [5, "5 MB/s"], [10, "10 MB/s"], [20, "20 MB/s"]])}</div>
         <div class="setrow"><div>At the same time</div>${seg("max_concurrent", [[1, "1"], [2, "2"], [3, "3"]])}</div></section>
@@ -655,7 +661,7 @@ const Manager = (() => {
       <div class="syscol">
       <section class="box"><div class="boxh">mint</div>
         ${row("Engine", "Running")}${row("Downloader", SYS.aria2 ? "Running" : "Not answering", SYS.aria2 ? "" : "warnc")}
-        ${row("Playing now", now.length ? now.map(n => `${n.title} on ${n.device}`).join(", ") : "Nothing")}
+        ${now.length ? `<div class="spec"><span>Playing now</span><span class="nowp">${now.map(n => `<span class="one">${esc(n.title)}</span><small class="one">${esc(n.device)}</small>`).join("")}</span></div>` : row("Playing now", "Nothing")}
         ${row("Processor", SYS.cores ? `${Math.min(100, Math.round(SYS.load / SYS.cores * 100))}% busy` : "")}${row("Temperature", temp)}
         ${row("Memory free", `${bytes(SYS.mem_avail)} of ${bytes(SYS.mem_total)}`)}${row("Last backup", SYS.backup_at ? ago(SYS.backup_at) : "None yet")}
         ${row("Running for", days)}</section>

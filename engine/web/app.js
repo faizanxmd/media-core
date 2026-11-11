@@ -125,6 +125,8 @@ function formatMarks(i) {
   return out.join("");
 }
 const page = () => $("#page");
+// a panel over the page closes when the page under it changes (the browser's Back, a link). Returns how to stop listening.
+function onLeave(fn) { addEventListener("hashchange", fn, { once: true }); return () => removeEventListener("hashchange", fn); }
 function show(html) {
   const p = page();
   p.innerHTML = html;
@@ -156,8 +158,13 @@ async function home(refresh) {
   const shows = h.shows || [], movies = h.movies || [];
   const f = [...(h.continue || []), ...(h.recent || []), ...shows, ...movies][0];
   const none = !movies.length && !shows.length ? `<p class="mut" style="padding:0 var(--side)">Nothing in the library yet. <a href="#/manager" style="color:var(--ink)">Add links</a>.</p>` : "";
+  // Each title once where it can be: the featured one isn't repeated under Continue Watching,
+  // and Recently Added goes when it would only list the whole library again.
+  const going = (h.continue || []).filter(x => x.id !== f?.id);
+  const recent = h.recent || [], all = [...shows, ...movies];
+  const fresh = all.every(t => recent.some(r => r.id === t.id)) ? [] : recent;
   const html = tabs("Home") + (f ? stage(f, shows) : "") +
-    row("Continue Watching", h.continue, wideCard) + row("Recently Added", h.recent, posterCard) +
+    row("Continue Watching", going, wideCard) + row("Recently Added", fresh, posterCard) +
     row("Shows", shows, posterCard) + row("Films", movies, posterCard) + none;
   if (refresh) { page().innerHTML = html; wireRows(page()); $$(".cards", page()).forEach((c, i) => c.scrollLeft = keep[i] || 0); }
   else show(html);
@@ -285,14 +292,14 @@ async function title(id) {
   const kind = isShow ? "Show" : "Film";
   const head = [kind, ...(main.meta?.genres || []).slice(0, 2), main.meta?.cert].filter(Boolean).map(esc).join(" · ");
   const draw = () => {
-    show(`<div class="tpage">${main.meta?.backdrop ? `<div class="banner"><img src="${img(main.meta.backdrop, "w1280")}" alt=""></div>` : ""}
+    show(`<div class="tpage">${main.meta?.backdrop ? `<div class="banner"><img src="${img(main.meta.backdrop, "original")}" alt=""></div>` : ""}
       <button class="ctl pback" id="pBack" aria-label="Back" title="Back (Esc)">${icon("Back")}</button>
       <div class="top">${titleMark(main.meta?.logo, displayTitle(main))}
         <div class="meta mut" style="margin-top:1.2rem">${head}</div>
         <div id="words">${words(described)}</div><div class="btns" id="btns">${buttons()}</div>
         ${target && !ready[target.id] ? `<p class="meta whynot">${icon("No")}<span>This browser can't show ${esc(blocked[target.id] || "this picture")}. A Light copy, added in Manager, would play here. Details lists where it does play.</span></p>` : ""}</div>
       <div id="below">${isShow ? episodes() : cast()}</div></div>`);
-    wire();
+    wire(); toEpisode();
   };
   const wire = () => {
     const at = (s, fn) => { const el = $(s); if (el) el.onclick = fn; };
@@ -307,6 +314,11 @@ async function title(id) {
     }
     const bl = $("#below .row");
     if (bl) bl.addEventListener("mouseleave", () => { described = target; $("#words").innerHTML = words(target); });
+  };
+  // the row opens on the episode that's next, not on episode 1
+  const toEpisode = () => {
+    const c = up && $(`[data-ep="${up.id}"]`)?.closest(".w"), cards = c?.parentElement;
+    if (c) cards.scrollLeft = c.offsetLeft - parseFloat(getComputedStyle(cards).paddingLeft);
   };
   const wireButtons = () => {
     const at = (s, fn) => { const el = $(s); if (el) el.onclick = fn; };
@@ -324,8 +336,9 @@ async function title(id) {
     const m = document.createElement("div"); m.className = "menu seasons";
     m.innerHTML = seasons.map((s, i) => `<button class="opt" data-i="${i}"><span class="tick">${i === season ? icon("Check") : ""}</span><span class="name one">${esc(s.title)}</span></button>`).join("");
     document.body.append(scrim, m);
-    const close = () => { scrim.remove(); m.remove(); removeEventListener("keydown", onKey, true); $("#pSeason")?.focus(); };
+    const close = () => { off(); scrim.remove(); m.remove(); removeEventListener("keydown", onKey, true); $("#pSeason")?.focus(); };
     const onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+    const off = onLeave(() => close());
     addEventListener("keydown", onKey, true);
     scrim.onclick = close;
     m.onclick = e => {
@@ -364,7 +377,8 @@ async function details(it, main) {
     ${group("Plays on", playsOn)}${group("Picture", picture)}${group("Languages", langs)}${group("File", file)}`;
   document.body.append(sheetBg, scrim, s);
   s.focus();
-  const close = () => { sheetBg.remove(); scrim.remove(); s.remove(); removeEventListener("keydown", onKey, true); $("#pInfo")?.focus(); };
+  const close = () => { off(); sheetBg.remove(); scrim.remove(); s.remove(); removeEventListener("keydown", onKey, true); $("#pInfo")?.focus(); };
+  const off = onLeave(() => close());
   const onKey = e => {
     if (["Escape", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) { e.preventDefault(); e.stopPropagation(); close(); }
   };
