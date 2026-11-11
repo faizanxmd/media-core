@@ -1,5 +1,7 @@
 package main
 
+import "strings"
+
 // How a browser gets a title, cheapest first. The file is never rewritten and
 // the picture is never converted while it plays (mint's CPU can't):
 //
@@ -72,4 +74,66 @@ func (c Caps) playOne(m *MInfo) (Play, bool) {
 		}
 	}
 	return p, true
+}
+
+// ---------- which devices a file plays on ----------
+
+// The TV and phone apps play any container and decode any sound themselves,
+// so only the picture can stop them. What each can't show is known from use
+// (docs/ISSUES.md): neither decodes 10-bit H.264, and the phone has no Dolby
+// Vision, so profile 5, which has no HDR10 picture underneath, breaks there.
+var appCaps = map[string]Caps{
+	"tv":    parseCaps("h264,hevc,vp9,av1,hdr,dv"),
+	"phone": parseCaps("h264,hevc,vp9,av1,hdr"),
+}
+
+// OnDevice says whether a title plays on one device, how, and if not, why.
+type OnDevice struct {
+	OK  bool   `json:"ok"`
+	How string `json:"how,omitempty"` // direct | repack | light
+	Why string `json:"why,omitempty"` // what's in the way, in plain words
+}
+
+// whyNot names what about the picture a device can't show.
+func (c Caps) whyNot(m *MInfo) string {
+	switch {
+	case m == nil:
+		return "the file hasn't been read yet"
+	case c.playsVideo(m):
+		return ""
+	case strings.HasPrefix(m.VCodec, "H.264") && m.VBits > 8 && !c.has("h264-10"):
+		return "10-bit H.264"
+	case strings.HasPrefix(m.HDR, "Dolby Vision 5") && !c.has("dv"):
+		return "Dolby Vision 5, which has no HDR10 picture underneath"
+	case m.HDR != "" && !c.has("hdr") && !c.has("dv"):
+		return m.HDR
+	case m.VCodec == "":
+		return "no picture it knows"
+	}
+	return strings.TrimSuffix(m.VCodec, " Main 10")
+}
+
+// onDevices answers for this browser ("here"), the TV and the phone.
+func onDevices(m, light *MInfo, here Caps) map[string]OnDevice {
+	out := map[string]OnDevice{}
+	p := howToPlay(m, light, here)
+	d := OnDevice{OK: p.How != "none", How: p.How}
+	if p.Light && d.OK {
+		d.How = "light"
+	}
+	if !d.OK {
+		d.How, d.Why = "", here.whyNot(m)
+	}
+	out["here"] = d
+	for name, c := range appCaps {
+		switch {
+		case c.playsVideo(m):
+			out[name] = OnDevice{OK: true, How: "direct"}
+		case c.playsVideo(light):
+			out[name] = OnDevice{OK: true, How: "light"}
+		default:
+			out[name] = OnDevice{Why: c.whyNot(m)}
+		}
+	}
+	return out
 }

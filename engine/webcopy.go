@@ -22,16 +22,17 @@ import (
 // and files' order, with the source's own language and title, so the player
 // can name them.
 type webManifest struct {
-	State       string     `json:"state"`
-	Src         string     `json:"src,omitempty"`       // played directly: the library file or its Light copy
-	HLS         string     `json:"hls,omitempty"`       // repackaged while it plays (stream.go): the stream's master playlist
-	Wait        string     `json:"wait,omitempty"`      // not yet: what mint is doing first
-	Light       bool       `json:"light,omitempty"`     // it's the title's Light copy that plays
-	SubsWait    bool       `json:"subs_wait,omitempty"` // the file's own subtitles are still being read out (subs.go)
-	SourceSize  int64      `json:"source_size"`
-	SourceMtime int64      `json:"source_mtime"`
-	Audio       []webAudio `json:"audio,omitempty"`
-	Subs        []webSub   `json:"subs,omitempty"`
+	State       string              `json:"state"`
+	Src         string              `json:"src,omitempty"`       // played directly: the library file or its Light copy
+	HLS         string              `json:"hls,omitempty"`       // repackaged while it plays (stream.go): the stream's master playlist
+	Wait        string              `json:"wait,omitempty"`      // not yet: what mint is doing first
+	Light       bool                `json:"light,omitempty"`     // it's the title's Light copy that plays
+	On          map[string]OnDevice `json:"on,omitempty"`        // this browser, the TV and the phone: plays or not, and why (play.go)
+	SubsWait    bool                `json:"subs_wait,omitempty"` // the file's own subtitles are still being read out (subs.go)
+	SourceSize  int64               `json:"source_size"`
+	SourceMtime int64               `json:"source_mtime"`
+	Audio       []webAudio          `json:"audio,omitempty"`
+	Subs        []webSub            `json:"subs,omitempty"`
 }
 
 type webAudio struct {
@@ -212,9 +213,15 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 	mux.HandleFunc("GET /api/v1/web", func(w http.ResponseWriter, r *http.Request) {
 		c := capsOf(r)
 		ready := map[string]bool{}
+		blocked := map[string]string{} // what this browser can't play, and why
 		for _, it := range p.c.All() {
+			if it.file == "" {
+				continue
+			}
 			if p, _, _ := webPlay(it, c); p.How != "none" {
 				ready[it.ID] = true
+			} else {
+				blocked[it.ID] = c.whyNot(it.Info)
 			}
 		}
 		ents, _ := os.ReadDir(filepath.Join(DataDir, "web"))
@@ -223,7 +230,10 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 				ready[e.Name()] = true
 			}
 		}
-		writeJSON(w, 200, map[string]any{"ready": ready})
+		for id := range ready {
+			delete(blocked, id)
+		}
+		writeJSON(w, 200, map[string]any{"ready": ready, "blocked": blocked})
 	})
 	mux.HandleFunc("GET /api/v1/web/{id}", func(w http.ResponseWriter, r *http.Request) {
 		it := p.c.Get(r.PathValue("id"))
@@ -231,15 +241,23 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 			errJSON(w, 404, "not in the library (rescanned?)")
 			return
 		}
+		var light *MInfo
+		if it.Light != nil {
+			light = it.Light.Info
+		}
+		on := onDevices(it.Info, light, capsOf(r))
 		if m := directManifest(it, capsOf(r), r.URL.Query().Get("v")); m != nil { // the original's own picture beats a copy
+			m.On = on
 			writeJSON(w, 200, m)
 			return
 		}
 		if m := webCopy(it); m != nil {
+			on["here"] = OnDevice{OK: true, How: "direct"}
+			m.On = on
 			writeJSON(w, 200, m)
 			return
 		}
-		writeJSON(w, 200, webManifest{State: "none"})
+		writeJSON(w, 200, webManifest{State: "none", On: on})
 	})
 	mux.HandleFunc("GET /api/v1/web/{id}/{file}", func(w http.ResponseWriter, r *http.Request) {
 		it := p.c.Get(r.PathValue("id"))

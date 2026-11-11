@@ -35,12 +35,13 @@ type Probe struct {
 	FreeGB      int      `json:"free_gb,omitempty"`
 	// The file's picture and sound, read from the link before downloading
 	// (nil for archives and links ffprobe can't read: shown after the download).
-	Media   *MInfo `json:"media,omitempty"`
-	Browser bool   `json:"browser"`        // plays in the browser that asked
-	Play    string `json:"play,omitempty"` // how: direct | repack | none (play.go)
-	CanMP4  bool   `json:"can_mp4"`        // an MP4 after downloading would make it play in browsers
-	Heavy   bool   `json:"heavy"`          // 4K or HDR: worth a Light copy
-	PGS     bool   `json:"pgs"`            // picture subtitles, which an MP4 can only keep beside the file
+	Media   *MInfo              `json:"media,omitempty"`
+	Browser bool                `json:"browser"`        // plays in the browser that asked
+	Play    string              `json:"play,omitempty"` // how: direct | repack | none (play.go)
+	On      map[string]OnDevice `json:"on,omitempty"`   // where it will play once downloaded
+	CanMP4  bool                `json:"can_mp4"`        // an MP4 after downloading would make it play in browsers
+	Heavy   bool                `json:"heavy"`          // 4K or HDR: worth a Light copy
+	PGS     bool                `json:"pgs"`            // picture subtitles, which an MP4 can only keep beside the file
 }
 
 var (

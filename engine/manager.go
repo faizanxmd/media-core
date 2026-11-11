@@ -17,16 +17,17 @@ import (
 // how mint is doing. All of it is on the Tailscale-only admin port.
 
 type mFile struct {
-	ID      string `json:"id"`
-	Path    string `json:"path"` // library path, for Delete
-	Size    int64  `json:"size"`
-	Info    *MInfo `json:"info,omitempty"`
-	Light   *Light `json:"light,omitempty"`
-	Browser bool   `json:"browser"` // plays in the browser that asked, one way or another
-	Play    string `json:"play"`    // how: direct | repack | light | none (play.go)
-	CanMP4  bool   `json:"can_mp4"`
-	Heavy   bool   `json:"heavy"`
-	Busy    bool   `json:"busy,omitempty"` // a job is working on it
+	ID      string              `json:"id"`
+	Path    string              `json:"path"` // library path, for Delete
+	Size    int64               `json:"size"`
+	Info    *MInfo              `json:"info,omitempty"`
+	Light   *Light              `json:"light,omitempty"`
+	Browser bool                `json:"browser"` // plays in the browser that asked, one way or another
+	Play    string              `json:"play"`    // how: direct | repack | light | none (play.go)
+	On      map[string]OnDevice `json:"on"`      // this browser ("here"), the TV and the phone: plays or not, and why
+	CanMP4  bool                `json:"can_mp4"`
+	Heavy   bool                `json:"heavy"`
+	Busy    bool                `json:"busy,omitempty"` // a job is working on it
 }
 
 type mTitle struct {
@@ -88,6 +89,14 @@ func fileOf(it *Item, busy map[string]bool, c Caps) mFile {
 		f.Play = "direct" // an old copy made ahead
 	}
 	f.Browser = f.Play != "none"
+	var light *MInfo
+	if it.Light != nil {
+		light = it.Light.Info
+	}
+	f.On = onDevices(it.Info, light, c)
+	if f.Browser && !f.On["here"].OK { // an old copy made ahead
+		f.On["here"] = OnDevice{OK: true, How: "direct"}
+	}
 	if it.Light != nil {
 		f.Size += it.Light.Size
 	}

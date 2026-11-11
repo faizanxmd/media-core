@@ -71,6 +71,20 @@ func TestHowToPlay(t *testing.T) {
 	if got := say(howToPlay(f("mkv", "H.264", "", "aac"), light, Caps{})); got != "light direct" {
 		t.Errorf("no caps, MKV with a Light copy: %q, want light direct", got)
 	}
+	// which devices: a Dolby Vision 5 film plays on the TV and in Safari, not on the phone or in Chrome
+	on := onDevices(f("mkv", "HEVC Main 10", "Dolby Vision 5", "eac3"), nil, chrome)
+	if !on["tv"].OK || on["phone"].OK || on["here"].OK || !strings.Contains(on["phone"].Why, "Dolby Vision 5") {
+		t.Errorf("Dolby Vision 5: %+v", on)
+	}
+	if on := onDevices(f("mkv", "HEVC Main 10", "Dolby Vision 5", "eac3"), light, chrome); !on["phone"].OK || on["phone"].How != "light" || on["here"].How != "light" {
+		t.Errorf("Dolby Vision 5 with a Light copy: %+v", on)
+	}
+	if on := onDevices(f("mkv", "H.264 High 10", "", "aac"), nil, safari); on["tv"].OK || on["tv"].Why != "10-bit H.264" || on["here"].OK {
+		t.Errorf("10-bit H.264: %+v", on)
+	}
+	if on := onDevices(f("mkv", "HEVC Main 10", "Dolby Vision 8.1", "dts"), nil, safari); !on["tv"].OK || !on["phone"].OK || on["here"].How != "repack" {
+		t.Errorf("Dolby Vision 8.1 MKV: %+v", on)
+	}
 	if got := say(howToPlay(nil, nil, safari)); got != "none" {
 		t.Errorf("unread file: %q, want none", got)
 	}

@@ -180,6 +180,7 @@ func (s *Server) routes() http.Handler {
 			if res.Media != nil { // where it will play, for the browser that asked
 				res.Play = howToPlay(res.Media, nil, capsOf(r)).How
 				res.Browser = res.Play != "none"
+				res.On = onDevices(res.Media, nil, capsOf(r))
 			}
 			writeJSON(w, 200, res)
 		}
