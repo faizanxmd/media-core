@@ -267,10 +267,10 @@ async function title(id) {
   const seasons = main.seasons || [];
   let season = Math.max(0, seasons.findIndex(s => up && (s.episodes || []).some(e => e.id === up.id)));
 
-  // what the words under the logo say: the episode that's next and its story, or the film's story
+  // what the words under the logo say: which episode Play starts, and the title's own story (each episode's is in the list)
   const words = () => {
     const ep = isShow ? target : null;
-    const story = (ep && ep.meta?.overview) || main.meta?.overview || "";
+    const story = main.meta?.overview || "";
     return `${ep ? `<div class="label one epl">${esc(epLine(ep))}</div>` : ""}${story ? `<p class="story fold" id="pStory" title="Show it all">${esc(story)}</p>` : ""}`;
   };
   const allWatched = () => isShow ? !main.unseen : main.watch?.watched;
@@ -303,7 +303,7 @@ async function title(id) {
       <div class="face">${p.photo ? `<img src="${img(p.photo, "w342")}" alt="" loading="lazy">` : `<span class="label mut">${esc(p.name.split(" ").map(x => x[0]).slice(0, 2).join(""))}</span>`}</div>
       <div class="label one">${esc(p.name)}</div>${p.role ? `<div class="caption mut one">${esc(p.role)}</div>` : ""}</div>`).join("")}</div></section>`;
   };
-  // the facts about the title itself, and a show's own story (the top of the page tells the next episode's)
+  // the facts about the title itself
   const about = () => {
     const m = main.meta || {}, n = seasons.reduce((a, x) => a + (x.episodes || []).length, 0);
     const day = m.date && !isNaN(new Date(m.date)) ? new Date(m.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "";
@@ -311,8 +311,8 @@ async function title(id) {
       ["In the library", isShow ? `${seasons.length} ${seasons.length === 1 ? "season" : "seasons"}, ${n} ${n === 1 ? "episode" : "episodes"}` : ""],
       [(m.genres || []).length > 1 ? "Genres" : "Genre", (m.genres || []).join(", ")], ["Rated", m.cert], [isShow ? "Network" : "Studio", m.studio],
       ["Status", isShow ? (m.status || "").replace("Returning Series", "Still running") : ""]].filter(r => r[1]);
-    const story = isShow && target ? m.overview || "" : "";
-    if (!rows.length && !story) return "";
+    const story = "";
+    if (!rows.length) return "";
     return `<section class="about"><h2 class="rowt">About</h2>${story ? `<p class="mut">${esc(story)}</p>` : ""}
       <div class="infogrid">${rows.map(([k, v]) => `<div><div class="caption">${k}</div><div class="label">${esc(v)}</div></div>`).join("")}</div></section>`;
   };
