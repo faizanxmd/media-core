@@ -60,6 +60,7 @@ type seasonMeta struct {
 	TMeta
 	At       float64        `json:"at"`
 	Failed   float64        `json:"failed,omitempty"` // last failed refresh: wait before trying again
+	Wait     float64        `json:"wait,omitempty"`   // how long, in seconds (0 means an hour)
 	Episodes map[int]*TMeta `json:"episodes"`
 }
 
@@ -238,7 +239,8 @@ func (t *TMDB) stale(cache map[int]*TMeta, folder string) int {
 
 // seasonStale: a running show's season is re-read every 3 days for new
 // episode titles; ended shows never. A season we hold nothing for is always
-// wanted. After a failed fetch, wait an hour before trying again.
+// wanted. After a failed fetch, wait before trying again: a few minutes when
+// the network dropped, an hour when TMDB answered with an error.
 func (t *TMDB) seasonStale(show, season int, status string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -246,7 +248,11 @@ func (t *TMDB) seasonStale(show, season int, status string) bool {
 	if sm == nil {
 		return true
 	}
-	if now()-sm.Failed < 3600 {
+	wait := sm.Wait
+	if wait == 0 {
+		wait = 3600
+	}
+	if now()-sm.Failed < wait {
 		return false
 	}
 	return len(sm.Episodes) == 0 || status != "Ended" && status != "Canceled" && now()-sm.At > 3*86400
@@ -335,7 +341,10 @@ func (t *TMDB) FetchMissing(movies, shows []*Item) bool {
 					sm = &seasonMeta{At: now(), Episodes: map[int]*TMeta{}}
 					t.seasons[key] = sm
 				}
-				sm.Failed = now()
+				sm.Failed, sm.Wait = now(), 3600
+				if !strings.HasPrefix(err.Error(), "TMDB ") { // no answer at all (reset, timeout): try again soon
+					sm.Wait = 180
+				}
 				t.mu.Unlock()
 			}
 			changed = true
