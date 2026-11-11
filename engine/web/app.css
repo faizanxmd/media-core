@@ -63,7 +63,6 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 .play { padding: 0 1.6rem 0 1.2rem; gap: .8rem; color: #fff; background: var(--accent); }
 .play:hover:not(:disabled), .play:focus-visible:not(:disabled) { background: var(--accent-up); }
 .play:disabled { color: var(--muted); background: var(--overlay); }
-.play svg.i { width: 3.2rem; height: 3.2rem; margin: -.4rem -.4rem -.4rem -.6rem; } /* this set draws Play small inside its square */
 .tool { width: 4rem; color: var(--ink); }
 .tool.dim { color: var(--muted); }
 .word { padding: 0 1.6rem; gap: .8rem; color: var(--ink); }
@@ -352,12 +351,10 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 .full::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40rem; background: linear-gradient(180deg, transparent, rgba(14,16,20,.3) 34%, rgba(14,16,20,.72) 68%, rgba(14,16,20,.95)); pointer-events: none; }
 .full::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 16rem; background: linear-gradient(180deg, rgba(14,16,20,.72), transparent); pointer-events: none; }
 .full .leave { position: absolute; left: calc(var(--side) - 1rem); top: 2.4rem; z-index: 1; }
-/* a control: a 28 dp icon in a 48 dp square, which takes a glass ground under the pointer and Ink while its menu is open */
-.ctl { width: 4.8rem; height: 4.8rem; border-radius: var(--r); display: flex; align-items: center; justify-content: center; color: var(--ink); font-size: 1.6rem; font-weight: 600; flex: none; transition: background-color var(--focus) var(--ease), color var(--focus) var(--ease); }
+/* a control, as on the TV: a plain Ink icon, which turns blue under the pointer and while its menu is open. Nothing behind it. */
+.ctl { width: 4.8rem; height: 4.8rem; display: flex; align-items: center; justify-content: center; color: var(--ink); font-size: 1.6rem; font-weight: 600; flex: none; transition: color var(--focus) var(--ease); }
 .ctl svg.i { width: 2.8rem; height: 2.8rem; }
-#ppBtn svg.i { width: 3.6rem; height: 3.6rem; }
-.ctl:hover, .ctl:focus-visible { background: rgba(244,245,248,.16); }
-.ctl.lit { background: var(--ink); color: var(--base); }
+.ctl:hover, .ctl:focus-visible, .ctl.lit { color: var(--word); }
 .pwords { position: absolute; left: var(--side); right: var(--side); bottom: 2rem; }
 .pwords .logoimg { height: 6.4rem; max-width: 30rem; object-fit: contain; object-position: left bottom; }
 .pwords .heading { font-size: 2.8rem; line-height: 3.2rem; }
@@ -371,13 +368,13 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 .bar .now { background: var(--ink); }
 .bar:hover .all, .bar:hover .buf, .bar:hover .now, .bar.drag .all, .bar.drag .buf, .bar.drag .now, .bar:focus-visible .all, .bar:focus-visible .buf, .bar:focus-visible .now { height: .8rem; margin-top: -.4rem; }
 .crow { display: flex; align-items: center; height: 4.8rem; }
-.crow .time { white-space: nowrap; margin-left: 1.2rem; font-size: 1.6rem; }
+.crow .time { white-space: nowrap; margin-left: .4rem; font-size: 1.6rem; }
 .crow .sp { flex: 1; }
 .crow .ctls { display: flex; gap: .4rem; align-items: center; margin-right: -1rem; }
-.crow .ctls.lft { margin: 0 0 0 -1rem; }
+.crow > .ctl:first-child { margin-left: -1rem; }
 .vol { display: flex; align-items: center; }
 .vol input { width: 0; opacity: 0; height: 4.8rem; appearance: none; -webkit-appearance: none; cursor: pointer; transition: width var(--focus) var(--ease), opacity var(--focus) var(--ease); }
-.vol:hover input, .vol:focus-within input { width: 9rem; opacity: 1; margin: 0 .8rem 0 .4rem; }
+.vol:hover input, .vol:focus-within input { width: 9rem; opacity: 1; margin-right: .4rem; }
 .vol input::-webkit-slider-runnable-track { height: .4rem; background: linear-gradient(90deg, var(--ink) var(--v, 100%), rgba(244,245,248,.28) var(--v, 100%)); }
 .vol input::-webkit-slider-thumb { -webkit-appearance: none; width: .4rem; height: 1.2rem; margin-top: -.4rem; background: var(--ink); }
 .vol input::-moz-range-track { height: .4rem; background: rgba(244,245,248,.28); }

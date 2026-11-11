@@ -410,15 +410,11 @@ const Player = (() => {
         <div class="pline"><span class="label one">${esc(sub)}</span><span class="meta mut fig" id="ends" style="flex:none"></span></div>
         <div class="bar" id="bar" tabindex="0" role="slider" aria-label="Position"><i class="all"></i><i class="buf"></i><i class="now"></i></div>
         <div class="crow">
-          <div class="ctls lft">
-            <button class="ctl" data-a="toggle" id="ppBtn" aria-label="Play or pause" title="Play or pause (Space)">${icon("Pause")}</button>
-            <button class="ctl" data-a="back10" aria-label="Back 10 seconds" title="Back 10 seconds (J)">${icon("Back10")}</button>
-            <button class="ctl" data-a="fwd10" aria-label="Forward 10 seconds" title="Forward 10 seconds (L)">${icon("Fwd10")}</button>
-            <div class="vol"><button class="ctl" data-a="mute" id="muteBtn" aria-label="Mute" title="Mute (M)">${icon(v.muted ? "Mute" : "Volume")}</button><input id="volume" type="range" min="0" max="1" step="0.02" value="${v.muted ? 0 : v.volume}" aria-label="Volume" style="--v:${(v.muted ? 0 : v.volume) * 100}%"></div>
-          </div>
+          <button class="ctl" data-a="toggle" id="ppBtn" aria-label="Play or pause" title="Play or pause (Space)">${icon("Pause")}</button>
           <span class="label fig time"><span id="at">0:00</span><span class="mut" style="font-weight:500" id="len"></span></span>
           <span class="sp"></span>
           <div class="ctls">
+            <div class="vol"><input id="volume" type="range" min="0" max="1" step="0.02" value="${v.muted ? 0 : v.volume}" aria-label="Volume" style="--v:${(v.muted ? 0 : v.volume) * 100}%"><button class="ctl" data-a="mute" id="muteBtn" aria-label="Mute" title="Mute (M)">${icon(v.muted ? "Mute" : "Volume")}</button></div>
             <button class="ctl" data-a="audio" aria-label="Audio" title="Audio">${icon("Audio")}</button>
             <button class="ctl" data-a="subs" aria-label="Subtitles" title="Subtitles">${icon("Subtitles")}</button>
             <button class="ctl" data-a="speed" aria-label="Speed" title="Speed">${speed !== 1 ? speed + "×" : icon("Speed")}</button>
@@ -660,7 +656,6 @@ const Player = (() => {
       const act = a.dataset.a;
       if (e.detail > 0 && act !== "audio" && act !== "subs" && act !== "speed" && act !== "episodes" && act !== "quality") a.blur(); // Space keeps meaning pause after a click
       if (act === "toggle") toggle();
-      else if (act === "back10" || act === "fwd10") { if (mode !== "scrub") tapSkip(act === "fwd10" ? 1 : -1); }
       else if (act === "leave") leave();
       else if (act === "mute") { v.muted = !v.muted; store.set("muted", v.muted ? "1" : "0"); drawFull(); showFull(); }
       else if (act === "fullscreen") toggleFull();
