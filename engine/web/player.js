@@ -510,13 +510,12 @@ const Player = (() => {
   }
   function openList(kind, btn, title, options, widthRem) {
     closeMenu(true);
-    const r = btn.getBoundingClientRect(), rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize);
-    const right = Math.max(rootPx * 1.6, innerWidth - r.right);
     const box = $p("#pmenuBox");
     btn.classList.add("lit"); // the button whose menu is open stays lit
-    box.innerHTML = `<div class="menu pmenu" style="right:${right}px;width:${widthRem * 1.25}rem"><span class="caption">${esc(title)}</span>
-      ${options.length ? options.map((o, i) => `<button class="opt" data-i="${i}"><span class="tick">${o.selected ? icon("Check") : ""}</span><span class="name one body">${esc(o.title)}</span>${o.detail ? `<span class="detail">${esc(o.detail)}</span>` : ""}</button>`).join("") : `<div class="mut" style="padding:0 0 .8rem 3.6rem">None</div>`}</div>`;
-    box.onclick = e => { const b = e.target.closest("[data-i]"); if (b) { options[+b.dataset.i].pick(); closeMenu(); } };
+    // a panel fixed to the screen's right edge, top to bottom, as on the phone: part of the screen, not a box over it
+    box.innerHTML = `<div class="ppanel" role="dialog" aria-label="${esc(title)}"><div class="phead"><span class="title">${esc(title)}</span><button class="ctl" data-close aria-label="Close" title="Close (Esc)">${icon("Close")}</button></div>
+      <div class="plist">${options.length ? options.map((o, i) => `<button class="opt" data-i="${i}"><span class="tick">${o.selected ? icon("Check") : ""}</span><span class="name one">${esc(o.title)}</span>${o.detail ? `<span class="detail">${esc(o.detail)}</span>` : ""}</button>`).join("") : `<div class="mut" style="padding:1.2rem 0 0 4.8rem">None</div>`}</div></div>`;
+    box.onclick = e => { if (e.target.closest("[data-close]")) { closeMenu(); return; } const b = e.target.closest("[data-i]"); if (b) { options[+b.dataset.i].pick(); closeMenu(); } };
     menu = { kind, btn };
     clearTimeout(hideT);
     const sel = options.findIndex(o => o.selected);

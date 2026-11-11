@@ -146,10 +146,21 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 .srow { display: flex; gap: 2.8rem; padding: 0 var(--side) 1.2rem; align-items: baseline; }
 .srow .rowt { padding: 0; }
 .srow .kind { font-size: 2rem; line-height: 2.4rem; height: 3.2rem; }
-.ep .three { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; margin-top: .6rem; line-height: 1.8rem; }
-.ep .foot { display: flex; align-items: center; gap: .6rem; height: 2.4rem; margin-top: .6rem; }
-.ep .foot svg.i { width: 1.8rem; height: 1.8rem; }
-.ep.next .label { color: var(--ink); }
+/* episodes: a list down the page. Each row: the picture, the number, the name over its story, and the length at the far end. */
+.elist { padding: 0 calc(var(--side) - 1.2rem); }
+.erow { display: grid; grid-template-columns: 22rem 5.6rem minmax(0, 1fr) 12rem; align-items: center; gap: 0 2rem; width: 100%; padding: 1.2rem; border-radius: var(--r); text-align: left; position: relative; transition: background-color var(--focus) var(--ease); }
+.erow + .erow::before { content: ""; position: absolute; left: 1.2rem; right: 1.2rem; top: 0; height: .1rem; background: var(--overlay); }
+.erow:hover, .erow:focus-visible { background: var(--raised); }
+.erow:hover::before, .erow:focus-visible::before, .erow:hover + .erow::before, .erow:focus-visible + .erow::before { background: none; }
+.erow .card { pointer-events: none; }
+.erow:hover .card::after, .erow:focus-visible .card::after { opacity: 1; }
+.erow .num { font-size: 3.2rem; line-height: 3.6rem; font-weight: 700; color: var(--muted); text-align: center; }
+.erow:hover .num, .erow:focus-visible .num, .erow.next .num { color: var(--ink); }
+.erow .txt { min-width: 0; max-width: 72rem; }
+.erow .txt .label { font-size: 1.7rem; line-height: 2.4rem; }
+.erow .txt p { margin-top: .4rem; font-size: 1.45rem; line-height: 2rem; font-weight: 450; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.erow .end { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; white-space: nowrap; }
+.erow .end svg.i { width: 1.8rem; height: 1.8rem; }
 .cast { display: flex; gap: 2rem; padding: 0 var(--side); overflow-x: auto; scrollbar-width: none; }
 .cast > div { width: 13.2rem; flex: none; }
 .face { width: 100%; aspect-ratio: 4 / 5; border-radius: var(--r); background: var(--raised); overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
@@ -380,14 +391,18 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 .vol input::-moz-range-track { height: .4rem; background: rgba(244,245,248,.28); }
 .vol input::-moz-range-progress { height: .4rem; background: var(--ink); }
 .vol input::-moz-range-thumb { width: .4rem; height: 1.2rem; background: var(--ink); border: 0; border-radius: 0; }
-.pmenu { position: absolute; bottom: 13.2rem; background: rgba(24,27,33,.9); -webkit-backdrop-filter: blur(2rem); backdrop-filter: blur(2rem); }
-/* the player's menus are read from further back than a page's, and hang from 28 dp icons: bigger rows and words */
-.pmenu { padding: 1.2rem; max-height: 52rem; }
-.pmenu .caption { font-size: 1.3rem; line-height: 1.6rem; padding: .6rem 0 1rem 4.8rem; }
-.pmenu .opt { height: 4.8rem; padding: 0 1.2rem; }
-.pmenu .opt .tick { width: 3.6rem; }
-.pmenu .opt .name { font-size: 1.6rem; line-height: 2.4rem; font-weight: 500; }
-.pmenu .opt .detail { font-size: 1.45rem; line-height: 2rem; padding-left: 1.6rem; }
+/* the player's menu: a panel fixed to the right edge from top to bottom. Solid, square, part of the screen. */
+.ppanel { position: absolute; top: 0; right: 0; bottom: 0; width: 42rem; max-width: 100vw; background: var(--raised); display: flex; flex-direction: column; z-index: 3; animation: panelin 220ms var(--ease); }
+/* while it's open the bar ends where the panel begins, and the icons under it step aside */
+#player:has(.ppanel) .pwords { right: calc(42rem + 3.2rem); }
+#player:has(.ppanel) .crow .ctls, #player:has(.ppanel) #ends { visibility: hidden; }
+@keyframes panelin { from { transform: translateX(4rem); opacity: 0; } to { transform: none; opacity: 1; } }
+.phead { display: flex; align-items: center; justify-content: space-between; padding: 2.4rem 1.6rem 1.6rem 6rem; border-bottom: .1rem solid var(--overlay); }
+.plist { flex: 1; overflow-y: auto; padding: 1.2rem; }
+.ppanel .opt { height: 5.6rem; padding: 0 1.2rem; }
+.ppanel .opt .tick { width: 3.6rem; }
+.ppanel .opt .name { font-size: 1.7rem; line-height: 2.4rem; font-weight: 500; }
+.ppanel .opt .detail { font-size: 1.45rem; line-height: 2rem; padding-left: 1.6rem; }
 .preview { position: absolute; bottom: 14.4rem; width: 32rem; pointer-events: none; opacity: 0; transition: opacity var(--focus) var(--ease); text-align: center; }
 .preview.on { opacity: 1; }
 .preview .pic { aspect-ratio: 16 / 9; border: var(--line) solid var(--ink); border-radius: var(--r); background: var(--raised) center / cover no-repeat; margin-bottom: .8rem; }
@@ -445,6 +460,9 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
   .hero .words { width: 100%; padding: 0 var(--side) 2.4rem; }
   .mark { height: 9rem; width: 30rem; }
   .mark .display { font-size: 3.6rem; line-height: 4rem; }
+  .erow { grid-template-columns: 12rem minmax(0, 1fr); gap: 0 1.2rem; }
+  .erow .num, .erow .end { display: none; }
+  .ppanel { width: 100vw; }
   .cards { gap: 1.2rem; }
   .cards .p { width: 12rem; }
   .cards .w { width: 22rem; }

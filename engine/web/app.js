@@ -281,24 +281,20 @@ async function title(id) {
       <button class="tool ${allWatched() ? "" : "dim"}" id="pSeen" title="${allWatched() ? "Mark unwatched" : "Mark watched"}" aria-label="${allWatched() ? "Mark unwatched" : "Mark watched"}">${icon("Check")}</button>
       <button class="tool" id="pInfo" title="Details" aria-label="Details">${icon("Info")}</button>`;
   };
-  // each episode carries its own picture, name, story and length, so nothing has to be pointed at to be read
+  // episodes: a list down the page, each with its picture, number, name, story and length
   const episodes = () => {
     const s = seasons[season]; if (!s) return "";
     const head = seasons.length > 1
       ? seasons.map((x, i) => `<button class="kind ${i === season ? "on" : ""}" data-season="${i}">${esc(x.title)}</button>`).join("")
       : `<h2 class="rowt">${esc(s.title)}</h2>`;
-    return `<section class="row sect"><div class="srow">${head}</div>
-      <button class="shift l" tabindex="-1" aria-label="Back">${icon("ExpandMore")}</button>
-      <div class="cards">${(s.episodes || []).map(e => {
+    return `<section class="sect"><div class="srow">${head}</div><div class="elist">${(s.episodes || []).map(e => {
         const len = durMs(e) || (e.meta?.runtime || 0) * 60000, part = !e.watch?.watched && resumable(e);
-        return `<div class="w ep ${up && e.id === up.id ? "next" : ""}"><button class="card wide" data-ep="${e.id}" aria-label="${esc(e.title)}">
-          ${e.meta?.still || e.meta?.backdrop ? `<img src="${img(e.meta.still || e.meta.backdrop, "w780")}" alt="" loading="lazy" decoding="async">` : ""}
-          ${part ? track(progress(e)) : ""}</button>
-        <div class="label one">${e.episode} · ${esc(e.title)}</div>
-        ${e.meta?.overview ? `<p class="meta mut three">${esc(e.meta.overview)}</p>` : ""}
-        <div class="meta mut foot fig">${e.watch?.watched ? `${icon("Check")}<span>Watched</span>` : `<span>${part ? esc(leftText(durMs(e) - pos(e))) : len ? esc(mins(len)) : ""}</span>`}</div></div>`;
-      }).join("")}</div>
-      <button class="shift r" tabindex="-1" aria-label="More">${icon("ExpandMore")}</button></section>`;
+        return `<button class="erow ${up && e.id === up.id ? "next" : ""}" data-ep="${e.id}">
+          <span class="card wide">${e.meta?.still || e.meta?.backdrop ? `<img src="${img(e.meta.still || e.meta.backdrop, "w500")}" alt="" loading="lazy" decoding="async">` : ""}${part ? track(progress(e)) : ""}</span>
+          <span class="num fig">${e.episode}</span>
+          <span class="txt"><span class="label one" style="display:block">${esc(e.title)}</span>${e.meta?.overview ? `<p class="mut">${esc(e.meta.overview)}</p>` : ""}</span>
+          <span class="meta mut fig end">${e.watch?.watched ? `${icon("Check")}Watched` : part ? esc(leftText(durMs(e) - pos(e))) : len ? esc(mins(len)) : ""}</span></button>`;
+      }).join("")}</div></section>`;
   };
   const cast = () => {
     const c = main.meta?.cast || [];
@@ -329,7 +325,7 @@ async function title(id) {
         <div id="words">${words()}</div><div class="btns" id="btns">${buttons()}</div>
         ${target && !ready[target.id] ? `<p class="meta whynot">${icon("No")}<span>This browser can't show ${esc(blocked[target.id] || "this picture")}. A Light copy, added in Manager, would play here. Details lists where it does play.</span></p>` : ""}</div></section>
       <div id="below">${isShow ? episodes() : ""}${cast()}${about()}</div></div>`);
-    wire(); toEpisode();
+    wire();
   };
   const wire = () => {
     wireButtons();
@@ -342,11 +338,6 @@ async function title(id) {
       const ep = seasons[season].episodes.find(e => e.id === c.dataset.ep);
       c.onclick = () => ready[ep.id] ? location.hash = `#/play/${ep.id}` : note(`This browser can't show ${blocked[ep.id] || "this episode's picture"}.`, true);
     }
-  };
-  // the row opens on the episode that's next, not on episode 1
-  const toEpisode = () => {
-    const c = up && $(`[data-ep="${up.id}"]`)?.closest(".w"), cards = c?.parentElement;
-    if (c) cards.scrollLeft = c.offsetLeft - parseFloat(getComputedStyle(cards).paddingLeft);
   };
   const wireButtons = () => {
     const at = (s, fn) => { const el = $(s); if (el) el.onclick = fn; };
