@@ -4,7 +4,7 @@
 :root {
   --base: #0E1014; --raised: #181B21; --overlay: #262A32; --ink: #F4F5F8; --muted: #A4A8B0;
   /* the TV shows blue much lighter than a laptop does, so these two read the same as the TV's #0F1E66 and #1E3AB8 */
-  --accent: #1B36A8; --word: #5B78FF;
+  --accent: #1B36A8; --accent-up: #2443C4; --word: #5B78FF; --bad: #F4B4AE;
   --r: .6rem; --chip: .4rem; --side: 4rem; --line: .2rem;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --focus: 180ms; --in: 160ms; --out: 200ms;
@@ -52,15 +52,19 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 /* buttons */
 .btns { display: flex; gap: .8rem; align-items: center; margin-top: 1.6rem; }
 .play, .tool, .word { height: 4rem; border-radius: var(--r); background: var(--overlay); display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; font-size: 1.45rem; line-height: 2rem; font-weight: 600; flex: none; transition: background-color var(--focus) var(--ease), color var(--focus) var(--ease); }
-.play { padding: 0 1.6rem 0 1.2rem; gap: .8rem; color: #fff; }
-.play:hover:not(:disabled), .play:focus-visible:not(:disabled) { background: var(--accent); }
-.play:disabled { color: var(--muted); }
+/* The one main action on a page. On the TV it's blue while selected, and it's selected when the page opens;
+   a mouse page has nothing selected, so here it's blue at rest and a shade lighter under the pointer. */
+.play { padding: 0 1.6rem 0 1.2rem; gap: .8rem; color: #fff; background: var(--accent); }
+.play:hover:not(:disabled), .play:focus-visible:not(:disabled) { background: var(--accent-up); }
+.play:disabled { color: var(--muted); background: var(--overlay); }
 .tool { width: 4rem; color: var(--ink); }
 .tool.dim { color: var(--muted); }
 .word { padding: 0 1.6rem; gap: .8rem; color: var(--ink); }
 .word.ic { padding-right: 1.2rem; }
 .tool:hover, .tool:focus-visible, .word:hover, .word:focus-visible, .word.lit { background: var(--ink); color: var(--base); }
-.word.danger:hover, .word.danger:focus-visible { background: #F4B4AE; }
+.word.danger { color: var(--bad); }
+.word.danger .meta { color: var(--muted); }
+.word.danger:hover, .word.danger:focus-visible { background: var(--bad); color: var(--base); }
 .word:disabled { color: var(--muted); background: var(--overlay); }
 
 /* picture cards */
@@ -170,7 +174,8 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 input[type=search]::-webkit-search-cancel-button { display: none; }
 
 /* Manager: links, downloads, the library's files, mint */
-.addpage { padding: .8rem var(--side) 6.4rem; }
+/* one column, capped: on a wide window a row's label and its control stay within reach of each other */
+.addpage { padding: .8rem var(--side) 6.4rem; max-width: calc(104rem + 2 * var(--side)); }
 .mfacts { display: flex; flex-wrap: wrap; gap: 1.2rem 3.2rem; margin-top: 1.6rem; }
 .mline { margin-top: 1.2rem; }
 .medit { height: auto; margin-left: .8rem; }
@@ -190,8 +195,19 @@ input[type=search]::-webkit-search-cancel-button { display: none; }
 .mwide:hover .meta, .mwide:focus-visible .meta { color: inherit; }
 .mrow { width: 100%; text-align: left; cursor: pointer; }
 .mrow:hover .name, .mrow:focus-visible .name { text-decoration: underline; text-underline-offset: .3rem; }
-.msys { display: grid; grid-template-columns: 1fr 1fr; gap: 6.4rem; margin-top: 2.4rem; }
-.mbar { display: flex; height: .8rem; background: var(--raised); margin: 1.6rem 0; border-radius: var(--chip); overflow: hidden; }
+/* System: each subject in its own box, its controls beside their labels */
+.sysgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6rem; margin-top: 2.4rem; align-items: start; }
+.syscol { display: grid; gap: 1.6rem; min-width: 0; }
+.box { background: var(--raised); border-radius: var(--r); padding: 2rem 2rem .8rem; min-width: 0; }
+.boxh { font-size: 1.15rem; line-height: 1.4rem; font-weight: 600; color: var(--muted); margin-bottom: 1.2rem; }
+.box .spec, .box .setrow { min-height: 4rem; padding: .4rem 0; }
+.box .spec + .spec, .box .setrow + .setrow { border-top: .1rem solid var(--overlay); }
+.box .spec > :last-child { font-weight: 500; }
+.box .setrow .word { height: 3.6rem; background: var(--overlay); }
+.box .setrow .word:hover, .box .setrow .word:focus-visible { background: var(--ink); }
+.boxnote { border-top: .1rem solid var(--overlay); padding: 1.2rem 0; }
+.box .warn { padding-bottom: 1.2rem; }
+.mbar { display: flex; height: .8rem; background: var(--base); margin: 1.6rem 0 .8rem; border-radius: var(--chip); overflow: hidden; }
 .mbar i { display: block; height: 100%; }
 .mdot { display: inline-block; width: .8rem; height: .8rem; border-radius: .2rem; margin-right: .8rem; }
 .spec.mkey > :first-child { color: var(--ink); font-weight: 450; }
@@ -200,14 +216,15 @@ input[type=search]::-webkit-search-cancel-button { display: none; }
 .mopt:hover .tick:empty::before, .mopt:focus-visible .tick:empty::before { border-color: var(--ink); }
 .sheet:focus { outline: 0; }
 .paste { display: flex; align-items: flex-start; gap: .8rem; }
-.paste textarea { flex: 1; min-width: 0; min-height: 4.4rem; max-height: 24rem; background: var(--overlay); border-radius: var(--r); padding: 1.2rem; resize: none; overflow: auto; }
+.paste textarea { flex: 1; min-width: 0; min-height: 4.8rem; max-height: 24rem; background: var(--overlay); border-radius: var(--r); padding: 1.4rem 1.6rem; resize: none; overflow: auto; }
+.paste textarea:focus { box-shadow: inset 0 0 0 .1rem var(--muted); }
 .paste textarea::placeholder { color: var(--muted); opacity: 1; }
 .paste.drag textarea { background: var(--raised); box-shadow: inset 0 0 0 var(--line) var(--ink); }
 .paste .word { height: 4.4rem; }
 .panel { background: var(--raised); border-radius: var(--r); padding: 1.6rem; margin-top: 1.6rem; }
 .panel .file { color: var(--muted); margin-top: .4rem; word-break: break-all; }
 .panel .facts { margin-top: .8rem; flex-wrap: wrap; color: var(--muted); }
-.warnc { color: #F4B4AE; }
+.warnc { color: var(--bad); }
 .warn { margin-top: .8rem; color: #F4B4AE; font-size: 1.3rem; line-height: 1.6rem; font-weight: 500; }
 .kinds { display: flex; gap: 2.4rem; margin-top: 1.6rem; }
 .kind { color: var(--muted); font-weight: 600; height: 2.4rem; position: relative; }
@@ -223,15 +240,18 @@ input[type=search]::-webkit-search-cancel-button { display: none; }
 .subtabs { display: flex; gap: 2.4rem; margin-top: 3.2rem; border-bottom: .1rem solid var(--overlay); align-items: flex-end; }
 .subtabs .kind { height: 3rem; }
 .subtabs .right { margin-left: auto; padding-bottom: .6rem; }
-.lrow { display: flex; align-items: center; gap: 1.6rem; padding: 1.2rem 0; border-bottom: .1rem solid var(--overlay); position: relative; cursor: pointer; }
+.lrow { display: flex; align-items: center; gap: 1.6rem; padding: 1.2rem; margin: 0 -1.2rem; border-radius: var(--r); position: relative; cursor: pointer; transition: background-color var(--focus) var(--ease); }
+.lrow::after { content: ""; position: absolute; left: 1.2rem; right: 1.2rem; bottom: 0; height: .1rem; background: var(--overlay); }
+.lrow:hover { background: var(--raised); }
+.lrow:hover::after, .lrow:has(+ .lrow:hover)::after { background: none; }
 .lrow .main { flex: 1; min-width: 0; }
 .lrow .sub { color: var(--muted); margin-top: .2rem; }
 .lrow .thumb { width: 4.8rem; aspect-ratio: 2 / 3; border-radius: var(--chip); background: var(--raised); overflow: hidden; flex: none; }
 .lrow .thumb img { width: 100%; height: 100%; object-fit: cover; }
-.lrow .size { color: var(--muted); flex: none; }
+.lrow .thumb:empty { display: none; } /* no picture to show: no empty box either */
+.lrow .size { color: var(--muted); flex: none; min-width: 7.2rem; text-align: right; }
 .lrow .acts { display: flex; gap: .8rem; flex: none; }
-.lrow:hover .title1 { text-decoration: underline; text-underline-offset: .3rem; }
-.jobbar { position: absolute; left: 0; right: 0; bottom: -.1rem; height: .3rem; background: rgba(244, 245, 248, .16); }
+.jobbar { height: .4rem; margin-top: .8rem; background: rgba(244, 245, 248, .16); }
 .jobbar i { display: block; height: 100%; background: var(--ink); }
 .more { flex-basis: 100%; color: var(--muted); font-size: 1.3rem; line-height: 1.8rem; word-break: break-all; }
 .more pre { font: 500 1.15rem/1.6rem ui-monospace, monospace; white-space: pre-wrap; max-height: 20rem; overflow: auto; margin-top: .8rem; background: var(--base); padding: 1.2rem; border-radius: var(--r); }
@@ -245,11 +265,13 @@ input[type=search]::-webkit-search-cancel-button { display: none; }
 .frow { display: flex; align-items: center; gap: .8rem; min-height: 4.8rem; border-top: .1rem solid var(--overlay); }
 .frow .name { flex: 1; min-width: 0; word-break: break-word; }
 .frow .size { color: var(--muted); flex: none; }
-.setrow { display: flex; align-items: center; justify-content: space-between; gap: 2.4rem; padding: 1.2rem 0; border-bottom: .1rem solid var(--overlay); }
+.setrow { display: flex; align-items: center; justify-content: space-between; gap: 1.6rem 2.4rem; flex-wrap: wrap; }
 .setrow small { display: block; color: var(--muted); font-size: 1.3rem; line-height: 1.6rem; font-weight: 500; margin-top: .2rem; }
-.seg { display: flex; gap: .4rem; flex: none; }
-.seg button { min-width: 4rem; height: 4rem; padding: 0 1.2rem; border-radius: var(--r); background: var(--overlay); font-weight: 600; }
-.seg button.on, .seg button:hover, .seg button:focus-visible { background: var(--ink); color: var(--base); }
+/* a segmented control: one piece, one choice lit */
+.seg { display: inline-flex; flex: none; background: var(--overlay); border-radius: var(--r); padding: .3rem; }
+.seg button { min-width: 4.8rem; height: 3rem; padding: 0 1.2rem; border-radius: var(--chip); font-size: 1.3rem; line-height: 1.6rem; font-weight: 600; color: var(--muted); white-space: nowrap; transition: color var(--focus) var(--ease), background-color var(--focus) var(--ease); }
+.seg button:hover, .seg button:focus-visible { color: var(--ink); }
+.seg button.on { background: var(--ink); color: var(--base); }
 
 /* the player */
 #player { position: fixed; inset: 0; z-index: 20; background: #000; overflow: hidden; user-select: none; }
@@ -329,6 +351,20 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 .perr { background: rgba(14,16,20,.8); display: flex; align-items: center; justify-content: center; }
 .perr > div { width: 46rem; max-width: calc(100vw - 3.2rem); background: var(--raised); border-radius: var(--r); padding: 2.4rem; }
 
+/* what plays where: a tick or a cross, then the word */
+.plays { display: inline-flex; align-items: center; gap: .6rem; flex: none; white-space: nowrap; font-size: 1.3rem; line-height: 1.6rem; font-weight: 500; color: var(--muted); }
+.plays svg.i { width: 1.8rem; height: 1.8rem; color: var(--ink); }
+.plays.no, .plays.no svg.i { color: var(--bad); }
+.playson { display: flex; flex-wrap: wrap; gap: .8rem 2.4rem; margin-top: 1.6rem; }
+.spec.onrow .plays { font-size: 1.45rem; line-height: 2rem; font-weight: 450; color: var(--ink); }
+.frow .plays { margin-right: .8rem; }
+/* browsing: only what doesn't play here is marked, with a dimmed picture and a cross; its page says why */
+.card.dimmed img { filter: brightness(.4); }
+.cant { position: absolute; left: .8rem; top: .8rem; z-index: 2; width: 2.4rem; height: 2.4rem; display: flex; align-items: center; justify-content: center; background: var(--base); border-radius: var(--chip); color: var(--bad); }
+.cant svg.i { width: 1.8rem; height: 1.8rem; }
+.whynot { display: flex; gap: .8rem; align-items: flex-start; margin-top: 1.6rem; color: var(--bad); }
+.whynot svg.i { width: 1.8rem; height: 1.8rem; margin-top: -.1rem; }
+
 /* a phone or a small window */
 @media (max-width: 760px) {
   html { font-size: 11px; } /* at 10 px, body text was 14.5 px and captions 11.5: too small on a phone */
@@ -345,5 +381,6 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
   .crow .time { font-size: 1.3rem; }
   .vol { display: none; }
   .lrow .thumb { display: none; }
-  .msys { grid-template-columns: 1fr; gap: 3.2rem; }
+  .sysgrid { grid-template-columns: 1fr; }
+  .lrow .plays { display: none; }
 }

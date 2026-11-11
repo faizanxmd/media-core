@@ -49,6 +49,19 @@ const displayYear = it => it.year > 0 ? it.year : it.meta?.year || 0;
 const epLine = it => `S${it.season}, E${it.episode} · ${it.title}`;
 const gb = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.round(b / 1e6) + " MB";
 
+// ---------- what plays on this device ----------
+// The engine decides (play.go). Nearly everything plays, so only the exceptions are marked:
+// a poster that can't play here is dimmed and says so, and its page says why.
+let playsAt = 0, playsMap = { ready: {}, blocked: {} };
+async function plays() {
+  if (Date.now() - playsAt < 30000) return playsMap;
+  const r = await webAPI("/api/v1/web");
+  if (!r.error) { playsMap = { ready: r.ready || {}, blocked: r.blocked || {} }; playsAt = Date.now(); }
+  return playsMap;
+}
+const cantPlay = it => it && playsMap.blocked[it.id];
+const cantChip = it => cantPlay(it) ? `<span class="cant" title="${esc("Doesn't play on this device: it can't show " + cantPlay(it))}">${icon("No")}</span>` : "";
+
 // ---------- pieces ----------
 const tabsDef = [["#/search", "Search"], ["#/", "Home"], ["#/films", "Films"], ["#/shows", "Shows"]];
 function tabs(current) {
@@ -59,14 +72,14 @@ function tabs(current) {
 const track = f => `<div class="track"><i style="width:${(f * 100).toFixed(1)}%"></i></div>`;
 
 function posterCard(it) {
-  return `<a class="card poster p" href="#/title/${it.id}" title="${esc(displayTitle(it))}">${it.meta?.poster
+  return `<a class="card poster p ${cantPlay(it) ? "dimmed" : ""}" href="#/title/${it.id}" title="${esc(displayTitle(it))}">${cantChip(it)}${it.meta?.poster
     ? `<img src="${img(it.meta.poster, "w342")}" alt="${esc(displayTitle(it))}" loading="lazy" decoding="async">`
     : `<span class="none">${esc(displayTitle(it))}</span>`}</a>`;
 }
 function wideCard(it) {
   const pic = img(it.meta?.backdrop, "w500") || img(it.meta?.still, "w500");
   const left = pos(it) > 0 && durMs(it) > pos(it) ? leftText(durMs(it) - pos(it)) : "";
-  return `<div class="w"><button class="card wide" data-open="${it.id}" data-resume="1">${pic ? `<img src="${pic}" alt="" loading="lazy" decoding="async">` : ""}${progress(it) ? track(progress(it)) : ""}</button>
+  return `<div class="w"><button class="card wide ${cantPlay(it) ? "dimmed" : ""}" data-open="${it.id}" data-resume="1">${cantChip(it)}${pic ? `<img src="${pic}" alt="" loading="lazy" decoding="async">` : ""}${progress(it) ? track(progress(it)) : ""}</button>
     <div class="under meta"><span class="one">${esc(showTitle(it))}</span>${left ? `<span class="one mut" style="flex:none"> · ${esc(left)}</span>` : ""}</div></div>`;
 }
 function row(title, list, make) {
@@ -132,7 +145,7 @@ function errorPage(retry) {
 let homeJson = "", homeT;
 async function home(refresh) {
   if (!refresh && !homeJson) loadingPage();
-  const h = await api("/api/v1/home");
+  const [h] = await Promise.all([api("/api/v1/home"), plays()]);
   if (h.error) { if (!homeJson) errorPage(() => home()); return; }
   const text = JSON.stringify(h);
   if (refresh && text === homeJson) return;
@@ -182,7 +195,7 @@ document.addEventListener("click", async e => {
 async function library(shows) {
   const key = route.key;
   loadingPage();
-  const r = await api(shows ? "/api/v1/shows" : "/api/v1/movies");
+  const [r] = await Promise.all([api(shows ? "/api/v1/shows" : "/api/v1/movies"), plays()]);
   if (route.key !== key) return;
   if (r.error) { errorPage(() => library(shows)); return; }
   const items = r.items || [];
@@ -226,6 +239,7 @@ async function title(id) {
   loadingPage();
   const [d, web] = await Promise.all([api(`/api/v1/item/${id}`), webAPI("/api/v1/web")]);
   if (route.key !== key) return;
+  const blocked = web.blocked || {};
   if (d.error) { d.offline ? errorPage(() => title(id)) : show(tabs("") + `<div class="centre"><div class="title">Not in the library</div></div>`); return; }
   const main = d.item, up = d.up_next, isShow = main.type === "show";
   const ready = web.ready || {};
@@ -246,7 +260,7 @@ async function title(id) {
   const allWatched = () => isShow ? !main.unseen : main.watch?.watched;
   const buttons = () => {
     const can = target && ready[target.id], res = resumable(target);
-    return `<button class="play" id="pPlay" ${can ? "" : "disabled"}>${icon("Play")}<span class="fig">${!can ? "Not ready for browsers" : res ? hm(durMs(target) - pos(target)) : "Play"}</span></button>
+    return `<button class="play" id="pPlay" ${can ? "" : "disabled"}>${icon("Play")}<span class="fig">${!can ? "Can't play here" : res ? hm(durMs(target) - pos(target)) : "Play"}</span></button>
       ${res && can ? `<button class="tool" id="pOver" title="Start over" aria-label="Start over">${icon("Replay")}</button>` : ""}
       <button class="tool ${allWatched() ? "" : "dim"}" id="pSeen" title="${allWatched() ? "Mark unwatched" : "Mark watched"}" aria-label="${allWatched() ? "Mark unwatched" : "Mark watched"}">${icon("Check")}</button>
       <button class="tool" id="pInfo" title="Details" aria-label="Details">${icon("Info")}</button>`;
@@ -275,7 +289,8 @@ async function title(id) {
       <button class="ctl pback" id="pBack" aria-label="Back" title="Back (Esc)">${icon("Back")}</button>
       <div class="top">${titleMark(main.meta?.logo, displayTitle(main))}
         <div class="meta mut" style="margin-top:1.2rem">${head}</div>
-        <div id="words">${words(described)}</div><div class="btns" id="btns">${buttons()}</div></div>
+        <div id="words">${words(described)}</div><div class="btns" id="btns">${buttons()}</div>
+        ${target && !ready[target.id] ? `<p class="meta whynot">${icon("No")}<span>This browser can't show ${esc(blocked[target.id] || "this picture")}. A Light copy, added in Manager, would play here. Details lists where it does play.</span></p>` : ""}</div>
       <div id="below">${isShow ? episodes() : cast()}</div></div>`);
     wire();
   };
@@ -288,7 +303,7 @@ async function title(id) {
       const ep = seasons[season].episodes.find(e => e.id === c.dataset.ep);
       const hover = () => { described = ep; $("#words").innerHTML = words(ep); };
       c.addEventListener("mouseenter", hover); c.addEventListener("focus", hover);
-      c.onclick = () => ready[ep.id] ? location.hash = `#/play/${ep.id}` : note("This episode isn't ready for browsers yet.");
+      c.onclick = () => ready[ep.id] ? location.hash = `#/play/${ep.id}` : note(`This browser can't show ${blocked[ep.id] || "this episode's picture"}.`, true);
     }
     const bl = $("#below .row");
     if (bl) bl.addEventListener("mouseleave", () => { described = target; $("#words").innerHTML = words(target); });
@@ -324,8 +339,11 @@ async function title(id) {
 }
 
 // The numbers, one press away: a sheet over the page's blurred picture.
-function details(it, main) {
+async function details(it, main) {
   const i = it.info || main.info || {};
+  const on = it.id && (it.type === "movie" || it.type === "episode") ? (await webAPI(`/api/v1/web/${it.id}`)).on : null;
+  const how = d => !d.ok ? `No. It can't show ${d.why}` : d.how === "repack" ? "Yes, repackaged as it plays" : d.how === "light" ? "Yes, by its Light copy" : "Yes";
+  const playsOn = on ? [["This device", on.here], ["TV", on.tv], ["Phone", on.phone]].filter(r => r[1]).map(([k, d]) => [k, how(d)]) : [];
   const pic = img(main.meta?.backdrop, "w780");
   const fig = (v, n) => `<div><div class="title fig one">${esc(v)}</div><div class="caption one">${esc(n)}</div></div>`;
   const group = (h, rows) => rows.length ? `<div class="group"><div class="caption">${h}</div>${rows.map(([a, b]) => `<div class="spec"><span class="body">${esc(a)}</span><span class="label fig one" title="${esc(b)}">${esc(b)}</span></div>`).join("")}</div>` : "";
@@ -343,7 +361,7 @@ function details(it, main) {
   s.innerHTML = `<div class="head"><div style="min-width:0"><h2 class="title">Details</h2>${it.type === "episode" ? `<div class="meta mut one" style="margin-top:.4rem">${esc(epLine(it))}</div>` : ""}</div>
       <button class="tool" aria-label="Close" title="Close">${icon("Close")}</button></div>
     <div class="figures">${i.res ? fig(i.res, QUALITY[i.res] || i.res) : ""}${i.mbps > 0 ? fig(i.mbps.toFixed(1), "Mb/s") : ""}${i.fps > 0 ? fig(i.fps.toFixed(3).replace(".000", ""), "fps") : ""}</div>
-    ${group("Picture", picture)}${group("Languages", langs)}${group("File", file)}`;
+    ${group("Plays on", playsOn)}${group("Picture", picture)}${group("Languages", langs)}${group("File", file)}`;
   document.body.append(sheetBg, scrim, s);
   s.focus();
   const close = () => { sheetBg.remove(); scrim.remove(); s.remove(); removeEventListener("keydown", onKey, true); $("#pInfo")?.focus(); };

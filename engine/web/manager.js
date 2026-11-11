@@ -36,9 +36,16 @@ const Manager = (() => {
   const videoWord = m => !m?.vcodec ? "" : m.vcodec.replace(" Main 10", "") + (m.vbits >= 10 ? " 10-bit" : "");
   const box = m => (m?.container || "").toUpperCase();
   // where a file plays, for the browser that's asking (the engine decides: play.go)
-  const plays = f => f.play === "light" ? "Browsers by its Light copy" : f.browser ? "Plays everywhere" : "TV and phone only";
-  const playsIn = f => ({ direct: "Browsers, TV and phone", repack: "Browsers (repackaged as it plays), TV and phone", light: "Browsers (by the Light copy), TV and phone" })[f.play]
-    || "TV and phone. This browser can't decode its picture; a Light copy would play here";
+  const DEVICES = [["here", "This browser"], ["tv", "TV"], ["phone", "Phone"]];
+  const howWord = d => !d.ok ? `No. It can't show ${d.why}` : d.how === "repack" ? "Yes, repackaged as it plays" : d.how === "light" ? "Yes, by its Light copy" : "Yes";
+  // one mark: a tick or a cross, then the word
+  const mark = (ok, word, title = "") => `<span class="plays ${ok ? "" : "no"}" ${title ? `title="${esc(title)}"` : ""}>${icon(ok ? "Ok" : "No")}${esc(word)}</span>`;
+  // a file on this device, for a list row
+  const playsHere = f => f.on?.here ? mark(f.on.here.ok, f.on.here.ok ? "Plays here" : "Not in this browser", howWord(f.on.here)) : "";
+  // a file on all three, in a line (a checked link) or as rows (a title's sheet)
+  const playsLine = on => on ? `<div class="playson">${DEVICES.map(([k, l]) => on[k] ? mark(on[k].ok, l, howWord(on[k])) : "").join("")}</div>` : "";
+  const playsRows = on => on ? `<div class="group"><div class="caption">Plays on</div>${DEVICES.map(([k, l]) => on[k]
+    ? `<div class="spec onrow"><span>${mark(on[k].ok, l)}</span><span class="${on[k].ok ? "" : "warnc"}">${esc(howWord(on[k]))}</span></div>` : "").join("")}</div>` : "";
   const probeLink = async url => api(`/api/probe?can=${await browserCan}`, { url });
   const facts = (...rows) => `<div class="mfacts">${rows.filter(r => r[1]).map(([k, v]) => `<div><div class="caption mut">${k}</div><div class="label fig">${esc(v)}</div></div>`).join("")}</div>`;
   const mediaFacts = (m, size) => facts(["Quality", quality(m)], ["Video", videoWord(m)], ["File", box(m)], ["Audio", m?.audio || ""],
@@ -103,8 +110,8 @@ const Manager = (() => {
     if (!r.error) { TITLES = r.titles || []; render(); }
   }
   async function loadSystem() {
-    const r = await api("/api/system");
-    if (!r.error) { SYS = r; if (tab === "system") render(); }
+    const [r, tv, phone] = await Promise.all([api("/api/system"), api("/api/v1/app"), api("/api/v1/phone-app")]);
+    if (!r.error) { SYS = r; SYS.apps = [["TV app", "/api/v1/app.apk", "media-core.apk", tv], ["Phone app", "/api/v1/phone-app.apk", "media-core-phone.apk", phone]]; if (tab === "system") render(); }
   }
 
   // ---------- the page ----------
@@ -243,9 +250,9 @@ const Manager = (() => {
         <pre>${esc((j.log || []).join("\n"))}</pre></div>` : "";
     const pic = posterFor(j);
     return `<div class="thumb">${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : ""}</div>
-      <div class="main"><div class="label one title1">${esc(name)}</div><div class="meta sub one">${sub.map(esc).join(" · ")}</div></div>
-      ${right ? `<div class="meta size fig">${esc(right)}</div>` : ""}<div class="acts">${acts.join("")}</div>${msg}${more}
-      ${bar !== "" ? `<div class="jobbar"><i style="width:${bar}%"></i></div>` : ""}`;
+      <div class="main"><div class="label one title1">${esc(name)}</div><div class="meta sub one">${sub.map(esc).join(" · ")}</div>
+        ${bar !== "" ? `<div class="jobbar"><i style="width:${bar}%"></i></div>` : ""}</div>
+      ${right ? `<div class="meta size fig">${esc(right)}</div>` : ""}<div class="acts">${acts.join("")}</div>${msg}${more}`;
   }
   async function jobClick(e, row) {
     const id = row.dataset.id, btn = e.target.closest("button[data-act]");
@@ -275,6 +282,8 @@ const Manager = (() => {
   }
 
   async function bodyClick(e) {
+    const set = tab === "system" && e.target.closest("[data-set]");
+    if (set) { setSetting(set.dataset.set, +set.dataset.v); return; }
     if (e.target.closest("[data-clear]")) { const r = await api("/api/clear", {}); note(`Cleared ${r.removed || 0}`); return; }
     const k = e.target.closest("[data-sec]");
     if (k) { sec = k.dataset.sec; if (sec === "music") loadMusic(); drawLibrary(); return; }
@@ -285,10 +294,6 @@ const Manager = (() => {
       const d = e.target.closest("[data-del]");
       if (d) { e.stopPropagation(); remove(d.dataset); return; }
       if (row.dataset.t) openSheet(row.dataset.t);
-    }
-    if (tab === "system") {
-      const s = e.target.closest("[data-set]");
-      if (s) setSetting(s.dataset.set, +s.dataset.v);
     }
   }
 
@@ -310,12 +315,12 @@ const Manager = (() => {
   }
   const loadingHTML = u => `<div class="facts" style="margin:0"><div class="loading s"></div><span class="one mut">Reading ${esc(u.length > 90 ? u.slice(0, 90) + "…" : u)}</span></div>`;
   const verdict = p => {
-    const t = downloadTime(p.size), tail = t ? ` About ${t} to download.` : "";
-    const far = p.heavy ? " Away from home it needs a fast connection, or a Light copy." : "";
-    if (!p.media) return `Picture and sound details show after the download.${tail}`;
-    if (p.play === "direct") return `Plays everywhere as it is.${far}${tail}`;
-    if (p.play === "repack") return `Plays everywhere. Browsers get it repackaged as it plays; the file stays as it is.${far}${tail}`;
-    return `Plays on TV and phone. This browser can't decode its picture; a Light copy would play here.${tail}`;
+    const t = downloadTime(p.size), time = t ? `About ${t} to download.` : "";
+    if (!p.media) return `Picture and sound details show after the download. ${time}`;
+    const cant = DEVICES.filter(([k]) => p.on?.[k] && !p.on[k].ok).map(([k, l]) => `${l === "This browser" ? "this browser" : "the " + l.toLowerCase()} can't show ${p.on[k].why}`);
+    const fix = cant.length ? `${cant.join(", and ").replace(/^./, c => c.toUpperCase())}. A Light copy would play there. ` : "";
+    const far = p.heavy ? "Away from home it needs a fast connection, or a Light copy. " : "";
+    return (fix + far + time).trim();
   };
 
   async function probeInto(url, el) {
@@ -342,6 +347,7 @@ const Manager = (() => {
     const both = el._wantLight && el._light?.probe;
     el.innerHTML = `<div class="head"><div class="heading" data-title></div><button class="tool" data-x aria-label="Dismiss" title="Dismiss">${icon("Close")}</button></div>
       ${m ? mediaFacts(m, p.size) : facts(["Size", bytes(p.size)])}
+      ${playsLine(p.on)}
       <p class="meta mut mline">${verdict(p)}</p>
       ${(p.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join("")}
       <div class="mline meta mut"><span data-dest></span> <button class="kind mut medit" data-edit>${el._edit ? "Done" : "Change"}</button></div>
@@ -462,12 +468,17 @@ const Manager = (() => {
   }
   function titleLine(t) {
     if (t.type === "show") {
-      const eps = t.episodes || [], first = eps[0]?.info || {}, inB = eps.filter(e => e.browser).length;
-      return [plural(t.seasons, "season"), plural(eps.length, "episode"), quality(first), videoWord(first), box(first),
-        !eps.length ? "" : inB === eps.length ? "Plays everywhere" : inB ? `${inB} of ${eps.length} in this browser` : "TV and phone only"].filter(Boolean).join(" · ");
+      const eps = t.episodes || [], first = eps[0]?.info || {};
+      return [plural(t.seasons, "season"), plural(eps.length, "episode"), quality(first), videoWord(first), box(first)].filter(Boolean).join(" · ");
     }
     const m = t.info || {};
-    return [quality(m), videoWord(m), box(m), t.light ? "Light copy" : plays(t)].filter(Boolean).join(" · ");
+    return [quality(m), videoWord(m), box(m), t.light ? "has a Light copy" : ""].filter(Boolean).join(" · ");
+  }
+  function rowPlays(t) {
+    if (t.type !== "show") return playsHere(t);
+    const eps = t.episodes || [], n = eps.filter(e => e.on?.here?.ok).length;
+    if (!eps.length) return "";
+    return n === eps.length ? mark(true, "Plays here") : n ? mark(true, `${n} of ${eps.length} play here`) : mark(false, "Not in this browser");
   }
   function drawLibrary() {
     const body = $("#body"); if (!body || tab !== "library") return;
@@ -489,7 +500,7 @@ const Manager = (() => {
     list.innerHTML = !items.length ? `<div class="empty">${query ? `Nothing here matches “${esc(query)}”.` : "Downloads land here once they're done."}</div>`
       : items.map(t => `<div class="lrow" data-t="${t.id}"><div class="thumb">${t.poster ? `<img src="${img(t.poster, "w185")}" alt="" loading="lazy">` : ""}</div>
         <div class="main"><div class="label one title1">${esc(t.title)}${t.year ? ` <span class="mut mw">${t.year}</span>` : ""}</div>
-        <div class="meta sub one">${esc(t.busy ? "A job is working on this" : titleLine(t))}</div></div><div class="meta size fig">${bytes(t.size)}</div></div>`).join("");
+        <div class="meta sub one">${esc(t.busy ? "A job is working on this" : titleLine(t))}</div></div>${rowPlays(t)}<div class="meta size fig">${bytes(t.size)}</div></div>`).join("");
   }
   function drawMusic(list) {
     if (!LIB) { list.innerHTML = `<div class="empty">Loading</div>`; return; }
@@ -526,9 +537,9 @@ const Manager = (() => {
     const m = f.info || {};
     const langs = m.subs || [];
     const subs = (langs.length > 6 ? `${langs.slice(0, 5).join(", ")} and ${langs.length - 5} more` : langs.join(", ")) + (langs.length && m.pgs ? " (some as pictures)" : "");
-    return `<div class="group"><div class="caption">${label}</div>
+    return `${label === "File" ? playsRows(f.on) : ""}<div class="group"><div class="caption">${label}</div>
       ${[["Quality", quality(m)], ["Video", videoWord(m)], ["File", [box(m), bytes(f.size - (f.light?.size || 0))].filter(Boolean).join(" · ")], ["Audio", (m.tracks || []).map(t => t.replace(/ · .*$/, "")).filter((t, i, a) => a.indexOf(t) === i).join(", ") || m.audio || ""],
-        ["Subtitles", subs], ["Plays in", playsIn(f)]].filter(r => r[1]).map(([k, v]) => `<div class="spec ${v.length > 34 ? "long" : ""}"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>
+        ["Subtitles", subs]].filter(r => r[1]).map(([k, v]) => `<div class="spec ${v.length > 34 ? "long" : ""}"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>
       ${f.light ? `<div class="group"><div class="caption">Light copy</div>${[["Quality", quality(f.light.info)], ["Video", videoWord(f.light.info)], ["File", `${box(f.light.info)} · ${bytes(f.light.size)}`]]
         .filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div>` : ""}`;
   };
@@ -560,7 +571,7 @@ const Manager = (() => {
     for (const e of t.episodes || []) (bySeason[e.season] ||= []).push(e);
     s.innerHTML = `<div class="head"><div style="min-width:0"><h2 class="title">${esc(t.title)}</h2><div class="meta mut" style="margin-top:.4rem">${[t.year, plural((t.episodes || []).length, "episode"), bytes(t.size)].filter(Boolean).join(" · ")}</div></div>${close}</div>
       ${Object.entries(bySeason).map(([n, eps]) => `<div class="group"><div class="caption">${n === "0" ? "Specials" : "Season " + n}</div>
-        ${eps.map(e => `<button class="frow mrow" data-ep="${e.id}"><span class="name meta">${e.episode} · ${esc(e.title)}<span class="mut"> · ${esc(e.light ? "Light copy" : plays(e))}</span></span><span class="meta size fig">${bytes(e.size)}</span></button>`).join("")}</div>`).join("")}
+        ${eps.map(e => `<button class="frow mrow" data-ep="${e.id}"><span class="name meta">${e.episode} · ${esc(e.title)}</span>${e.on?.here?.ok === false ? mark(false, "Not here", howWord(e.on.here)) : ""}<span class="meta size fig">${bytes(e.size)}</span></button>`).join("")}</div>`).join("")}
       <div class="sactions"><button class="word mwide danger" data-del data-path="${esc(t.path)}" data-name="${esc(t.title)}" data-size="${t.size}">Delete the show<span class="meta mut">Frees ${bytes(t.size)}</span></button></div>`;
   }
   async function sheetClick(e) {
@@ -619,30 +630,39 @@ const Manager = (() => {
     if (!SYS || !S) { if (body._k !== "sys0") { body._k = "sys0"; body.innerHTML = `<div class="empty">Loading</div>`; } return; }
     const L = SYS.library, D = SYS.data, used = L.total - L.free;
     const pct = n => L.total ? Math.max(n > 0 ? .3 : 0, n / L.total * 100).toFixed(2) : 0;
-    const parts = [["Films", L.films, "var(--ink)"], ["Shows", L.shows, "var(--muted)"], ["Music", L.music, "var(--overlay)"]];
+    const parts = [["Films", L.films, "var(--ink)"], ["Shows", L.shows, "var(--muted)"], ["Music", L.music, "#5E636D"]];
     const other = Math.max(0, used - L.films - L.shows - L.music);
-    const s = S.settings, seg = (key, vals) => `<div class="seg">${vals.map(([v, l]) => `<button data-set="${key}" data-v="${v}" class="${s[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
+    const s = S.settings, seg = (key, vals) => `<div class="seg" role="radiogroup">${vals.map(([v, l]) => `<button role="radio" aria-checked="${s[key] === v}" data-set="${key}" data-v="${v}" class="${s[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const temp = SYS.temp_c ? `${Math.round(SYS.temp_c)}°C` : "";
     const relayed = (SYS.now || []).filter(n => n.relayed).map(n => n.device);
-    const html = `<div class="msys"><section><div class="title fig">${bytes(L.free)} free</div><div class="meta mut" style="margin-top:.4rem">of ${bytes(L.total)} on the library disk</div>
+    const row = (k, v, cls = "") => v ? `<div class="spec"><span>${k}</span><span class="fig ${cls}">${esc(v)}</span></div>` : "";
+    const devs = SYS.devices || [], now = SYS.now || [];
+    const days = SYS.uptime_s >= 2 * 86400 ? plural(Math.floor(SYS.uptime_s / 86400), "day") : dur(SYS.uptime_s).replace(/ \d+ min$/, "");
+    const html = `<div class="sysgrid"><div class="syscol">
+      <section class="box"><div class="boxh">Library disk</div>
+        <div class="title fig">${bytes(L.free)} free</div><div class="meta mut" style="margin-top:.4rem">of ${bytes(L.total)}</div>
         <div class="mbar">${parts.map(([, n, c]) => `<i style="width:${pct(n)}%;background:${c}"></i>`).join("")}</div>
         ${parts.map(([k, n, c]) => `<div class="spec mkey"><span><i class="mdot" style="background:${c}"></i>${k}</span><span class="fig">${bytes(n)}</span></div>`).join("")}
         ${L.light ? `<div class="spec mkey"><span><i class="mdot" style="background:transparent"></i>Light copies, within those</span><span class="fig">${bytes(L.light)}</span></div>` : ""}
-        ${other > 5e9 ? `<div class="meta mut mline">Another ${bytes(other)} on that disk isn't the library.</div>` : ""}
-        ${D.web ? `<div class="meta mut mline">Browser copies use ${bytes(D.web)} on the system disk, which has ${bytes(D.free)} free.</div>` : ""}</section>
-      <section><div class="caption mut">mint</div>
-        ${[["Engine", "Running"], ["Downloader", SYS.aria2 ? "Running" : "Not answering"],
-          ["Playing now", (SYS.now || []).length ? SYS.now.map(n => `${n.title} on ${n.device}`).join(", ") : "Nothing"],
-          ["Processor", SYS.cores ? `${Math.min(100, Math.round(SYS.load / SYS.cores * 100))}% busy` : ""],
-          ["Temperature", temp], ["Memory free", `${bytes(SYS.mem_avail)} of ${bytes(SYS.mem_total)}`], ["Last backup", SYS.backup_at ? ago(SYS.backup_at) : "None yet"],
-          ["Up for", dur(SYS.uptime_s).replace(/ \d+ min$/, "") || ""]].filter(r => r[1]).map(([k, v]) => `<div class="spec"><span>${k}</span><span class="fig">${esc(v)}</span></div>`).join("")}
-        ${(SYS.devices || []).length ? `<div class="caption mut" style="margin-top:2.4rem">Your devices, away from home</div>
-          ${SYS.devices.map(d => `<div class="spec"><span>${esc(d.name)}</span><span class="${d.active && !d.direct ? "warnc" : ""}">${!d.online ? "Offline" : !d.active ? "Idle" : d.direct ? "Connected directly" : "Through the relay: too slow for films"}</span></div>`).join("")}` : ""}
-        ${relayed.length ? `<div class="warn">${esc(relayed.join(", "))} ${relayed.length > 1 ? "are" : "is"} playing through Tailscale's relay, which carries about 10 Mb/s. The direct path to mint has dropped: the router's port forward for 41641 is the usual cause.</div>` : ""}</section></div>
-      <div class="group" style="margin-top:3.2rem"><div class="setrow" style="border-top:0"><div>Download limit<small>MB/s</small></div>${seg("limit_mbps", [[0, "Off"], [5, "5"], [10, "10"], [20, "20"]])}</div>
-        <div class="setrow"><div>Downloads at once</div>${seg("max_concurrent", [[1, "1"], [2, "2"], [3, "3"]])}</div>
-        <div class="setrow"><div>Media Core for TV and phone<small>Installs the app. It updates itself after that.</small></div>
-          <div class="btns" style="margin:0"><a class="word" href="/api/v1/app.apk" download="media-core.apk">TV app</a><a class="word" href="/api/v1/phone-app.apk" download="media-core-phone.apk">Phone app</a></div></div></div>`;
+        ${other > 5e9 ? `<div class="spec mkey"><span><i class="mdot" style="background:transparent"></i>Not the library</span><span class="fig">${bytes(other)}</span></div>` : ""}</section>
+      <section class="box"><div class="boxh">Downloads</div>
+        <div class="setrow"><div>Speed limit</div>${seg("limit_mbps", [[0, "None"], [5, "5 MB/s"], [10, "10 MB/s"], [20, "20 MB/s"]])}</div>
+        <div class="setrow"><div>At the same time</div>${seg("max_concurrent", [[1, "1"], [2, "2"], [3, "3"]])}</div></section>
+      <section class="box"><div class="boxh">Media Core for TV and phone</div>
+        ${(SYS.apps || []).map(([name, href, file, a]) => `<div class="setrow"><div>${name}<small>${a?.version_name ? `Version ${esc(a.version_name)} · ${bytes(a.size)}` : "No build on mint yet"}</small></div>
+          ${a?.version_name ? `<a class="word" href="${href}" download="${file}">Download</a>` : ""}</div>`).join("")}
+        <p class="meta mut boxnote">Install it once. After that each app updates itself from mint.</p></section></div>
+      <div class="syscol">
+      <section class="box"><div class="boxh">mint</div>
+        ${row("Engine", "Running")}${row("Downloader", SYS.aria2 ? "Running" : "Not answering", SYS.aria2 ? "" : "warnc")}
+        ${row("Playing now", now.length ? now.map(n => `${n.title} on ${n.device}`).join(", ") : "Nothing")}
+        ${row("Processor", SYS.cores ? `${Math.min(100, Math.round(SYS.load / SYS.cores * 100))}% busy` : "")}${row("Temperature", temp)}
+        ${row("Memory free", `${bytes(SYS.mem_avail)} of ${bytes(SYS.mem_total)}`)}${row("Last backup", SYS.backup_at ? ago(SYS.backup_at) : "None yet")}
+        ${row("Running for", days)}</section>
+      ${devs.length ? `<section class="box"><div class="boxh">Your devices away from home</div>
+        ${devs.map(d => row(esc(d.name), !d.online ? "Offline" : !d.active ? "Connected, idle" : d.direct ? "Connected directly" : "Through the relay: too slow for films", d.active && !d.direct ? "warnc" : !d.online ? "mut" : "")).join("")}
+        ${relayed.length ? `<div class="warn">${esc(relayed.join(", "))} ${relayed.length > 1 ? "are" : "is"} playing through Tailscale's relay, which carries about 10 Mb/s. The direct path to mint has dropped: the router's port forward for 41641 is the usual cause.</div>` : ""}</section>` : ""}</div>
+      ${D.web ? `<p class="meta mut" style="grid-column:1/-1">Old browser copies use ${bytes(D.web)} on the system disk, which has ${bytes(D.free)} free.</p>` : ""}</div>`;
     if (body._k === "sys" && body._h === html) return;
     body._k = "sys"; body._h = html; body.innerHTML = html;
   }
