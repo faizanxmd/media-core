@@ -5,7 +5,8 @@ both and the TV banner (`app/src/main/res/drawable-xhdpi/banner.png`), fitted to
 The font isn't kept here; get it from google/fonts.
 
 The app icon (`ic_foreground.xml`, one copy in each app), the web icon (`web/icon.svg`) and the engine's PNG icons (`icon.go`) repeat the mark's
-numbers by hand.
+numbers by hand. Only the TV app's copy has the refined mark so far: Montserrat's own ring (thinner at the top and bottom) and the lit
+core with its glow. The phone, web and engine copies still draw the older mark.
 
 Third-party:
 - Montserrat, SIL Open Font License 1.1, Copyright 2024 The Montserrat.Git Project Authors. Used only to draw the logo.

@@ -1,8 +1,25 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <!-- the O of the Media Core wordmark: a ring around a solid core -->
-    <path android:strokeColor="#FFF4F5F8" android:strokeWidth="8.75"
-        android:pathData="M28.38,54a25.62,25.62 0 1,0 51.24,0a25.62,25.62 0 1,0 -51.24,0" />
-    <path android:fillColor="#FF1E3AB8"
-        android:pathData="M44.37,54a9.63,9.63 0 1,0 19.26,0a9.63,9.63 0 1,0 -19.26,0" />
+    <!-- the O of the Media Core wordmark (android/brand/mark.svg): Montserrat's ring, thinner at the top
+         and bottom, around a lit core whose soft cobalt glow fills the counter -->
+    <path android:pathData="M33.886,54a20.114,20.114 0 1,0 40.228,0a20.114,20.114 0 1,0 -40.228,0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="54" android:gradientRadius="20.114">
+                <item android:offset="0" android:color="#B31D39F3" />
+                <item android:offset="1" android:color="#001D39F3" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFF4F5F8" android:fillType="evenOdd"
+        android:pathData="M24,54a30,30 0 1,0 60,0a30,30 0 1,0 -60,0ZM35.501,54a18.499,20.114 0 1,0 36.998,0a18.499,20.114 0 1,0 -36.998,0Z" />
+    <path android:pathData="M42.597,54a11.403,11.403 0 1,0 22.806,0a11.403,11.403 0 1,0 -22.806,0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="54" android:gradientRadius="11.403">
+                <item android:offset="0" android:color="#FF7FA2FF" />
+                <item android:offset="0.55" android:color="#FF3A5CF8" />
+                <item android:offset="1" android:color="#FF1D39F3" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>
