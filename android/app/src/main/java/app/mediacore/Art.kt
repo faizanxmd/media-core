@@ -27,6 +27,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
@@ -41,7 +42,7 @@ import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 /**
- * Every screen's background: its picture, the layered gradients over it and the film grain, drawn once off the UI
+ * Every screen's background: its picture and the layered gradients over it, drawn once off the UI
  * thread into one picture the size of the screen (SPEC.md, Performance). Moving around then never redraws any of it,
  * and changing the picture is one fade between two finished pictures.
  */
@@ -71,10 +72,20 @@ object Art {
 
     fun cached(spec: ArtSpec): Bitmap? = cache.get(spec)
 
+    /**
+     * The same picture at the panel's own size (4K), for the sharp layer. Not cached and its source not kept: it's
+     * drawn once onto the layer and let go, so at most one is ever in memory.
+     */
+    suspend fun bakeSharp(ctx: Context, spec: ArtSpec, w: Int, h: Int): Bitmap? {
+        val src = spec.url?.let { load(ctx, it, w, h, keep = false) } ?: return null
+        return withContext(Dispatchers.Default) { draw(spec, src, w, h) }
+    }
+
     /** A picture as plain pixels (not a GPU-only bitmap: it's drawn into another), decoded near the size it's shown. */
-    suspend fun load(ctx: Context, url: String, w: Int, h: Int): Bitmap? {
+    suspend fun load(ctx: Context, url: String, w: Int, h: Int, keep: Boolean = true): Bitmap? {
         val r = ctx.imageLoader.execute(
-            ImageRequest.Builder(ctx).data(url).size(w, h).precision(Precision.INEXACT).allowHardware(false).build(),
+            ImageRequest.Builder(ctx).data(url).size(w, h).precision(Precision.INEXACT).allowHardware(false)
+                .apply { if (!keep) memoryCachePolicy(coil3.request.CachePolicy.DISABLED) }.build(),
         )
         return (r as? SuccessResult)?.image?.toBitmap()
     }
@@ -87,7 +98,8 @@ object Art {
         when (spec.style) {
             ArtStyle.Home -> {
                 src?.let { cover(c, it, RectF(0f, 0f, w.toFloat(), h.toFloat()), 0.5f, spec.posY) }
-                horizontal(c, w, h, BASE, 0f to .86f, .16f to .78f, .40f to .42f, .62f to 0f)
+                // stronger than the board's on the words' side: real backdrops are far brighter than the board's
+                horizontal(c, w, h, BASE, 0f to .94f, .30f to .86f, .50f to .55f, .72f to 0f)
                 vertical(c, w, h, BASE, .34f to 0f, .50f to .62f, .68f to .9f, 1f to .97f)
                 vignette(c, w, h, .66f, .34f)
                 topShade(c, w, h, .5f, 160 * f)
@@ -97,14 +109,14 @@ object Art {
                     src?.let { blurred(c, it, RectF(-80 * f, -80 * f, 2000 * f, 1160 * f), 0.5f, 0.3f, 8, 0.8f) }
                     c.drawColor(argb(.72f, BASE))
                 } else src?.let { cover(c, it, RectF(0f, 0f, w.toFloat(), h.toFloat()), 0.5f, spec.posY) }
-                horizontal(c, w, h, BASE, 0f to .9f, .20f to .82f, .44f to .44f, .66f to 0f)
+                horizontal(c, w, h, BASE, 0f to .95f, .30f to .88f, .52f to .55f, .74f to 0f)
                 vertical(c, w, h, BASE, .36f to 0f, .56f to .66f, .72f to .94f, 1f to .98f)
                 vignette(c, w, h, .66f, .30f)
                 topShade(c, w, h, .62f, 200 * f)
             }
             ArtStyle.Show -> {
                 src?.let { cover(c, it, RectF(0f, 0f, w.toFloat(), h.toFloat()), 0.5f, spec.posY) }
-                horizontal(c, w, h, BASE, 0f to .9f, .20f to .82f, .44f to .44f, .66f to 0f)
+                horizontal(c, w, h, BASE, 0f to .95f, .30f to .88f, .52f to .55f, .74f to 0f)
                 vertical(c, w, h, BASE, .34f to 0f, .52f to .66f, .70f to .95f, .86f to 1f)
                 topShade(c, w, h, .62f, 200 * f)
             }
@@ -119,7 +131,6 @@ object Art {
             }
             ArtStyle.Plain -> {}
         }
-        grain(c, w, h)
         return out
     }
 
@@ -185,27 +196,6 @@ object Art {
             shader = LinearGradient(0f, 0f, 0f, to, argb(a, DEEP), argb(0f, DEEP), Shader.TileMode.CLAMP)
         })
 
-    /** Faint film grain: grey noise laid over the picture in overlay mode at 8%, as the boards' feTurbulence does. */
-    private fun grain(c: Canvas, w: Int, h: Int) {
-        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), Paint().apply {
-            shader = BitmapShader(grainTile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-            xfermode = PorterDuffXfermode(PorterDuff.Mode.OVERLAY)
-            alpha = (0.08f * 255).toInt()
-        })
-    }
-
-    private val grainTile: Bitmap by lazy {
-        val n = 256
-        val rnd = Random(7)
-        val px = IntArray(n * n) {
-            // a fine fractal noise: mostly per pixel, a little coarser texture under it
-            val v = (128 + (rnd.nextFloat() + rnd.nextFloat() + rnd.nextFloat() - 1.5f) * 120).toInt().coerceIn(0, 255)
-            val a = (128 + (rnd.nextFloat() - 0.5f) * 160).toInt().coerceIn(0, 255)
-            (a shl 24) or (v shl 16) or (v shl 8) or v
-        }
-        Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888)
-    }
-
     /** One horizontal and one vertical box pass over [px]: three of these make a soft Gaussian. Keeps alpha. */
     fun boxBlur(px: IntArray, w: Int, h: Int, r: Int) {
         if (r <= 0) return
@@ -249,23 +239,61 @@ class ArtState(private val ctx: Context, private val scope: CoroutineScope) {
     private var wanted: ArtSpec? = null
     private var job: Job? = null
 
+    /** How much of the 1080p picture covers the sharp layer: 1 while anything moves, 0 once the 4K copy is up. */
+    val cover = Animatable(1f)
+    private var sharp: SharpLayer? = null
+    private var sharpJob: Job? = null
+
     fun show(spec: ArtSpec, ms: Int) {
         if (spec == wanted) return
         wanted = spec
         job?.cancel()
+        sharpJob?.cancel()
         job = scope.launch {
             val bmp = runCatching { Art.bake(ctx, spec, w, h) }.getOrNull() ?: return@launch
             if (wanted != spec) return@launch
             val img = bmp.asImageBitmap()
             // a fade still running finishes where it was headed
             if (fade.value < 1f) { back = front; fade.snapTo(1f) }
+            cover.snapTo(1f) // the fade happens in the 1080p picture, over the sharp layer
             back = front
             front = img
             fade.snapTo(0f) // the first picture fades up from the base colour, later ones over the last
 
             fade.animateTo(1f, Move.fade(ms))
             back = null
+            sharpen(spec)
         }
+    }
+
+    /**
+     * Once a picture has settled, its 4K copy is drawn onto the sharp layer underneath and the 1080p one fades off
+     * it (150 ms). Skipped for pictures that are blurred anyway, and when the TV is short of memory.
+     */
+    private fun sharpen(spec: ArtSpec) {
+        val layer = sharp ?: return
+        if (spec.style !in SharpLayer.Styles || spec.url == null || !SharpLayer.roomFor(ctx)) return
+        sharpJob?.cancel()
+        sharpJob = scope.launch {
+            val big = runCatching { Art.bakeSharp(ctx, spec, layer.w, layer.h) }.getOrNull() ?: return@launch
+            if (wanted != spec || sharp !== layer) return@launch
+            if (!withContext(Dispatchers.Default) { layer.draw(big) }) return@launch
+            if (wanted != spec) return@launch
+            cover.animateTo(0f, Move.fade(Move.Focus))
+        }
+    }
+
+    /** The sharp layer's surface is ready (the app opened, or came back from the player). */
+    fun attach(layer: SharpLayer) {
+        sharp = layer
+        wanted?.let { if (fade.value >= 1f) sharpen(it) }
+    }
+
+    /** Its surface is gone (the player opened): the 1080p picture covers until a new 4K copy is up. */
+    fun detach(layer: SharpLayer) {
+        if (sharp === layer) sharp = null
+        sharpJob?.cancel()
+        scope.launch { cover.snapTo(1f) }
     }
 
     /** Draws a picture ahead, so the screen that wants it next finds it ready. */
@@ -279,9 +307,83 @@ val LocalArt = staticCompositionLocalOf<ArtState> { error("no art") }
 
 @Composable
 fun ArtLayer(art: ArtState, modifier: Modifier = Modifier) {
-    ComposeCanvas(modifier.fillMaxSize()) {
-        art.back?.let { drawImage(it) }
-        art.front?.let { drawImage(it, alpha = art.fade.value) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val panel = androidx.compose.runtime.remember { SharpLayer.panel(ctx) }
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
+        if (panel != null) androidx.compose.ui.viewinterop.AndroidView(
+            factory = { c -> android.view.SurfaceView(c).also { SharpLayer(it, panel.first, panel.second, art) } },
+            modifier = Modifier.fillMaxSize(),
+        )
+        ComposeCanvas(Modifier.fillMaxSize().graphicsLayer { alpha = art.cover.value }) {
+            art.back?.let { drawImage(it) }
+            art.front?.let { drawImage(it, alpha = art.fade.value) }
+        }
+    }
+}
+
+/**
+ * The background at the panel's own resolution. Android draws this TV's apps at 1920 x 1080 and stretches them to
+ * its 4K panel, which softens every picture; a surface of its own reaches the panel at full size, as video does.
+ * Only still pictures go here, drawn once each: every fade happens in the 1080p picture above it.
+ */
+class SharpLayer(private val view: android.view.SurfaceView, val w: Int, val h: Int, private val art: ArtState) : android.view.SurfaceHolder.Callback {
+    init {
+        view.holder.setFixedSize(w, h)
+        view.holder.setFormat(android.graphics.PixelFormat.RGBX_8888)
+        view.holder.addCallback(this)
+    }
+
+    /** Puts [b] on the surface. Any thread; false if the surface has gone. */
+    fun draw(b: Bitmap): Boolean = synchronized(this) {
+        val c = runCatching { view.holder.lockCanvas() }.getOrNull() ?: return false
+        try {
+            c.drawBitmap(b, null, android.graphics.Rect(0, 0, c.width, c.height), Paint(Paint.FILTER_BITMAP_FLAG))
+        } finally {
+            view.holder.unlockCanvasAndPost(c)
+        }
+        true
+    }
+
+    override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+        synchronized(this) {
+            runCatching { holder.lockCanvas() }.getOrNull()?.let { c -> c.drawColor(0xFF090B0E.toInt()); holder.unlockCanvasAndPost(c) }
+        }
+        art.attach(this)
+    }
+
+    override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
+
+    override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+        synchronized(this) { art.detach(this) }
+    }
+
+    companion object {
+        /** The styles that show a picture as it is; the blurred ones gain nothing at 4K. */
+        val Styles = setOf(ArtStyle.Home, ArtStyle.Film, ArtStyle.Show)
+
+        /** The panel's size when it's bigger than what apps are drawn at, else null (no sharp layer at all). */
+        fun panel(ctx: Context): Pair<Int, Int>? = runCatching {
+            val d = (ctx.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager)
+                .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+            val m = d.mode
+            val pw = maxOf(m.physicalWidth, m.physicalHeight)
+            val ph = minOf(m.physicalWidth, m.physicalHeight)
+            val shown = ctx.resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
+            if (pw > shown * 1.25f) pw to ph else null
+        }.getOrNull()
+
+        /**
+         * Room for one more 4K picture (two at once while it's drawn, about 66 MB): the app's own heap has it spare
+         * and the TV isn't short of memory. If not, the 1080p picture simply stays.
+         */
+        fun roomFor(ctx: Context): Boolean {
+            val rt = Runtime.getRuntime()
+            val free = rt.maxMemory() - (rt.totalMemory() - rt.freeMemory())
+            if (free < 160L shl 20) return false
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val mi = android.app.ActivityManager.MemoryInfo().also(am::getMemoryInfo)
+            return !mi.lowMemory && mi.availMem > 400L shl 20
+        }
     }
 }
 
