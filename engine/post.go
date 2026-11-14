@@ -301,6 +301,18 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 		if len(videos) == 0 {
 			return nil, errors.New("no video file found")
 		}
+		// A batch of episodes named like a movie ("Show S01P2"): stop before
+		// keeping one and deleting the rest, so it can be queued as a show.
+		if eps := 0; len(videos) > 1 {
+			for _, v := range videos {
+				if _, e := epNumber(filepath.Base(v)); e > 0 {
+					eps++
+				}
+			}
+			if eps > 1 {
+				return nil, fmt.Errorf("this holds %d episodes, not one movie: queue it as a TV show", eps)
+			}
+		}
 		main := videos[0]
 		for _, v := range videos {
 			if size(v) > size(main) {

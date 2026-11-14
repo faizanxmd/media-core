@@ -31,6 +31,18 @@ func TestGuessMatchesPython(t *testing.T) {
 	}
 }
 
+func TestGuessSeasonPart(t *testing.T) {
+	for _, name := range []string{
+		"Chumbak.S01P2.1080p.NF.WEB-DL.DDP5.1.Atmos.H.265-XDMovies.com-1-001.zip",
+		"Chumbak S01 Part 2 1080p.zip",
+	} {
+		p := guess(name)
+		if p.Kind != "tv" || p.Title != "Chumbak" || string(p.Season) != "1" {
+			t.Errorf("%s: got %+v", name, p)
+		}
+	}
+}
+
 func TestEpNumber(t *testing.T) {
 	for name, want := range map[string][2]int{
 		"Show.S02E05.mkv": {2, 5}, "show 3x07.mkv": {3, 7}, "Show Episode 12.mkv": {0, 12},

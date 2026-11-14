@@ -55,7 +55,7 @@ var (
 	reSep     = regexp.MustCompile(`[._]`)
 	reBracket = regexp.MustCompile(`\[[^\]]*\]`)
 	reSE      = regexp.MustCompile(`(?i)\bS(\d{1,2})[ ._-]?E(\d{1,3})\b`)
-	reSeason  = regexp.MustCompile(`(?i)\b(?:S(\d{1,2})|Season ?(\d{1,2}))\b`)
+	reSeason  = regexp.MustCompile(`(?i)\b(?:S(\d{1,2})(?:P(?:art)? ?\d{1,2})?|Season ?(\d{1,2}))\b`)
 	reYear    = regexp.MustCompile(`\(?\b(19[2-9]\d|20[0-4]\d)\b\)?`)
 	reQuality = regexp.MustCompile(`(?i)\b(2160p|1080p|720p|480p|WEB|WEB-?DL|BluRay|REMUX|HDR|DV|x26[45]|H ?26[45])\b`)
 	reBad     = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
