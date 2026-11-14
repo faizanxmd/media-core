@@ -71,6 +71,12 @@ import kotlin.math.abs
 class PlayerActivity : ComponentActivity(), PlayerActions {
     private lateinit var player: ExoPlayer
     private lateinit var view: PlayerView
+
+    // ---------- the way in and out (the redesign's Motion): nothing else in the player changes ----------
+    private lateinit var shade: android.view.View // over the video until its first frame, then fades away (300 ms)
+    private lateinit var curtain: android.view.View // over everything: leaving fades the screen to black (200 ms)
+    private var leaving = false
+    private val ease = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
     private val st = PlayerState()
     private var tv = false
     private val queue = mutableListOf<JSONObject>()
@@ -734,7 +740,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             refresh()
         }
 
-        override fun onRenderedFirstFrame() { st.firstFrame = true }
+        override fun onRenderedFirstFrame() {
+            st.firstFrame = true
+            if (::shade.isInitialized && shade.alpha > 0f) shade.animate().alpha(0f).setDuration(if (Move.reduced) 100 else 300).setInterpolator(ease).start()
+        }
 
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
             if (reason == Player.DISCONTINUITY_REASON_SEEK) stall.reset() // loading after a skip isn't a stall
@@ -919,6 +928,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             }
         }
         root.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        shade = android.view.View(this).apply { setBackgroundColor(Color.BLACK) }
+        root.addView(shade, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         val overlay = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -934,7 +945,24 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             }
         }
         root.addView(overlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        curtain = android.view.View(this).apply { setBackgroundColor(Color.BLACK); alpha = 0f }
+        root.addView(curtain, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
+    }
+
+    /** Leaving while on screen: fade to black first; the app underneath then fades up from black. */
+    override fun finish() {
+        if (leaving || !::curtain.isInitialized || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            leaving = true
+            super.finish()
+            @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+            return
+        }
+        leaving = true
+        curtain.animate().alpha(1f).setDuration(if (Move.reduced) 100 else Move.Black.toLong()).setInterpolator(ease).withEndAction {
+            super.finish()
+            @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+        }.start()
     }
 
     override fun onPause() {
