@@ -142,7 +142,6 @@ fun TitlePage(nav: Nav, id: String) {
     )
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
-            LogoMark(Modifier.offset(LEFT.px, 66.px))
             SettingsButton(nav, fr("settings"), fr("play")) { focus = "settings" }
             FirstScreen(main, show, target, fr = ::fr, onFocus = { focus = it }, onDown = {
                 if (show && main.seasons.isNotEmpty()) go(Place.Episodes, "ep/$season/${epOf(season)}") else if (!show) go(Place.More, "more")
@@ -221,7 +220,7 @@ private fun FirstScreen(
         horizontalArrangement = Arrangement.spacedBy(16.px), verticalAlignment = Alignment.Top,
     ) {
         val up = Modifier.focusProperties { up = fr("settings") }
-        if (target != null) PlayButton(target.word, target.detail, target.progress, up, fr = fr("play"), onFocus = { if (it) onFocus("play") }) { onPlay(false) }
+        if (target != null) PlayButton(target.word, target.detail, up, fr = fr("play"), onFocus = { if (it) onFocus("play") }) { onPlay(false) }
         if (started) IconButton(Icons.StartOver, "Start over", up, fr = fr("over"), onFocus = { if (it) onFocus("over") }) { onPlay(true) }
         if (target?.item?.info != null || main.info != null) {
             if (target != null) IconButton(Icons.Info, "Picture details", up, fr = fr("details"), onFocus = { if (it) onFocus("details") }, onClick = onDetails)
@@ -241,7 +240,7 @@ private const val SEASON_PITCH = 174 // a 150 px poster and 24 under it
 
 /**
  * "Episodes ⌄", then the seasons down the left and the season's episodes on the right. Laid out under the first
- * screen; Down slides it up into view. The focused episode holds the top slot and has the border on its still.
+ * screen; Down slides it up into view. The focused episode holds the top slot and its still lifts.
  */
 @Composable
 private fun EpisodesBlock(
@@ -254,7 +253,7 @@ private fun EpisodesBlock(
     }
     var focusedSeason by remember { mutableStateOf(-1) }
     var focusedEpisode by remember { mutableStateOf<String?>(null) }
-    // seasons: the one in view is named in ink, the others muted; the focused one has the border
+    // seasons: the one in view is named in ink, the others muted; the focused one lifts
     Box(Modifier.offset(LEFT.px, (EPISODES_Y + 56).px)) {
         main.seasons.forEachIndexed { s, it ->
             val name by androidx.compose.animation.animateColorAsState(if (s == season) Pal.Ink else Pal.Muted, Move.fade(Move.Focus), label = "season")
@@ -272,7 +271,7 @@ private fun EpisodesBlock(
                     .focusable(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(100.px, 150.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised).focusRing(ringOf(focusedSeason == s))) {
+                Box(Modifier.size(100.px, 150.px).lift(ringOf(focusedSeason == s)).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
                     Api.img(it.meta?.poster?.ifEmpty { null } ?: main.meta?.poster, "w185")?.let { u -> AsyncImage(u, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 }
                 Column(Modifier.padding(start = 22.px).width(240.px)) {
@@ -328,7 +327,7 @@ private fun EpisodesBlock(
 @Composable
 private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Modifier) {
     Row(modifier.width(EP_W.px).height(180.px), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(320.px, 180.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised).focusRing(ringOf(focused))) {
+        Box(Modifier.size(320.px, 180.px).lift(ringOf(focused)).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
             ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         }
         Column(Modifier.padding(start = 32.px).widthIn(max = 800.px).weight(1f, fill = false)) {
@@ -445,7 +444,6 @@ fun PendingPage(nav: Nav, title: String) {
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) { withFrameNanos { }; runCatching { fr.requestFocus() } }
     Box(Modifier.fillMaxSize()) {
-        LogoMark(Modifier.offset(LEFT.px, 66.px))
         SettingsButton(nav, fr, fr) {}
         Box(Modifier.offset(LEFT.px, 230.px)) { TitleArt(null, title, 720, 250, Alignment.BottomStart, typeSize = 100, typeLine = 104) }
         if (d != null) DownloadBlock(d.progress, etaText(d.eta), Modifier.offset(LEFT.px, 780.px))
