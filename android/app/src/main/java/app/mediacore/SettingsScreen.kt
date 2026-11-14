@@ -86,35 +86,35 @@ fun SettingsScreen(nav: Nav) {
     LaunchedEffect(Unit) { withFrameNanos { }; runCatching { requesters.getValue(all.first().key).requestFocus() } }
 
     Box(Modifier.fillMaxSize()) {
-        LogoMark(Modifier.offset(120.px, 56.px))
-        Text("Settings", style = ts(48, 54, 700, track = -0.015f), modifier = Modifier.offset(120.px, 160.px))
-        Column(Modifier.offset(96.px, 270.px).width(860.px)) {
+        LogoMark(Modifier.offset(EDGE.px, 66.px))
+        Text("Settings", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 140.px))
+        // the rows' words line up with the edge; the focus border sits 24 px out from them
+        Column(Modifier.offset((EDGE - 24).px, 244.px).width(940.px)) {
             Section("Watching", top = 0)
             Watching.forEachIndexed { i, s -> SettingRow(s, prefs, requesters.getValue(s.key), up = all.getOrNull(all.indexOf(s) - 1)?.let { requesters[it.key] }) }
-            Section("Picture and sound", top = 34)
+            Section("Picture and sound", top = 30)
             PictureSound.forEach { s -> SettingRow(s, prefs, requesters.getValue(s.key), up = null) }
         }
-        Connection(nav, Modifier.offset(1200.px, 270.px).width(600.px))
+        Connection(nav, Modifier.offset(1180.px, 244.px).width(660.px))
         Text(
             "Film and show information from TMDB. This app is not endorsed or certified by TMDB.",
-            style = ts(16, 22, 400, Pal.Faint), modifier = Modifier.align(Alignment.BottomStart).padding(start = 120.px, bottom = 72.px),
+            style = ts(23, 28, 400, Pal.Faint), modifier = Modifier.align(Alignment.BottomStart).padding(start = EDGE.px, bottom = TOP.px),
         )
     }
 }
 
 @Composable
 private fun Section(text: String, top: Int) {
-    Text(text, style = ts(22, 26, 700, Pal.Accent, cond = true, track = 0.01f), modifier = Modifier.padding(top = top.px, bottom = 10.px, start = 24.px))
+    Text(text, style = ts(29, 36, 700, Pal.Muted, cond = true, track = 0.01f), modifier = Modifier.padding(top = top.px, bottom = 8.px, start = 24.px))
 }
 
-/** A row: its name on the left, its value on the right; focused, it's ink with ‹ value › to change. */
+/** A row: its name on the left, its value on the right; focused, it gets the border and ‹ value › to change. */
 @Composable
 private fun SettingRow(s: Setting, prefs: android.content.SharedPreferences, fr: FocusRequester, @Suppress("UNUSED_PARAMETER") up: FocusRequester?) {
     var focused by remember { mutableStateOf(false) }
     var index by remember { mutableIntStateOf(s.values.indexOf(prefs.getString(s.key, s.default)).coerceAtLeast(0)) }
     var dir by remember { mutableIntStateOf(1) }
-    val fill = focusFill(focused, Pal.Glass.copy(alpha = 0f))
-    val name = focusTint(focused, Pal.InkSoft)
+    val ring = ringOf(focused)
     val step = { d: Int ->
         val n = (index + d).coerceIn(0, s.values.lastIndex)
         if (n != index) {
@@ -124,7 +124,7 @@ private fun SettingRow(s: Setting, prefs: android.content.SharedPreferences, fr:
         }
     }
     Row(
-        Modifier.padding(bottom = 4.px).fillMaxWidth().height(64.px).clip(Corner).background(fill)
+        Modifier.padding(bottom = 4.px).fillMaxWidth().height(76.px).focusRing(ring)
             .focusRequester(fr).onFocusChanged { focused = it.isFocused }
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -136,13 +136,13 @@ private fun SettingRow(s: Setting, prefs: android.content.SharedPreferences, fr:
                 }
             }
             .focusable()
-            .padding(start = 24.px, end = if (focused) 18.px else 24.px),
+            .padding(start = 24.px, end = if (focused) 20.px else 24.px),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(s.name, style = ts(24, 30, if (focused) 650 else 600, name))
+        Text(s.name, style = ts(29, 36, 600, Pal.Ink))
         Spacer(Modifier.weight(1f))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.px)) {
-            if (focused) Icon(Icons.Left, null, tint = Pal.OnInkSoft.copy(alpha = if (index > 0) 1f else 0.35f), modifier = Modifier.size(20.px))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.px)) {
+            if (focused) Icon(Icons.Left, null, tint = Pal.Muted.copy(alpha = if (index > 0) 1f else 0.35f), modifier = Modifier.size(26.px))
             // a new value slides in about 8 px from the side pressed, fading (150 ms)
             AnimatedContent(
                 index,
@@ -154,12 +154,12 @@ private fun SettingRow(s: Setting, prefs: android.content.SharedPreferences, fr:
                 label = "value",
             ) { i ->
                 Text(
-                    s.values[i], style = ts(24, 30, if (focused) 650 else 600, if (focused) Pal.OnInk else Pal.Ink),
+                    s.values[i], style = ts(29, 36, 600, Pal.InkSoft),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = if (focused) Modifier.widthIn(min = 44.px) else Modifier,
+                    modifier = if (focused) Modifier.widthIn(min = 56.px) else Modifier,
                 )
             }
-            if (focused) Icon(Icons.Right, null, tint = Pal.OnInkSoft.copy(alpha = if (index < s.values.lastIndex) 1f else 0.35f), modifier = Modifier.size(20.px))
+            if (focused) Icon(Icons.Right, null, tint = Pal.Muted.copy(alpha = if (index < s.values.lastIndex) 1f else 0.35f), modifier = Modifier.size(26.px))
         }
     }
 }
@@ -177,8 +177,8 @@ private fun Connection(nav: Nav, modifier: Modifier) {
     }
     val heaviest = nav.home?.let { h -> (h.cont + h.recent + h.movies).mapNotNull { it.info?.mbps }.maxOrNull() }
     Column(modifier) {
-        Text("Connection to mint", style = ts(22, 26, 700, Pal.Accent, cond = true, track = 0.01f), modifier = Modifier.padding(bottom = 10.px))
-        Row(Modifier.padding(top = 6.px), horizontalArrangement = Arrangement.spacedBy(72.px)) {
+        Text("Connection to mint", style = ts(29, 36, 700, Pal.Muted, cond = true, track = 0.01f), modifier = Modifier.padding(bottom = 8.px))
+        Row(Modifier.padding(top = 10.px), horizontalArrangement = Arrangement.spacedBy(80.px)) {
             Reading(speed?.let { "%.0f".format(it) } ?: "–", "Mb/s", "Speed")
             Reading(delay?.toString() ?: "–", "ms", "Delay")
         }
@@ -189,7 +189,7 @@ private fun Connection(nav: Nav, modifier: Modifier) {
             speed!! >= heaviest * 1.3 -> "Good for every file"
             else -> "Too slow for the heaviest file (%.0f Mb/s)".format(heaviest)
         }
-        if (verdict != null) Text(verdict, style = ts(24, 30, 650), modifier = Modifier.padding(top = 30.px))
+        if (verdict != null) Text(verdict, style = ts(29, 36, 650), modifier = Modifier.padding(top = 32.px))
     }
 }
 
@@ -197,10 +197,10 @@ private fun Connection(nav: Nav, modifier: Modifier) {
 private fun Reading(value: String, unit: String, name: String) {
     Column {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, style = ts(64, 68, 650, tabular = true, track = -0.02f))
-            Text(unit, style = ts(26, 52, 500, Pal.Muted), modifier = Modifier.padding(start = 8.px))
+            Text(value, style = ts(80, 84, 650, tabular = true, track = -0.02f))
+            Text(unit, style = ts(32, 62, 500, Pal.Muted), modifier = Modifier.padding(start = 10.px))
         }
-        Text(name, style = ts(19, 24, 400, Pal.Muted), modifier = Modifier.padding(top = 2.px))
+        Text(name, style = ts(25, 30, 400, Pal.Muted), modifier = Modifier.padding(top = 4.px))
     }
 }
 

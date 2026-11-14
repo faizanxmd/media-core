@@ -83,8 +83,8 @@ private fun Offline(nav: Nav) {
     }
     Box(Modifier.fillMaxSize().graphicsLayer { alpha = a }.background(Pal.Base).focusRequester(fr).focusable()) {
         GrainPlain()
-        LogoMark(Modifier.offset(120.px, 56.px))
-        Text("mint is offline", style = ts(48, 54, 700, track = -0.015f), modifier = Modifier.offset(120.px, 470.px))
+        LogoMark(Modifier.offset(EDGE.px, 66.px))
+        Text("mint is offline", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 460.px))
     }
 }
 

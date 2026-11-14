@@ -128,17 +128,23 @@ fun Nav.failed(e: Exception) {
     if (e is IOException && e !is Api.ServerError) offline = true
 }
 
-// ---------- the board's numbers (01-home.html), in board pixels ----------
+// ---------- home's numbers, in screen pixels at 1920 x 1080 (TV sizes: text 23 px and up, body 29) ----------
 
-private const val LEFT = 120
-private const val ROW0 = 560 // the first row's title: the focused row always lands here
-private const val TITLE_TO_CARDS = 36
-private const val ROW_GAP = 28 // under a row's last line, before the next row's title
-private const val WIDE_W = 336
-private const val WIDE_H = 189
-private const val POSTER_W = 160
-private const val POSTER_H = 240
-private const val WIDE_BLOCK = WIDE_H + 10 + 6 + 11 + 22 + 2 + 20 // picture, bar, title, line under it
+private const val LEFT = EDGE
+private const val HERO_Y = 150 // the title's logo
+private const val META_Y = 344
+private const val STORY_Y = 394 // two lines of 40
+private const val BUTTONS_Y = 508
+private const val ROW0 = 640 // the first row's title: the focused row always lands here
+private const val ROW_TITLE = 40 // its line
+private const val TITLE_TO_CARDS = 16
+private const val ROW_GAP = 40 // under a row's last line, before the next row's title
+private const val WIDE_W = 400
+private const val WIDE_H = 225
+private const val POSTER_W = 200
+private const val POSTER_H = 300
+private const val GAP = 20 // between cards
+private const val WIDE_BLOCK = WIDE_H + 14 + 6 + 12 + 32 + 2 + 28 // picture, bar, title, line under it
 private const val POSTER_BLOCK = POSTER_H
 
 private class HomeRow(val key: String, val title: String, val wide: Boolean, val cards: List<Card>)
@@ -151,8 +157,8 @@ private data class Hero(val item: Item?, val download: Download?, val key: Strin
 
 /**
  * Home is the whole app: the hero (the focused title's art, logo, line and story) over two rows, Continue watching
- * and Recently added. Settings is top-right, the logo mark top-left. The focused card holds x = 120 as its row slides,
- * and the focused row holds y = 560 as the page slides.
+ * and Recently added. Settings is top-right, the logo mark top-left. The focused card holds the left edge as its row
+ * slides, and the focused row holds ROW0 as the page slides.
  */
 @Composable
 fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
@@ -228,7 +234,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     val heroPlay = hero?.item?.let { playTarget(it, heroDetail, home) }
 
     Box(Modifier.fillMaxSize()) {
-        LogoMark(Modifier.offset(LEFT.px, 56.px))
+        LogoMark(Modifier.offset(LEFT.px, 66.px))
         TopRight(nav, onUpdate, fr("settings"), fr("update"), down = fr(if (hero?.download != null) firstCardKey(rows, nav) else "play")) { onFocus(it) }
 
         // the hero's words: logo, meta line, story. They fade out and in on their own, apart from the art
@@ -242,24 +248,24 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         // Play and More info: gone while focus is down in the rows
         val buttons by animateFloatAsState(if (inRows || hero?.download != null) 0f else 1f, Move.fade(Move.Focus), label = "buttons")
         if (hero?.item != null) Row(
-            Modifier.offset(LEFT.px, 444.px).graphicsLayer { alpha = buttons },
-            horizontalArrangement = Arrangement.spacedBy(12.px), verticalAlignment = Alignment.CenterVertically,
+            Modifier.offset(LEFT.px, BUTTONS_Y.px).graphicsLayer { alpha = buttons },
+            horizontalArrangement = Arrangement.spacedBy(16.px), verticalAlignment = Alignment.CenterVertically,
         ) {
             val downKey = firstCardKey(rows, nav)
             val p = heroPlay
             PlayButton(
-                p?.word ?: "Play", p?.detail, p?.progress, height = 58, padStart = 24, padEnd = 26,
+                p?.word ?: "Play", p?.detail, p?.progress,
                 modifier = Modifier.focusProperties { up = fr("settings"); down = fr(downKey) },
                 fr = fr("play"), onFocus = { if (it) onFocus("play") },
             ) { p?.let { t -> startPlay(ctx, scope, nav, t.item, fromStart = false) } }
             GlassButton(
-                "More info", Icons.Info, height = 58,
+                "More info", Icons.Info,
                 modifier = Modifier.focusProperties { up = fr("settings"); down = fr(downKey) },
                 fr = fr("info"), onFocus = { if (it) onFocus("info") },
             ) { hero?.item?.let { nav.open(Screen.Detail(it.id)) } }
         }
 
-        // the rows: the page slides so the focused row's title sits at y = 560
+        // the rows: the page slides so the focused row's title sits at ROW0
         val rowTops = remember(rows) { rowTops(rows) }
         val pageY by animateFloatAsState(if (inRows) -(rowTops[focusRow] - ROW0) * Px.screen else 0f, Move.slide(Move.Screen), label = "page")
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
@@ -267,7 +273,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                 val gone by animateFloatAsState(if (inRows && r < focusRow) 0f else 1f, Move.fade(Move.Screen), label = "row")
                 val titleColor by animateColorAsState(if (inRows) Pal.RowTitle else Pal.Ink, Move.fade(Move.Focus), label = "rowtitle")
                 Column(Modifier.offset(LEFT.px, rowTops[r].px).graphicsLayer { alpha = gone }) {
-                    Text(row.title, style = ts(22, 26, 700, titleColor, cond = true, track = -0.005f))
+                    Text(row.title, style = ts(34, ROW_TITLE, 700, titleColor, cond = true, track = -0.005f))
                     CardRow(
                         row, nav, focus, inRows, ::fr, ::onFocus,
                         up = if (r == 0) (if (hero?.download != null) "settings" else "play") else rows[r - 1].let { u -> u.cards[(nav.homeCols[u.key] ?: 0).coerceAtMost(u.cards.lastIndex)].key },
@@ -282,7 +288,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                 }
             }
             if (rows.isEmpty()) Text(
-                "Nothing in the library yet. Add links at mint:8780.", style = ts(21, 30, 400, Pal.InkSoft),
+                "Nothing in the library yet. Add links at mint:8780.", style = ts(29, 40, 400, Pal.InkSoft),
                 modifier = Modifier.offset(LEFT.px, ROW0.px),
             )
         }
@@ -305,7 +311,7 @@ private fun rowTops(rows: List<HomeRow>): List<Int> {
     var y = ROW0
     return rows.map { r ->
         val top = y
-        y += 26 + (TITLE_TO_CARDS - 26) + (if (r.wide) WIDE_BLOCK else POSTER_BLOCK + 10 + 6) + ROW_GAP
+        y += ROW_TITLE + TITLE_TO_CARDS + (if (r.wide) WIDE_BLOCK else POSTER_BLOCK + 14 + 6) + ROW_GAP
         top
     }
 }
@@ -314,14 +320,13 @@ private fun rowTops(rows: List<HomeRow>): List<Int> {
 @Composable
 private fun TopRight(nav: Nav, onUpdate: () -> Unit, settingsFr: FocusRequester, updateFr: FocusRequester, down: FocusRequester, onFocus: (String) -> Unit) {
     Box(Modifier.fillMaxWidth()) {
-        Row(Modifier.align(Alignment.TopEnd).padding(end = 120.px, top = 50.px), horizontalArrangement = Arrangement.spacedBy(12.px)) {
+        Row(Modifier.align(Alignment.TopEnd).padding(end = EDGE.px, top = TOP.px), horizontalArrangement = Arrangement.spacedBy(16.px)) {
             if (nav.update != null) GlassButton(
-                "Update", null, height = 44, textSize = 18, padStart = 18, padEnd = 18,
+                "Update", null, height = 60, textSize = 25, padStart = 24, padEnd = 24,
                 modifier = Modifier.focusProperties { this.down = down }, fr = updateFr, onFocus = { if (it) onFocus("update") }, onClick = onUpdate,
             )
-            GlassButton(
-                "Settings", Icons.Settings, height = 44, textSize = 18, iconSize = 20, iconGap = 10, padStart = 14, padEnd = 18,
-                modifier = Modifier.focusProperties { this.down = down }, fr = settingsFr, onFocus = { if (it) onFocus("settings") },
+            SettingsGlass(
+                Modifier.focusProperties { this.down = down }, fr = settingsFr, onFocus = { if (it) onFocus("settings") },
             ) { nav.open(Screen.Settings) }
         }
     }
@@ -333,8 +338,8 @@ private fun HeroWords(h: Hero, detail: Item?) {
     Box(Modifier.fillMaxSize()) {
         val it = h.item
         val name = it?.displayTitle ?: h.download!!.title
-        Box(Modifier.offset(LEFT.px, 150.px).size(520.px, 130.px)) {
-            TitleArt(it?.logo, name, 520, 130, Alignment.TopStart, typeSize = 60, typeLine = 64)
+        Box(Modifier.offset(LEFT.px, HERO_Y.px).size(680.px, 170.px)) {
+            TitleArt(it?.logo, name, 680, 170, Alignment.TopStart, typeSize = 76, typeLine = 80)
         }
         if (it != null) {
             val facts = if (it.isShow) {
@@ -347,18 +352,18 @@ private fun HeroWords(h: Hero, detail: Item?) {
                 it.displayYear.takeIf { y -> y > 0 }?.toString(), it.meta?.genres?.firstOrNull(),
                 runtimeOf(it)?.let(::span), it.meta?.cert?.ifEmpty { null },
             )
-            DotLine(facts, ts(19, 24, 600, Pal.InkSoft, cond = true, track = 0.01f), modifier = Modifier.offset(LEFT.px, 318.px))
+            DotLine(facts, ts(26, 32, 600, Pal.InkSoft, cond = true, track = 0.01f), modifier = Modifier.offset(LEFT.px, META_Y.px))
             it.meta?.overview?.ifEmpty { null }?.let { o ->
                 Text(
-                    o, style = ts(21, 30, 400, Pal.InkSoft), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.offset(LEFT.px, 356.px).width(660.px),
+                    o, style = ts(29, 40, 400, Pal.InkSoft), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.offset(LEFT.px, STORY_Y.px).width(900.px),
                 )
             }
         } else {
             val d = h.download!!
             DotLine(
-                listOfNotNull("Downloading", "${d.progress}%", etaText(d.eta)), ts(21, 28, 400, Pal.Muted, tabular = true),
-                lead = ts(21, 28, 650, Pal.Ink), modifier = Modifier.offset(LEFT.px, 462.px),
+                listOfNotNull("Downloading", "${d.progress}%", etaText(d.eta)), ts(29, 36, 400, Pal.Muted, tabular = true),
+                lead = ts(29, 36, 650, Pal.Ink), modifier = Modifier.offset(LEFT.px, BUTTONS_Y.px),
             )
         }
     }
@@ -393,21 +398,20 @@ fun TitleArt(logo: String?, name: String, w: Int, h: Int, align: Alignment, type
     }
 }
 
-/** One row of cards. Cards are 8 px apart; the row slides so the focused card stays at x = 120. */
+/** One row of cards. The row slides so the focused card stays at the left edge; the focused card gets the border. */
 @Composable
 private fun CardRow(
     row: HomeRow, nav: Nav, focus: String, inRows: Boolean,
     fr: (String) -> FocusRequester, onFocus: (String) -> Unit, up: String, down: String?, onClick: (Card) -> Unit,
 ) {
     val col = (row.cards.indexOfFirst { it.key == focus }.takeIf { it >= 0 } ?: nav.homeCols[row.key] ?: 0).coerceAtMost(row.cards.lastIndex)
-    val step = (if (row.wide) WIDE_W else POSTER_W) + 8
+    val step = (if (row.wide) WIDE_W else POSTER_W) + GAP
     val x by animateFloatAsState(-col * step * Px.screen, Move.slide(Move.Focus), label = "row-x")
     Row(
-        Modifier.padding(top = (TITLE_TO_CARDS - 26).px).requiredWidth((row.cards.size * step).px).graphicsLayer { translationX = x },
-        horizontalArrangement = Arrangement.spacedBy(8.px),
+        Modifier.padding(top = TITLE_TO_CARDS.px).requiredWidth((row.cards.size * step).px).graphicsLayer { translationX = x },
+        horizontalArrangement = Arrangement.spacedBy(GAP.px),
     ) {
         row.cards.forEachIndexed { i, c ->
-            val lit by animateFloatAsState(if (!inRows || c.key == focus) 1f else 0.45f, Move.fade(Move.Focus), label = "lit")
             val keys = Modifier
                 .focusProperties {
                     this.up = fr(up)
@@ -416,10 +420,8 @@ private fun CardRow(
                     right = if (i < row.cards.lastIndex) fr(row.cards[i + 1].key) else FocusRequester.Cancel
                 }
             val focused = { f: Boolean -> if (f) { onFocus(c.key); nav.homeCols[row.key] = i } }
-            Box(Modifier.graphicsLayer { alpha = lit }) {
-                if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
-                else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }
-            }
+            if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
+            else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }
         }
     }
 }
@@ -428,23 +430,24 @@ private fun CardRow(
 @Composable
 private fun WideCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Boolean) -> Unit, onClick: () -> Unit) {
     val it = c.item!!
+    var focused by remember { mutableStateOf(false) }
     Column(Modifier.width(WIDE_W.px)) {
         Box(
             keys.size(WIDE_W.px, WIDE_H.px).softShadow(ShadowKind.Card).clip(Corner).background(Pal.Raised)
-                .control(fr, onFocus, onClick),
+                .focusRing(ringOf(focused)).control(fr, { f -> focused = f; onFocus(f) }, onClick),
         ) {
             it.wideSmall?.let { u -> AsyncImage(u, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         }
         val shown by animateFloatAsState(it.progress, Move.slide(Move.Art), label = "progress")
-        Box(Modifier.padding(top = 10.px).fillMaxWidth().height(6.px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Ink.copy(alpha = 0.12f))) {
+        Box(Modifier.padding(top = 14.px).fillMaxWidth().height(6.px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Ink.copy(alpha = 0.12f))) {
             Box(Modifier.fillMaxHeight().width(maxOf(12f, WIDE_W * shown).px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Accent))
         }
-        Text(it.showTitle, style = ts(18, 22, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 11.px))
+        Text(it.showTitle, style = ts(26, 32, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.px))
         val left = (it.durMs - it.pos).takeIf { l -> it.pos > 0 && l > 0 }?.let { l -> leftWords(l) }
         val lead = if (it.isEpisode) "S${it.season} E${it.episode}" else it.displayYear.takeIf { y -> y > 0 }?.toString()
         Row(Modifier.padding(top = 2.px)) {
-            if (lead != null) Text("$lead · ", style = ts(15, 20, 400, Pal.Muted, tabular = true), maxLines = 1)
-            if (left != null) Text(left, style = ts(15, 20, 400, Pal.InkSoft, tabular = true), maxLines = 1)
+            if (lead != null) Text("$lead · ", style = ts(23, 28, 400, Pal.Muted, tabular = true), maxLines = 1)
+            if (left != null) Text(left, style = ts(23, 28, 400, Pal.InkSoft, tabular = true), maxLines = 1)
         }
     }
 }
@@ -452,22 +455,23 @@ private fun WideCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Bool
 /** Recently added: a poster, or a title still downloading with its progress under it. */
 @Composable
 private fun PosterCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Boolean) -> Unit, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
     Column(Modifier.width(POSTER_W.px)) {
         Box(
             keys.size(POSTER_W.px, POSTER_H.px).softShadow(ShadowKind.Card).clip(Corner).background(Pal.Raised)
-                .control(fr, onFocus, onClick),
+                .focusRing(ringOf(focused)).control(fr, { f -> focused = f; onFocus(f) }, onClick),
             contentAlignment = Alignment.BottomStart,
         ) {
             val poster = c.item?.poster
             if (poster != null) AsyncImage(poster, c.item.displayTitle, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(
-                c.item?.displayTitle ?: c.download!!.title, style = ts(18, 22, 700), maxLines = 4, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(14.px),
+                c.item?.displayTitle ?: c.download!!.title, style = ts(26, 32, 700), maxLines = 4, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(18.px),
             )
         }
         c.download?.let { d ->
             val shown by animateFloatAsState(d.progress / 100f, tween(if (Move.reduced) 0 else 4800), label = "download")
-            Box(Modifier.padding(top = 10.px).fillMaxWidth().height(6.px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Ink.copy(alpha = 0.12f))) {
+            Box(Modifier.padding(top = 14.px).fillMaxWidth().height(6.px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Ink.copy(alpha = 0.12f))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0.04f, 1f)).background(Pal.Accent))
             }
         }

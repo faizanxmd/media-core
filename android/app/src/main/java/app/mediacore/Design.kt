@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -102,11 +104,9 @@ object Pal {
     val Problem = Color(0xFFF08A84)
     val ProblemBg = Color(0xFF2A1416)
     val Glass = Color(0xD124272E) // rgba(36,39,46,.82): every resting control over art
-    val OnInk = Color(0xFF0B0D11) // text on a focused (ink) control
-    val OnInkSoft = Color(0xFF4A4F5A) // its second part ("2 h 4 m left")
 }
 
-val Corner get() = RoundedCornerShape(6.px)
+val Corner get() = RoundedCornerShape(8.px)
 
 private fun axes(w: Int, wdth: Float) = FontVariation.Settings(FontVariation.weight(w), FontVariation.width(wdth))
 
@@ -193,7 +193,7 @@ object Icons {
  * top and bottom, around a lit core whose soft cobalt glow fills the counter.
  */
 @Composable
-fun LogoMark(modifier: Modifier = Modifier, size: Dp = 32.px) {
+fun LogoMark(modifier: Modifier = Modifier, size: Dp = 48.px) {
     Canvas(modifier.size(size)) {
         val s = this.size.width / 60f // the mark's ring is 60 units across
         val c = Offset(this.size.width / 2, this.size.height / 2)
@@ -213,14 +213,30 @@ fun LogoMark(modifier: Modifier = Modifier, size: Dp = 32.px) {
 
 // ---------- controls ----------
 
-/** The focus a control answers with: a colour change only, never a scale (150 ms). */
-@Composable
-fun focusFill(focused: Boolean, rest: Color, on: Color = Pal.Ink): Color =
-    animateColorAsState(if (focused) on else rest, Move.fade(Move.Focus), label = "fill").value
+/** The screen's edges: content starts this far in from the left and right (the TV's safe area), and below the top. */
+const val EDGE = 80
+const val TOP = 60
 
+/**
+ * Focus, everywhere: a thin white border on the thing's own edge (150 ms fade). Nothing else changes: no fill, no
+ * brightness, no scale, so the library stays calm and only the outline says where you are.
+ */
+fun Modifier.focusRing(on: Float, width: Int = 3): Modifier = drawWithContent {
+    drawContent()
+    if (on > 0f) {
+        val w = width * Px.screen
+        val r = 8 * Px.screen
+        drawRoundRect(
+            Pal.Ink.copy(alpha = on), topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(r - w / 2), style = Stroke(w),
+        )
+    }
+}
+
+/** How much of the focus border shows: 0 to 1 over 150 ms. */
 @Composable
-fun focusTint(focused: Boolean, rest: Color, on: Color = Pal.OnInk): Color =
-    animateColorAsState(if (focused) on else rest, Move.fade(Move.Focus), label = "tint").value
+fun ringOf(focused: Boolean): Float =
+    animateFloatAsState(if (focused) 1f else 0f, Move.fade(Move.Focus), label = "ring").value
 
 /** Shared plumbing: focus, a requester, OK. */
 @Composable
@@ -235,9 +251,12 @@ fun Modifier.softShadow(kind: ShadowKind): Modifier = drawBehind {
     drawImage(sh.bitmap.asImageBitmap(), Offset(-sh.pad.toFloat(), -sh.pad.toFloat() + sh.dy))
 }
 
+/** Every button's height. */
+const val BUTTON_H = 76
+
 /**
- * Play or Resume: the one blue control. Focused it turns ink with dark words. "Play | S2 E1", "Resume | 2 h 4 m left";
- * a title that's been started carries its progress as a thin line along the bottom, which slides when it changes.
+ * Play or Resume, in the same dark surface as every other control: "Play | S2 E1", "Resume | 2 h 4 m left". A title
+ * that's been started carries its progress as a thin line along the bottom, which slides when it changes.
  */
 @Composable
 fun PlayButton(
@@ -245,42 +264,35 @@ fun PlayButton(
     detail: String?,
     progress: Float?,
     modifier: Modifier = Modifier,
-    height: Int = 56,
-    padStart: Int = 22,
-    padEnd: Int = 24,
     fr: FocusRequester? = null,
     onFocus: (Boolean) -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val fill = focusFill(focused, Pal.Accent)
-    val word1 = focusTint(focused, Color.White)
-    val word2 = focusTint(focused, Color.White.copy(alpha = 0.8f), Pal.OnInkSoft)
-    val rule = focusTint(focused, Color.White.copy(alpha = 0.3f), Pal.OnInk.copy(alpha = 0.22f))
+    val ring = ringOf(focused)
     val shown by animateFloatAsState(progress ?: 0f, Move.slide(Move.Art), label = "progress")
     Box(
-        modifier.softShadow(ShadowKind.Button).clip(Corner).background(fill)
-            .control(fr, { focused = it; onFocus(it) }, onClick).height(height.px),
+        modifier.softShadow(ShadowKind.Button).clip(Corner).background(Pal.Glass)
+            .control(fr, { focused = it; onFocus(it) }, onClick).height(BUTTON_H.px),
     ) {
-        Row(Modifier.fillMaxHeight().padding(start = padStart.px, end = padEnd.px), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Play, null, tint = word1, modifier = Modifier.size(18.px, 20.px))
-            Spacer(Modifier.width(13.px))
-            Text(word, style = ts(21, 26, 700, word1), maxLines = 1)
+        Row(Modifier.fillMaxHeight().padding(start = 30.px, end = 34.px), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Play, null, tint = Pal.Ink, modifier = Modifier.size(22.px, 26.px))
+            Spacer(Modifier.width(16.px))
+            Text(word, style = ts(29, 36, 700), maxLines = 1)
             if (detail != null) {
-                Box(Modifier.padding(horizontal = 14.px).size(1.px, 22.px).background(rule))
-                Text(detail, style = ts(19, 24, 600, word2, tabular = true), maxLines = 1)
+                Box(Modifier.padding(horizontal = 18.px).size(2.px, 30.px).background(Pal.Ink.copy(alpha = 0.22f)))
+                Text(detail, style = ts(26, 32, 600, Pal.InkSoft, tabular = true), maxLines = 1)
             }
         }
         if (progress != null) {
-            val track = if (focused) Pal.OnInk.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.18f)
-            val bar = if (focused) Pal.Accent else Color.White
             // matchParentSize: the line takes the button's width, it never sets it
             Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomStart) {
-                Box(Modifier.fillMaxWidth().height(4.px).background(track)) {
-                    Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0.03f, 1f)).background(bar))
+                Box(Modifier.fillMaxWidth().height(5.px).background(Color.White.copy(alpha = 0.16f))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0.03f, 1f)).background(Pal.Ink.copy(alpha = 0.85f)))
                 }
             }
         }
+        Box(Modifier.matchParentSize().focusRing(ring))
     }
 }
 
@@ -290,34 +302,38 @@ fun GlassButton(
     text: String,
     icon: ImageVector?,
     modifier: Modifier = Modifier,
-    height: Int = 56,
-    textSize: Int = 21,
+    height: Int = BUTTON_H,
+    textSize: Int = 29,
     weight: Int = 600,
-    iconSize: Int = 22,
-    iconGap: Int = 11,
-    padStart: Int = 22,
-    padEnd: Int = 26,
+    iconSize: Int = 30,
+    iconGap: Int = 14,
+    padStart: Int = 28,
+    padEnd: Int = 32,
     fr: FocusRequester? = null,
     onFocus: (Boolean) -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val fill = focusFill(focused, Pal.Glass)
-    val tint = focusTint(focused, Pal.Ink)
+    val ring = ringOf(focused)
     Row(
-        modifier.clip(Corner).background(fill).control(fr, { focused = it; onFocus(it) }, onClick)
+        modifier.clip(Corner).background(Pal.Glass).focusRing(ring).control(fr, { focused = it; onFocus(it) }, onClick)
             .height(height.px).padding(start = padStart.px, end = padEnd.px),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(iconSize.px))
+            Icon(icon, null, tint = Pal.Ink, modifier = Modifier.size(iconSize.px))
             Spacer(Modifier.width(iconGap.px))
         }
-        Text(text, style = ts(textSize, textSize + 5, weight, tint), maxLines = 1)
+        Text(text, style = ts(textSize, textSize + 7, weight), maxLines = 1)
     }
 }
 
-/** A square icon control (Start over, Picture details). Focused, it turns ink and its name fades in below it. */
+/** Settings, top-right on every screen that has it, level with the logo mark. */
+@Composable
+fun SettingsGlass(modifier: Modifier = Modifier, fr: FocusRequester, onFocus: (Boolean) -> Unit, onClick: () -> Unit) =
+    GlassButton("Settings", Icons.Settings, modifier, height = 60, textSize = 25, iconSize = 28, iconGap = 12, padStart = 20, padEnd = 24, fr = fr, onFocus = onFocus, onClick = onClick)
+
+/** A square icon control (Start over, Picture details). Focused, it gets the border and its name fades in below it. */
 @Composable
 fun IconButton(
     icon: ImageVector,
@@ -328,18 +344,16 @@ fun IconButton(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val fill = focusFill(focused, Pal.Glass)
-    val tint = focusTint(focused, Pal.Ink)
-    val label by animateFloatAsState(if (focused) 1f else 0f, Move.fade(Move.Focus), label = "name")
-    Box(modifier.size(56.px)) {
+    val ring = ringOf(focused)
+    Box(modifier.size(BUTTON_H.px)) {
         Box(
-            Modifier.size(56.px).clip(Corner).background(fill).control(fr, { focused = it; onFocus(it) }, onClick),
+            Modifier.size(BUTTON_H.px).clip(Corner).background(Pal.Glass).focusRing(ring).control(fr, { focused = it; onFocus(it) }, onClick),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, name, tint = tint, modifier = Modifier.size(24.px)) }
+        ) { Icon(icon, name, tint = Pal.Ink, modifier = Modifier.size(32.px)) }
         // the name hangs under the button and takes no room, so nothing moves when it shows
         Text(
-            name, style = ts(16, 20, 600, Pal.InkSoft), maxLines = 1, softWrap = false,
-            modifier = Modifier.wrapUnbounded().padding(top = 68.px).graphicsAlpha(label),
+            name, style = ts(23, 28, 600, Pal.InkSoft), maxLines = 1, softWrap = false,
+            modifier = Modifier.wrapUnbounded().padding(top = (BUTTON_H + 14).px).graphicsAlpha(ring),
         )
     }
 }
@@ -348,14 +362,14 @@ fun IconButton(
 @Composable
 fun DownloadBlock(percent: Int, eta: String?, modifier: Modifier = Modifier) {
     val shown by animateFloatAsState(percent / 100f, Move.slide(1000), label = "download")
-    Box(modifier.clip(Corner).background(Pal.Glass).height(56.px)) {
-        Row(Modifier.fillMaxHeight().padding(start = 22.px, end = 24.px), verticalAlignment = Alignment.CenterVertically) {
-            Text("Downloading", style = ts(21, 26, 700))
-            Box(Modifier.padding(horizontal = 14.px).size(1.px, 22.px).background(Pal.Ink.copy(alpha = 0.22f)))
-            DotLine(listOfNotNull("$percent%", eta), ts(19, 24, 600, Pal.Muted, tabular = true), gap = 10)
+    Box(modifier.clip(Corner).background(Pal.Glass).height(BUTTON_H.px)) {
+        Row(Modifier.fillMaxHeight().padding(start = 30.px, end = 34.px), verticalAlignment = Alignment.CenterVertically) {
+            Text("Downloading", style = ts(29, 36, 700))
+            Box(Modifier.padding(horizontal = 18.px).size(2.px, 30.px).background(Pal.Ink.copy(alpha = 0.22f)))
+            DotLine(listOfNotNull("$percent%", eta), ts(26, 32, 600, Pal.Muted, tabular = true), gap = 12)
         }
         Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomStart) {
-            Box(Modifier.fillMaxWidth().height(4.px).background(Pal.Ink.copy(alpha = 0.10f))) {
+            Box(Modifier.fillMaxWidth().height(5.px).background(Pal.Ink.copy(alpha = 0.10f))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0f, 1f)).background(Pal.Accent))
             }
         }
@@ -367,7 +381,7 @@ fun DownloadBlock(percent: Int, eta: String?, modifier: Modifier = Modifier) {
  * [lead] styles the first part differently (the bold "Downloading").
  */
 @Composable
-fun DotLine(parts: List<String>, style: TextStyle, gap: Int = 12, modifier: Modifier = Modifier, lead: TextStyle? = null) {
+fun DotLine(parts: List<String>, style: TextStyle, gap: Int = 14, modifier: Modifier = Modifier, lead: TextStyle? = null) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         parts.forEachIndexed { i, p ->
             if (i > 0) {
@@ -381,7 +395,7 @@ fun DotLine(parts: List<String>, style: TextStyle, gap: Int = 12, modifier: Modi
 }
 
 /** A small capitals label over a value: DIRECTOR, RESOLUTION. */
-val CapsLabel get() = ts(13, 16, 700, Pal.Label, cond = true, track = 0.14f)
+val CapsLabel get() = ts(20, 24, 700, Pal.Label, cond = true, track = 0.12f)
 
 /** Lays out content at its own size, however small its slot: a label hanging under a button, a row wider than the screen. */
 fun Modifier.wrapUnbounded(): Modifier = layout { m, c ->
@@ -392,5 +406,5 @@ fun Modifier.wrapUnbounded(): Modifier = layout { m, c ->
 fun Modifier.graphicsAlpha(a: Float): Modifier = graphicsLayer { alpha = a }
 
 /** Cards sit this far apart everywhere. */
-val CardGap get() = 8.px
+val CardGap get() = 20.px
 
