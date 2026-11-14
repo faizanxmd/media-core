@@ -1,56 +1,48 @@
 package app.mediacore
 
-import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -60,377 +52,564 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import app.mediacore.core.Api
 import app.mediacore.core.Item
-import app.mediacore.core.Person
-import app.mediacore.core.hm
 import app.mediacore.core.objects
 import coil3.compose.AsyncImage
-import coil3.imageLoader
-import coil3.request.ImageRequest
-import coil3.request.crossfade
-import coil3.request.transformations
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import org.json.JSONObject
 
-/** A film's or a show's page: the same block for both; films end with the cast, shows with episodes. */
+private const val LEFT = 120
+
+/** A title page's three places: its first screen, and what Down shows (episodes for a show, the rest for a film). */
+private enum class Place { First, Episodes, More }
+
+/**
+ * A film's or a show's page (boards 04-10). The first screen is the title's art with its logo, one line of facts,
+ * the story, the credits and the buttons. Down slides the page up: a show's seasons and episodes, or a film's cast,
+ * About, chapters and file.
+ */
 @Composable
-fun DetailScreen(nav: Nav, id: String) {
+fun TitlePage(nav: Nav, id: String) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var data by remember(id) { mutableStateOf<Pair<Item, Item?>?>(null) }
-    var error by remember(id) { mutableStateOf<String?>(null) }
-    val playFr = remember { FocusRequester() }
-    val infoFr = remember { FocusRequester() }
-    val seasonFr = remember { FocusRequester() }
-
-    suspend fun load() {
+    val art = LocalArt.current
+    var data by remember(id) { mutableStateOf(nav.details[id]) }
+    LaunchedEffect(id, nav.refresh) {
         try {
-            Api.settled()
-            val j = Api.get("/api/v1/item/$id")
-            data = withContext(Dispatchers.Default) { Item.parse(j.getJSONObject("item")) to j.optJSONObject("up_next")?.let(Item::parse) }
+            data = nav.fetchDetail(id)
+            nav.offline = false
         } catch (e: Exception) {
-            if (data == null) error = e.message
+            nav.failed(e)
         }
     }
-    LaunchedEffect(id, nav.refresh) { load() }
-
-    val d = data
-    if (d == null) {
-        if (error != null) ErrorView(error!!, onRetry = { error = null; scope.launch { load() } }) else Loading()
-        return
-    }
+    val d = data ?: return
     val (main, upNext) = d
     val show = main.isShow
-    LaunchedEffect(id) { delay(60); runCatching { playFr.requestFocus() } }
 
-    // the page arrives whole: it waits a moment for its picture, then fades up in one piece
-    var bannerDone by remember(id) { mutableStateOf(false) }
-    var arrived by remember(id) { mutableStateOf(false) }
-    LaunchedEffect(id) {
-        withTimeoutOrNull(300) { snapshotFlow { bannerDone }.first { it } }
-        arrived = true
-    }
-    val still = remember(id) { blurredStill(ctx, Api.img(main.meta?.backdrop, "w780")) }
-    LaunchedEffect(still) { if (still != null) ctx.imageLoader.enqueue(still) }
+    val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    fun fr(k: String) = requesters.getOrPut(k) { FocusRequester() }
+    var place by remember { mutableStateOf(Place.First) }
+    var sheet by remember { mutableStateOf(false) }
+    var focus by remember { mutableStateOf(nav.titleFocus ?: "play") }
 
-    val target = if (show || main.type == "season") upNext else main
-    val play = { fromStart: Boolean ->
-        if (target != null) {
-            if (target.isEpisode) scope.launch { playEpisode(ctx, target, fromStart) }
-            else PlayerActivity.play(ctx, listOf(target), 0, fromStart)
+    // the season and episode in view: up next to begin with
+    val startSeason = remember(id) { main.seasons.indexOfFirst { s -> s.episodes.any { it.id == upNext?.id } }.coerceAtLeast(0) }
+    var season by remember(id) { mutableIntStateOf(startSeason) }
+    val epIndex = remember(id) { mutableStateMapOf<Int, Int>() }
+    fun epOf(s: Int) = epIndex[s] ?: main.seasons.getOrNull(s)?.episodes?.indexOfFirst { it.id == upNext?.id }?.takeIf { it >= 0 } ?: 0
+    val focusedEp = main.seasons.getOrNull(season)?.episodes?.getOrNull(epOf(season))
+
+    // the art: the title's backdrop, or its poster blurred; down in the episodes, the focused episode's still
+    val firstArt = remember(main) {
+        when {
+            main.meta?.backdrop?.isNotEmpty() == true -> ArtSpec(main.banner, if (show) ArtStyle.Show else ArtStyle.Film, if (show) 0.25f else 0.2f)
+            main.meta?.poster?.isNotEmpty() == true -> ArtSpec(Api.img(main.meta?.poster, "w780"), ArtStyle.Poster, 0.3f)
+            else -> ArtSpec(null, ArtStyle.Plain)
         }
     }
-    val allWatched = if (show) main.unseen == 0 else main.watched
-    val setWatched = { w: Boolean ->
-        scope.launch {
-            runCatching { Api.post("/api/v1/watched", JSONObject().put("id", main.id).put("watched", w)) }
-            load()
-        }
-        Unit
+    val epArt = focusedEp?.let { ArtSpec(Api.img(it.meta?.still?.ifEmpty { null }, "w1280") ?: main.banner, ArtStyle.Episode) }
+    val wantArt = if (place == Place.Episodes && epArt != null) epArt else firstArt
+    var firstShown by remember { mutableStateOf(false) }
+    LaunchedEffect(wantArt) {
+        if (firstShown) delay(Move.Settle) // a new still only once the remote rests
+        art.show(wantArt, if (firstShown) Move.Art else Move.Screen)
+        firstShown = true
     }
-    // the episode you're on, which the words above the cards describe; else what Play would start
-    var focusedEp by remember(id) { mutableStateOf<Item?>(null) }
-    var details by remember(id) { mutableStateOf(false) }
-    var seasons by remember(id) { mutableStateOf(false) }
-    var season by remember(id) {
-        mutableIntStateOf(main.seasons.indexOfFirst { s -> upNext != null && s.episodes.any { it.id == upNext.id } }.coerceAtLeast(0))
-    }
-    val described = focusedEp ?: target
-    val leaveCards = { focusedEp = null }
-    val refocus = { fr: FocusRequester -> scope.launch { delay(16); runCatching { fr.requestFocus() } }; Unit }
 
-    FadeIn(arrived) {
-        Banner(main.banner) { bannerDone = true }
-        Column(Modifier.fillMaxSize().padding(top = PageTop)) {
-            Column(Modifier.padding(start = Side).width(430.dp)) {
-                TitleMark(main.logo, main.displayTitle)
-                Text(
-                    (listOf(if (show) "Show" else "Film") + main.meta?.genres.orEmpty().take(2) + listOfNotNull(main.meta?.cert?.ifEmpty { null }))
-                        .joinToString(" · "),
-                    style = Type.Meta, color = Muted, modifier = Modifier.padding(top = 12.dp),
-                )
-                val ep = if (show) described else null
-                if (ep != null) Text("S${ep.season}, E${ep.episode} · ${ep.title}", style = Type.Label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
-                val story = (if (ep != null) ep.meta?.overview else null)?.ifEmpty { null } ?: main.meta?.overview.orEmpty()
-                // always two lines' room, so the buttons stay put from one episode to the next
-                Text(story, style = Type.Body, color = Muted, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = if (ep != null) 4.dp else 12.dp))
-                Row(Modifier.padding(top = 8.dp).height(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val len = (described ?: main).let { t -> t.durMs.takeIf { it > 0 } ?: ((t.meta?.runtime ?: 0) * 60000L) }
-                    val facts = listOfNotNull(main.displayYear.takeIf { it > 0 }?.toString(), len.takeIf { it > 0 }?.let(::hm))
-                    if (facts.isNotEmpty()) Text(facts.joinToString(" · "), style = Type.Meta, color = Muted)
-                    FormatMarks(described?.info ?: main.info)
+    val target = playTarget(main, d, nav.home)
+    // focus: on Resume (or Play) when the page opens or the player closes, else where it was
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        nav.titleFocus = null
+        runCatching { fr(focus).requestFocus() }.onFailure { runCatching { fr("play").requestFocus() } }
+    }
+    LaunchedEffect(nav.refresh) { // back from the player
+        if (nav.titleFocus != null) { focus = "play"; nav.titleFocus = null; withFrameNanos { }; runCatching { fr("play").requestFocus() } }
+    }
+    fun go(p: Place, k: String) { place = p; scope.launchFocus(fr(k)) }
+
+    BackHandler(enabled = place != Place.First && !sheet) { go(Place.First, "play") }
+
+    val pageY by animateFloatAsState(
+        when (place) {
+            Place.First -> 0f
+            Place.Episodes -> -750f * Px.screen
+            Place.More -> -810f * Px.screen
+        },
+        Move.slide(Move.Screen), label = "page",
+    )
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
+            LogoMark(Modifier.offset(LEFT.px, 56.px))
+            SettingsButton(nav, fr("settings"), fr("play")) { focus = "settings" }
+            FirstScreen(main, show, target, fr = ::fr, onFocus = { focus = it }, onDown = {
+                if (show && main.seasons.isNotEmpty()) go(Place.Episodes, "ep/$season/${epOf(season)}") else if (!show) go(Place.More, "more")
+            }, onPlay = { fromStart ->
+                target?.let { t ->
+                    nav.titleFocus = "play"
+                    if (t.item.isEpisode) startPlay(ctx, scope, nav, t.item, fromStart, main.logo, episodeQueue(main))
+                    else startPlay(ctx, scope, nav, t.item, fromStart)
                 }
-                val resumable = target != null && target.pos > 0 && !target.watched && target.durMs > target.pos
-                Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PlayCapsule(if (resumable) hm(target!!.durMs - target.pos) else "Play", focusRequester = playFr, onFocus = leaveCards) { play(false) }
-                    if (resumable) ToolButton(AppIcons.Replay, "Start over", onFocus = leaveCards) { play(true) }
-                    ToolButton(AppIcons.Check, if (allWatched) "Mark unwatched" else "Mark watched", tint = if (allWatched) Ink else Muted, onFocus = leaveCards) { setWatched(!allWatched) }
-                    ToolButton(AppIcons.Info, "Details", focusRequester = infoFr, onFocus = leaveCards) { details = true }
+            }, onDetails = { sheet = true })
+            if (show && main.seasons.isNotEmpty()) EpisodesBlock(
+                main, upNext, season, ::epOf, active = place == Place.Episodes, fr = ::fr,
+                onSeason = { s -> season = s },
+                onEpisode = { s, i -> season = s; epIndex[s] = i },
+                onUp = { go(Place.First, "play") },
+                onPlay = { ep ->
+                    nav.titleFocus = "play"
+                    startPlay(ctx, scope, nav, ep, false, main.logo, episodeQueue(main))
+                },
+            )
+            if (!show) MoreBlock(main, fr("more")) { go(Place.First, "play") }
+        }
+        val detailOf = if (show) (target?.item ?: focusedEp) else main
+        if (sheet && detailOf != null) PictureDetails(main, detailOf, firstArt) { sheet = false; scope.launchFocus(fr("details")) }
+    }
+}
+
+private fun CoroutineScope.launchFocus(fr: FocusRequester) {
+    launch { withFrameNanos { }; runCatching { fr.requestFocus() } }
+}
+
+/** Settings at the top right of a title page, as on Home. */
+@Composable
+fun SettingsButton(nav: Nav, fr: FocusRequester, down: FocusRequester, onFocus: () -> Unit) {
+    Box(Modifier.fillMaxWidth()) {
+        GlassButton(
+            "Settings", Icons.Settings, height = 44, textSize = 18, iconSize = 20, iconGap = 10, padStart = 14, padEnd = 18,
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = 120.px, top = 50.px).focusProperties { this.down = down },
+            fr = fr, onFocus = { if (it) onFocus() },
+        ) { nav.open(Screen.Settings) }
+    }
+}
+
+/** The page's first screen: logo, facts, story, credits, buttons (boards 04-09, at their fixed places). */
+@Composable
+private fun FirstScreen(
+    main: Item, show: Boolean, target: PlayTarget?, fr: (String) -> FocusRequester, onFocus: (String) -> Unit,
+    onDown: () -> Unit, onPlay: (Boolean) -> Unit, onDetails: () -> Unit,
+) {
+    // a show's block sits higher, leaving room for "Episodes" and its first row at the bottom
+    val y = if (show) listOf(299, 502, 538, 630, 726) else listOf(332, 586, 622, 716, 812)
+    Box(Modifier.offset(if (show) 115.px else LEFT.px, y[0].px)) {
+        TitleArt(main.logo, main.displayTitle, 620, if (show) 180 else 232, Alignment.BottomStart, typeSize = if (show) 80 else 92, typeLine = if (show) 76 else 86)
+    }
+    val facts = listOfNotNull(
+        main.displayYear.takeIf { it > 0 }?.toString(), main.meta?.genres?.firstOrNull(),
+        if (show) null else runtimeOf(main)?.let(::span), main.meta?.cert?.ifEmpty { null },
+    )
+    DotLine(facts, ts(19, 24, 600, Pal.InkSoft, cond = true, track = 0.01f), modifier = Modifier.offset(LEFT.px, y[1].px))
+    main.meta?.overview?.ifEmpty { null }?.let {
+        Text(it, style = ts(21, 30, 400, Pal.InkSoft), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.offset(LEFT.px, y[2].px).width(660.px))
+    }
+    // Director, Music (or Created by) need crew from TMDB, which mint doesn't fetch yet: only Starring for now
+    val stars = main.meta?.cast.orEmpty().take(3).map { it.name }
+    if (stars.isNotEmpty()) Row(Modifier.offset(LEFT.px, y[3].px), horizontalArrangement = Arrangement.spacedBy(56.px)) {
+        Column {
+            Text("STARRING", style = CapsLabel)
+            DotLine(stars, ts(22, 28, 600), gap = if (show) 12 else 10, modifier = Modifier.padding(top = 8.px))
+        }
+    }
+    val started = target != null && target.word == "Resume"
+    Row(
+        Modifier.offset(LEFT.px, y[4].px).onPreviewKeyEvent { e ->
+            if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown) { onDown(); true } else false
+        },
+        horizontalArrangement = Arrangement.spacedBy(10.px), verticalAlignment = Alignment.Top,
+    ) {
+        val up = Modifier.focusProperties { up = fr("settings") }
+        if (target != null) PlayButton(target.word, target.detail, target.progress, up, fr = fr("play"), onFocus = { if (it) onFocus("play") }) { onPlay(false) }
+        if (started) IconButton(Icons.StartOver, "Start over", up, fr = fr("over"), onFocus = { if (it) onFocus("over") }) { onPlay(true) }
+        if (target?.item?.info != null || main.info != null) {
+            if (target != null) IconButton(Icons.Info, "Picture details", up, fr = fr("details"), onFocus = { if (it) onFocus("details") }, onClick = onDetails)
+            else GlassButton("Picture details", Icons.Info, up, iconSize = 24, padStart = 16, padEnd = 22, weight = 700, fr = fr("details"), onFocus = { if (it) onFocus("details") }, onClick = onDetails)
+        }
+    }
+}
+
+// ---------- a show's seasons and episodes (boards 09 and 10) ----------
+
+private const val EP_X = 500
+private const val EP_W = 1300
+private const val EP_PITCH = 176 // a 162 px row and 14 under it
+private const val SEASON_PITCH = 144 // a 126 px poster and 18 under it
+
+/**
+ * "Episodes ⌄", then the seasons down the left and the season's episodes on the right. Laid out under the first
+ * screen; Down slides it up into view. The focused episode is at full brightness and holds the top slot.
+ */
+@Composable
+private fun EpisodesBlock(
+    main: Item, upNext: Item?, season: Int, epOf: (Int) -> Int, active: Boolean, fr: (String) -> FocusRequester,
+    onSeason: (Int) -> Unit, onEpisode: (Int, Int) -> Unit, onUp: () -> Unit, onPlay: (Item) -> Unit,
+) {
+    Row(Modifier.offset(LEFT.px, 900.px), verticalAlignment = Alignment.CenterVertically) {
+        Text("Episodes", style = ts(24, 28, 700, cond = true))
+        Icon(Icons.Down, null, tint = Pal.Ink, modifier = Modifier.padding(start = 10.px).size(22.px))
+    }
+    var onSeasons by remember { mutableStateOf(false) }
+    // seasons
+    Box(Modifier.offset(LEFT.px, 952.px)) {
+        main.seasons.forEachIndexed { s, it ->
+            val lit by animateFloatAsState(if (s == season) 1f else 0.45f, Move.fade(Move.Focus), label = "season")
+            Row(
+                Modifier.offset(y = (s * SEASON_PITCH).px).graphicsLayer { alpha = lit }
+                    .focusRequester(fr("season/$s"))
+                    .onFocusChanged { f -> if (f.isFocused) { onSeasons = true; onSeason(s) } }
+                    .focusProperties {
+                        up = if (s > 0) fr("season/${s - 1}") else FocusRequester.Cancel
+                        down = if (s < main.seasons.lastIndex) fr("season/${s + 1}") else FocusRequester.Cancel
+                        right = fr("ep/$s/${epOf(s)}")
+                        left = FocusRequester.Cancel
+                    }
+                    .onPreviewKeyEvent { e -> if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionUp && s == 0) { onUp(); true } else false }
+                    .focusable(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(84.px, 126.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
+                    Api.img(it.meta?.poster?.ifEmpty { null } ?: main.meta?.poster, "w185")?.let { u -> AsyncImage(u, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                }
+                Column(Modifier.padding(start = 18.px)) {
+                    Text(it.title, style = ts(26, 30, 700, cond = true), maxLines = 1)
+                    Text(
+                        if (it.unseen == 0 && it.episodes.isNotEmpty()) "All watched" else "${it.episodes.size} episode" + if (it.episodes.size == 1) "" else "s",
+                        style = ts(16, 20, 400, Pal.Muted), modifier = Modifier.padding(top = 4.px),
+                    )
                 }
             }
-            Spacer(Modifier.height(SectionGap))
-            if (show && main.seasons.isNotEmpty()) Episodes(main, upNext, season, seasonFr, { seasons = true }) { focusedEp = it }
-            else if (!show) Cast(main.meta?.cast.orEmpty())
         }
-        if (seasons) SeasonMenu(main.seasons.map { it.title }, season, onPick = { season = it; seasons = false; refocus(seasonFr) }) { seasons = false; refocus(seasonFr) }
-        if (details) DetailsSheet(described ?: main, still) { details = false; refocus(infoFr) }
+    }
+    // the season's episodes: another season crossfades in
+    AnimatedContent(
+        season, transitionSpec = { fadeIn(Move.fade(Move.Screen)) togetherWith fadeOut(Move.fade(Move.Screen)) }, label = "season",
+        modifier = Modifier.offset(EP_X.px, 952.px),
+    ) { s ->
+        val eps = main.seasons.getOrNull(s)?.episodes.orEmpty()
+        val focusedI = epOf(s)
+        val top by animateFloatAsState(-focusedI * EP_PITCH * Px.screen, Move.slide(Move.Screen), label = "list")
+        Box(Modifier.graphicsLayer { translationY = top }) {
+            eps.forEachIndexed { i, ep ->
+                val lit by animateFloatAsState(
+                    when {
+                        i < focusedI -> 0f // above the top slot: out of the way of the heading
+                        i == focusedI && !onSeasons -> 1f
+                        i == focusedI && !active -> 1f
+                        else -> 0.45f
+                    },
+                    Move.fade(Move.Focus), label = "ep",
+                )
+                EpisodeRow(
+                    ep, ep.id == upNext?.id,
+                    Modifier.offset(y = (i * EP_PITCH).px).graphicsLayer { alpha = lit }
+                        .focusRequester(fr("ep/$s/$i"))
+                        .onFocusChanged { f -> if (f.isFocused) { onSeasons = false; onEpisode(s, i) } }
+                        .focusProperties {
+                            up = if (i > 0) fr("ep/$s/${i - 1}") else FocusRequester.Cancel
+                            down = if (i < eps.lastIndex) fr("ep/$s/${i + 1}") else FocusRequester.Cancel
+                            left = fr("season/$s")
+                            right = FocusRequester.Cancel
+                        }
+                        .onPreviewKeyEvent { e ->
+                            if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when {
+                                e.key == Key.DirectionUp && i == 0 -> { onUp(); true }
+                                e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter -> { onPlay(ep); true }
+                                else -> false
+                            }
+                        }
+                        .focusable(),
+                )
+            }
+        }
     }
 }
 
-/** The title page's picture, blurred once and ready to sit behind the details sheet. */
-private fun blurredStill(ctx: Context, url: String?): ImageRequest? =
-    url?.let { ImageRequest.Builder(ctx).data(it).size(320, 180).transformations(BlurOnce()).crossfade(false).build() }
-
-/** "AAC 5.1 · English" as the server sends it, read the way a person says it: "English, AAC 5.1". */
-private fun audioLine(track: String): String {
-    val parts = track.split(" · ")
-    val format = parts[0].replace("DD+", "Dolby Digital+").replace("DD ", "Dolby Digital ").replace("stereo", "Stereo").replace("mono", "Mono")
-    return if (parts.size > 1) "${parts[1]}, $format" else format
-}
-
-/** "Full HD", "4K Ultra HD": the words for a resolution. */
-private fun qualityName(res: String) = when (res) {
-    "4K" -> "4K Ultra HD"
-    "1080p" -> "Full HD"
-    "720p" -> "HD"
-    else -> res
-}
-
-/** "HEVC, 10-bit": the codec without the jargon around it. */
-private fun codecName(v: String) = when {
-    v.contains("Main 10") -> v.substringBefore(" Main") + ", 10-bit"
-    v.contains(" Main") || v.contains(" High") -> v.substringBefore(" ")
-    else -> v
-}
-
-/** "59m 45s". */
-private fun lengthName(sec: Double): String {
-    val s = sec.toLong()
-    return listOfNotNull((s / 3600).takeIf { it > 0 }?.let { "${it}h" }, "${s / 60 % 60}m", "${s % 60}s").joinToString(" ")
-}
-
-/** The numbers, one press away: a sheet over the page's blurred picture. Left, Right, OK or Back close it; Up and Down scroll. */
+/** One episode: still, number and name, two lines of story; length (or what's left) and date on the right. */
 @Composable
-private fun DetailsSheet(it: Item, still: ImageRequest?, onClosed: () -> Unit) {
+private fun EpisodeRow(ep: Item, upNext: Boolean, modifier: Modifier) {
+    Row(modifier.width(EP_W.px).height(162.px), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(288.px, 162.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
+            ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        }
+        Column(Modifier.padding(start = 30.px).widthIn(max = 760.px).weight(1f, fill = false)) {
+            Row {
+                Text("${ep.episode}", style = ts(24, 30, 700, Pal.Faint, tabular = true, track = -0.01f), modifier = Modifier.padding(end = 14.px))
+                Text(ep.title, style = ts(24, 30, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            ep.meta?.overview?.ifEmpty { null }?.let {
+                Text(it, style = ts(16, 23, 400, Pal.Muted), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.px))
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.End) {
+            if (upNext) Text("Up next", style = ts(16, 20, 700), modifier = Modifier.padding(bottom = 6.px))
+            val started = ep.pos > 0 && !ep.watched && ep.durMs > ep.pos
+            val len = if (started) leftWords(ep.durMs - ep.pos) else runtimeOf(ep)?.let(::span)
+            if (len != null) Text(len, style = ts(19, 24, 600, Pal.InkSoft, tabular = true))
+            dateWords(ep.meta?.date)?.let { Text(it, style = ts(15, 20, 400, Pal.Faint), modifier = Modifier.padding(top = 3.px)) }
+        }
+    }
+}
+
+/** "2025-10-16" as "Oct 16, 2025". */
+fun dateWords(d: String?): String? = runCatching {
+    val p = d!!.split("-").map { it.toInt() }
+    val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    "${months[p[1] - 1]} ${p[2]}, ${p[0]}"
+}.getOrNull()
+
+// ---------- below a film's first screen: cast, About, chapters, file (no board yet: plain, same style) ----------
+
+@Composable
+private fun MoreBlock(main: Item, fr: FocusRequester, onUp: () -> Unit) {
+    // one stop: everything below fits one screen, so Up goes straight back
+    Column(
+        Modifier.offset(LEFT.px, 960.px).width(1680.px).focusRequester(fr)
+            .onPreviewKeyEvent { e -> if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionUp) { onUp(); true } else e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown }
+            .focusable(),
+    ) {
+        val cast = main.meta?.cast.orEmpty().take(10)
+        if (cast.isNotEmpty()) {
+            Heading("Cast")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.px), modifier = Modifier.padding(top = 16.px)) {
+                cast.forEach { p ->
+                    Column(Modifier.width(150.px)) {
+                        Box(Modifier.size(150.px, 200.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
+                            Api.img(p.photo.ifEmpty { null }, "w185")?.let { AsyncImage(it, p.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                        }
+                        Text(p.name, style = ts(17, 22, 700), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.px))
+                        if (p.role.isNotEmpty()) Text(p.role, style = ts(15, 20, 400, Pal.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+        Heading("About", Modifier.padding(top = 44.px))
+        main.meta?.tagline?.ifEmpty { null }?.let { Text(it, style = ts(21, 28, 650), modifier = Modifier.padding(top = 14.px)) }
+        main.meta?.overview?.ifEmpty { null }?.let {
+            Text(it, style = ts(19, 28, 400, Pal.InkSoft), maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.px).width(1100.px))
+        }
+        val about = listOfNotNull(dateWords(main.meta?.date), main.meta?.studio?.ifEmpty { null }, main.meta?.genres?.joinToString(", ")?.ifEmpty { null })
+        if (about.isNotEmpty()) DotLine(about, ts(17, 22, 600, Pal.Muted), modifier = Modifier.padding(top = 12.px))
+        val chapters = main.raw.optJSONObject("info")?.optJSONArray("chapters").objects()
+        if (chapters.size > 1) {
+            Heading("Chapters", Modifier.padding(top = 44.px))
+            val shown = chapters.take(12)
+            Column(Modifier.padding(top = 12.px)) {
+                shown.chunked(4).forEach { line ->
+                    Row(Modifier.padding(top = 6.px)) {
+                        line.forEach { c ->
+                            Row(Modifier.width(400.px)) {
+                                Text("%02d".format(chapters.indexOf(c) + 1), style = ts(17, 22, 600, Pal.Faint, tabular = true), modifier = Modifier.width(40.px))
+                                Text(c.optString("title").ifEmpty { "Chapter ${chapters.indexOf(c) + 1}" }, style = ts(17, 22, 600, Pal.InkSoft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text(app.mediacore.core.clock((c.optDouble("start") * 1000).toLong()), style = ts(17, 22, 400, Pal.Muted, tabular = true), modifier = Modifier.padding(start = 12.px, end = 32.px))
+                            }
+                        }
+                    }
+                }
+                if (chapters.size > shown.size) Text("and ${chapters.size - shown.size} more", style = ts(17, 22, 400, Pal.Muted), modifier = Modifier.padding(top = 8.px))
+            }
+        }
+        fileLine(main)?.let {
+            Heading("File", Modifier.padding(top = 44.px))
+            DotLine(it, ts(19, 24, 600, Pal.InkSoft, tabular = true), modifier = Modifier.padding(top = 12.px))
+        }
+    }
+}
+
+@Composable
+private fun Heading(text: String, modifier: Modifier = Modifier) = Text(text, style = ts(24, 28, 700, cond = true), modifier = modifier)
+
+private fun fileLine(it: Item): List<String>? {
+    val raw = it.raw.optJSONObject("info") ?: return null
+    return listOfNotNull(
+        raw.optString("container").ifEmpty { null }?.uppercase(),
+        it.size.takeIf { s -> s > 0 }?.let(::gb),
+        it.info?.dur?.takeIf { d -> d > 0 }?.let { d -> span((d * 1000).toLong()) },
+        it.info?.res?.ifEmpty { null },
+        it.info?.mbps?.takeIf { m -> m > 0 }?.let { m -> "%.1f Mb/s".format(m) },
+    ).takeIf { l -> l.isNotEmpty() }
+}
+
+// ---------- a title still downloading (board 08) ----------
+
+/** All mint knows of a title that's still downloading: its name and how far along it is. */
+@Composable
+fun PendingPage(nav: Nav, title: String) {
+    val art = LocalArt.current
+    LaunchedEffect(Unit) { art.show(ArtSpec(null, ArtStyle.Plain), Move.Screen) }
+    val d = nav.home?.downloads?.firstOrNull { it.title == title }
+    // when it's done it's in the library: its page replaces this one
+    val done = nav.home?.recent?.firstOrNull { it.title == title || it.displayTitle == title }
+    LaunchedEffect(done?.id) { if (done != null && d == null) { nav.back(); nav.open(Screen.Detail(done.id)) } }
     val fr = remember { FocusRequester() }
-    val scroll = rememberScrollState()
+    LaunchedEffect(Unit) { withFrameNanos { }; runCatching { fr.requestFocus() } }
+    Box(Modifier.fillMaxSize()) {
+        LogoMark(Modifier.offset(LEFT.px, 56.px))
+        SettingsButton(nav, fr, fr) {}
+        Box(Modifier.offset(LEFT.px, 332.px)) { TitleArt(null, title, 620, 232, Alignment.BottomStart, typeSize = 92, typeLine = 86) }
+        if (d != null) DownloadBlock(d.progress, etaText(d.eta), Modifier.offset(LEFT.px, 812.px))
+    }
+}
+
+// ---------- Picture details (board 11) ----------
+
+/**
+ * The numbers behind a title, full-screen over its art blurred and darkened (drawn once, then faded in with the
+ * sheet). Back closes it.
+ */
+@Composable
+private fun PictureDetails(title: Item, it: Item, spec: ArtSpec, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    val art = LocalArt.current
     val scope = rememberCoroutineScope()
     val a = remember { Animatable(0f) }
     var closing by remember { mutableStateOf(false) }
+    val blurred = remember(spec) { mutableStateOf(Art.cached(spec.copy(style = ArtStyle.Blurred))) }
+    LaunchedEffect(spec) {
+        if (blurred.value == null) blurred.value = runCatching { Art.bake(ctx, spec.copy(style = ArtStyle.Blurred), art.w, art.h) }.getOrNull()
+        a.animateTo(1f, Move.fade(Move.Screen))
+    }
     val close = {
         if (!closing) {
             closing = true
-            scope.launch { a.animateTo(0f, tween(Motion.FadeOutMs)); onClosed() }
+            scope.launch { a.animateTo(0f, Move.fade(Move.Screen)); onClose() }
         }
-        Unit
     }
-    LaunchedEffect(Unit) {
-        delay(32); runCatching { fr.requestFocus() }
-    }
-    LaunchedEffect(Unit) { a.animateTo(1f, tween(Motion.FadeInMs)) }
     BackHandler(onBack = close)
+    val fr = remember { FocusRequester() }
+    LaunchedEffect(Unit) { withFrameNanos { }; runCatching { fr.requestFocus() } }
     Box(
-        Modifier.fillMaxSize().graphicsLayer { alpha = a.value }.background(Base)
-            .focusRequester(fr)
-            .onPreviewKeyEvent { e ->
-                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (e.key) {
-                    Key.DirectionDown -> { scope.launch { scroll.animateScrollBy(120f) }; true }
-                    Key.DirectionUp -> { scope.launch { scroll.animateScrollBy(-120f) }; true }
-                    Key.DirectionLeft, Key.DirectionRight, Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { close(); true }
-                    else -> false
-                }
-            }
+        Modifier.fillMaxSize().graphicsLayer { alpha = a.value }.background(Pal.Base).focusRequester(fr)
+            .onPreviewKeyEvent { e -> e.type == KeyEventType.KeyDown && e.key != Key.Back } // only Back does anything here
             .focusable(),
     ) {
-        if (still != null) AsyncImage(still, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Base.copy(alpha = 0.6f)))
-        Column(
-            Modifier.align(Alignment.CenterEnd).width(420.dp).fillMaxHeight().background(Raised)
-                .verticalScroll(scroll)
-                .padding(start = 32.dp, end = 32.dp, top = 36.dp, bottom = 32.dp),
-        ) {
-            Text("Details", style = Type.Title)
-            if (it.isEpisode) Text("S${it.season}, E${it.episode} · ${it.title}", style = Type.Meta, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-            val i = it.info
-            val raw = it.raw.optJSONObject("info")
+        blurred.value?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize()) }
+        val info = it.info
+        val raw = it.raw.optJSONObject("info")
+        val name = if (it.isEpisode) "${title.displayTitle} · S${it.season} E${it.episode}" else title.displayTitle
+        Text(name, style = ts(22, 26, 600, Pal.Muted, cond = true), modifier = Modifier.offset(LEFT.px, 180.px))
+        Text("Picture details", style = ts(48, 54, 700, track = -0.015f), modifier = Modifier.offset(LEFT.px, 212.px))
+        // the four that matter most, big
+        Row(Modifier.offset(LEFT.px, 350.px), horizontalArrangement = Arrangement.spacedBy(96.px)) {
+            info?.res?.ifEmpty { null }?.let { Figure("Resolution", it, null) }
+            Figure("Dynamic range", dynamicRange(info?.hdr), null)
+            info?.mbps?.takeIf { m -> m > 0 }?.let { m -> Figure("Bitrate", "%.1f".format(m), "Mb/s") }
             val w = raw?.optInt("w") ?: 0
             val h = raw?.optInt("h") ?: 0
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp)) {
-                i?.res?.ifEmpty { null }?.let { r -> KeyFigure(r, qualityName(r)) }
-                i?.mbps?.takeIf { m -> m > 0 }?.let { m -> KeyFigure("%.1f".format(m), "Mb/s") }
-                i?.fps?.takeIf { f -> f > 0 }?.let { f -> KeyFigure("%.3f".format(f).replace(".000", ""), "fps") }
+            if (w > 0 && h > 0) Figure("Aspect ratio", "%.2f".format(w.toFloat() / h), ": 1")
+        }
+        Row(Modifier.offset(LEFT.px, 580.px), horizontalArrangement = Arrangement.spacedBy(110.px)) {
+            Column(Modifier.width(380.px)) {
+                Text("PICTURE", style = CapsLabel)
+                info?.vcodec?.ifEmpty { null }?.let { v -> Spec("Codec", v.substringBefore(" Main").substringBefore(" High")) }
+                raw?.optInt("vbits")?.takeIf { b -> b > 0 }?.let { b -> Spec("Bit depth", "$b-bit") }
+                info?.fps?.takeIf { f -> f > 0 }?.let { f -> Spec("Frame rate", "%.3f".format(f).trimEnd('0').trimEnd('.') + " fps") }
             }
-            val picture = listOfNotNull(
-                ("Resolution" to "$w × $h").takeIf { w > 0 && h > 0 },
-                i?.vcodec?.ifEmpty { null }?.let { v -> "Video" to codecName(v) },
-                i?.hdr?.ifEmpty { null }?.let { d -> "HDR" to d },
-            )
-            SpecGroup("Picture", picture)
-            // English first, the way you'd want to read it
-            val tracks = i?.tracks.orEmpty().ifEmpty { listOfNotNull(i?.audio?.ifEmpty { null }) }.map(::audioLine)
-                .sortedByDescending { t -> t.startsWith("English") }
-                .map { t -> if (", " in t) t.substringBefore(", ") to t.substringAfter(", ") else "Audio" to t }
-            // however many a file carries, only English matters here
-            val sidecars = it.raw.optJSONArray("subs").objects().map { s -> s.optString("label") }
-            val subs = (i?.subs.orEmpty() + sidecars).filter { s -> s.isNotEmpty() }
-            val subtitles = if (subs.isEmpty()) emptyList() else listOf("Subtitles" to if (subs.any { s -> s.contains("english", ignoreCase = true) }) "English" else "No English")
-            SpecGroup("Languages", tracks + subtitles)
-            SpecGroup(
-                "File",
-                listOfNotNull(
-                    it.size.takeIf { s -> s > 0 }?.let { s -> "Size" to gb(s) },
-                    i?.dur?.takeIf { d -> d > 0 }?.let { d -> "Length" to lengthName(d) },
-                ),
-            )
-        }
-    }
-}
-
-/** A headline number at the top of the sheet, with what it counts under it. */
-@Composable
-private fun RowScope.KeyFigure(value: String, name: String) {
-    Column(Modifier.weight(1f)) {
-        Text(value, style = Type.Title.figures(), maxLines = 1)
-        Text(name, style = Type.Caption, color = Muted, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
-    }
-}
-
-/** A heading under a hairline, then its rows: the name on the left, its value on the right. */
-@Composable
-private fun SpecGroup(heading: String, rows: List<Pair<String, String>>) {
-    if (rows.isEmpty()) return
-    Box(Modifier.padding(top = 20.dp).fillMaxWidth().height(1.dp).background(Overlay))
-    Text(heading, style = Type.Caption, color = Muted, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-    rows.forEach { (name, value) ->
-        Row(Modifier.fillMaxWidth().height(30.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(name, style = Type.Body, color = Muted, maxLines = 1)
-            Spacer(Modifier.weight(1f))
-            Text(value, style = Type.Label.figures(), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp))
-        }
-    }
-}
-
-/** Faces with names under them, lined up with the title above; the page's last thing. */
-@Composable
-private fun Cast(cast: List<Person>) {
-    if (cast.isEmpty()) return
-    Column(Modifier.padding(start = Side)) {
-        RowTitle("Cast")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            cast.take(8).forEach { p ->
-                Column(Modifier.width(102.dp)) {
-                    Box(Modifier.size(72.dp).clip(CardShape).background(Raised), contentAlignment = Alignment.Center) {
-                        val photo = Api.img(p.photo.ifEmpty { null }, "w185")
-                        if (photo != null) AsyncImage(photo, p.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        else Text(p.name.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""), style = Type.Label, color = Muted)
+            val tracks = soundTracks(info?.tracks.orEmpty().ifEmpty { listOfNotNull(info?.audio?.ifEmpty { null }) })
+            if (tracks.isNotEmpty()) Column(Modifier.width(320.px)) {
+                Text("SOUND", style = CapsLabel)
+                tracks.forEachIndexed { i, t ->
+                    Column(Modifier.padding(top = 18.px)) {
+                        if (i == 0) {
+                            Text(t.name, style = ts(24, 30, 700), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text((listOfNotNull(t.lang) + listOfNotNull(if (t.lossless) "lossless" else null, t.extra) + "default").joinToString(" · "), style = ts(16, 22, 400, Pal.Muted), maxLines = 1)
+                        } else {
+                            Text(t.name, style = ts(20, 30, 600, Pal.InkSoft), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text((listOfNotNull(t.lang) + listOfNotNull(if (t.lossless) "lossless" else null, t.extra)).joinToString(" · ").ifEmpty { " " }, style = ts(16, 22, 400, Pal.Faint), maxLines = 1)
+                        }
                     }
-                    Text(p.name, style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
-                    if (p.role.isNotEmpty()) Text(p.role, style = Type.Caption, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            val subs = subtitleCounts(info?.subs.orEmpty() + it.raw.optJSONArray("subs").objects().map { s -> s.optString("label") })
+            if (subs.isNotEmpty()) Column(Modifier.width(240.px)) {
+                Text("SUBTITLES", style = CapsLabel)
+                subs.forEach { (lang, n) ->
+                    Row(Modifier.padding(top = 16.px)) {
+                        Text(lang, style = ts(20, 26, 600, Pal.InkSoft))
+                        if (n > 1) Text("×$n", style = ts(20, 26, 500, Pal.Faint), modifier = Modifier.padding(start = 10.px))
+                    }
+                }
+            }
+            Column(Modifier.width(320.px)) {
+                Text("FILE", style = CapsLabel)
+                raw?.optString("container")?.ifEmpty { null }?.let { c -> Spec("Format", c.uppercase()) }
+                it.size.takeIf { s -> s > 0 }?.let { s -> Spec("Size", gb(s)) }
+                info?.dur?.takeIf { d -> d > 0 }?.let { d -> Spec("Length", span((d * 1000).toLong())) }
+                raw?.optJSONArray("chapters")?.length()?.takeIf { n -> n > 1 }?.let { n -> Spec("Chapters", "$n") }
+            }
+        }
+        Row(Modifier.align(Alignment.BottomStart).padding(start = LEFT.px, bottom = 80.px), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Back, null, tint = Pal.Ink, modifier = Modifier.padding(end = 12.px).size(22.px))
+            Text("Back", style = ts(19, 24, 600))
+            Text("to close", style = ts(19, 24, 500, Pal.Faint), modifier = Modifier.padding(start = 8.px))
         }
     }
 }
 
-/** "Season 1 ⌄" (a picker when there are more), then that season's episodes. */
 @Composable
-private fun Episodes(main: Item, upNext: Item?, season: Int, headingFr: FocusRequester, onOpenSeasons: () -> Unit, onFocusEp: (Item) -> Unit) {
-    val ctx = LocalContext.current
-    val s = main.seasons.getOrNull(season) ?: return
-    val queue = episodeQueue(main)
+private fun Figure(label: String, value: String, unit: String?) {
     Column {
-        SeasonHeading(s.title, main.seasons.size > 1, headingFr, onOpenSeasons)
-        key(season) { // another season starts at its own beginning, not at the old scroll position
-            val state = rememberLazyListState(initialFirstVisibleItemIndex = s.episodes.indexOfFirst { it.id == upNext?.id }.coerceAtLeast(0))
-            LazyRow(
-                state = state,
-                contentPadding = PaddingValues(start = Side, end = Side, top = 12.dp, bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                itemsIndexed(s.episodes, key = { _, it -> it.id }) { i, ep ->
-                    EpisodeCard(ep, Modifier.rowEnds(i, s.episodes.size), { onFocusEp(ep) }) {
-                        PlayerActivity.play(ctx, queue, queue.indexOfFirst { it.id == ep.id }.coerceAtLeast(0), logo = main.logo)
-                    }
-                }
-            }
+        Text(label.uppercase(), style = CapsLabel)
+        Row(Modifier.padding(top = 12.px), verticalAlignment = Alignment.Bottom) {
+            Text(value, style = ts(60, 64, 650, tabular = true, track = -0.02f), maxLines = 1)
+            if (unit != null) Text(unit, style = ts(28, 44, 500, Pal.Muted), modifier = Modifier.padding(start = 8.px))
         }
     }
 }
 
 @Composable
-private fun SeasonHeading(title: String, many: Boolean, fr: FocusRequester, onOpen: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    Row(
-        Modifier.padding(start = Side)
-            .then(if (many) Modifier.focusRequester(fr) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
-            .then(if (many) Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen) else Modifier)
-            .focusLine(focused && many)
-            .height(30.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = Type.Heading)
-        if (many) Icon(AppIcons.ExpandMore, null, tint = if (focused) Ink else Muted, modifier = Modifier.padding(start = 4.dp).size(24.dp))
+private fun Spec(name: String, value: String) {
+    Row(Modifier.padding(top = 16.px).fillMaxWidth()) {
+        Text(name, style = ts(20, 26, 400, Pal.Muted))
+        Spacer(Modifier.weight(1f).padding(start = 24.px))
+        Text(value, style = ts(20, 26, 600, tabular = true), maxLines = 1)
     }
 }
 
-/** The list of seasons, low on the page's left, over the episodes. Back closes it. */
-@Composable
-private fun BoxScope.SeasonMenu(titles: List<String>, current: Int, onPick: (Int) -> Unit, onClose: () -> Unit) {
-    val fr = remember { FocusRequester() }
-    LaunchedEffect(Unit) { delay(32); runCatching { fr.requestFocus() } }
-    BackHandler(onBack = onClose)
-    LazyColumn(
-        Modifier.align(Alignment.BottomStart).padding(start = Side, bottom = 32.dp).width(220.dp).heightIn(max = 300.dp).clip(CardShape).background(Raised).padding(8.dp),
-        state = rememberLazyListState(initialFirstVisibleItemIndex = (current - 2).coerceAtLeast(0)),
-    ) {
-        itemsIndexed(titles) { i, t ->
-            Box(Modifier.listEnds(i, titles.size)) { MenuOption(t, "", i == current, if (i == current) fr else null) { onPick(i) } }
-        }
-    }
+/** "SDR" when there's no HDR; "Dolby Vision", "HDR10", "HDR10+" otherwise. */
+private fun dynamicRange(hdr: String?): String = when {
+    hdr.isNullOrEmpty() -> "SDR"
+    hdr.startsWith("Dolby Vision") -> "Dolby Vision"
+    else -> hdr
 }
 
-/** The picture and how far you got on its edge, with the number and name under it: the full story is in the block above. */
-@Composable
-private fun EpisodeCard(ep: Item, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
-    Column(Modifier.width(190.dp)) {
-        FocusCard(onClick, modifier.fillMaxWidth().aspectRatio(16f / 9f), onFocus = onFocus) {
-            ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-            if (!ep.watched && ep.pos > 0 && ep.durMs > ep.pos) ProgressTrack(ep.progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
-        }
-        Row(Modifier.padding(top = 4.dp).height(24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${ep.episode} · ${ep.title}", style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            if (ep.watched) Icon(AppIcons.Check, "Watched", tint = Muted, modifier = Modifier.size(24.dp))
-        }
+/** One sound track as the sheet shows it. */
+class SoundTrack(val name: String, val lang: String?, val lossless: Boolean, val extra: String?, val channels: Int)
+
+/** "DD+ Atmos 5.1 · Hindi" as the server writes a track, read the way a person says it. */
+fun soundTrack(s: String): SoundTrack {
+    val parts = s.split(" · ")
+    val fmt = parts[0]
+    val lang = parts.getOrNull(1)?.ifEmpty { null }
+    val atmos = fmt.contains("Atmos")
+    val layout = Regex("(\\d\\.\\d|stereo|mono)$").find(fmt)?.value
+    val codec = fmt.removeSuffix(layout ?: "").replace("Atmos", "").trim()
+    val name = when {
+        codec == "DD+" -> "Dolby Digital Plus"
+        codec == "DD" -> "Dolby Digital"
+        else -> codec
     }
+    val lossless = listOf("TrueHD", "DTS-HD MA", "FLAC", "PCM", "LPCM", "ALAC").any { codec.startsWith(it) }
+    val ch = when (layout) { "7.1" -> 8; "5.1" -> 6; "stereo" -> 2; "mono" -> 1; null -> 0; else -> layout.substringBefore('.').toIntOrNull()?.plus(1) ?: 0 }
+    return SoundTrack(listOfNotNull(name.ifEmpty { null }, layout).joinToString(" "), lang, lossless, if (atmos) "Atmos" else null, ch)
 }
 
-/** One row of a compact menu: a check for the current choice, the name, a detail on the right. */
-@Composable
-fun MenuOption(title: String, detail: String, selected: Boolean, fr: FocusRequester?, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().height(36.dp)
-            .then(if (fr != null) Modifier.focusRequester(fr) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
-            .clip(CardShape)
-            .background(if (focused) Ink else Color.Transparent)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.width(28.dp)) {
-            if (selected) Icon(AppIcons.Check, null, tint = if (focused) Base else Ink, modifier = Modifier.size(24.dp))
-        }
-        Text(title, style = Type.Body, color = if (focused) Base else Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (detail.isNotEmpty()) Text(detail, style = Type.Meta, color = if (focused) Base else Muted, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+/** Every track, the file's own first (its default), as the sheet lists them. */
+private fun soundTracks(tracks: List<String>) = tracks.map(::soundTrack)
+
+/** The one track worth naming on its own (SPEC.md): lossless above lossy, then more channels. */
+fun bestTrack(tracks: List<String>): SoundTrack? =
+    tracks.map(::soundTrack).maxWithOrNull(compareBy<SoundTrack> { it.lossless }.thenBy { it.channels })
+
+/** "English" ×2: subtitles by language, in the file's order; a forced track counts with its language. */
+private fun subtitleCounts(labels: List<String>): List<Pair<String, Int>> {
+    val out = LinkedHashMap<String, Int>()
+    labels.filter { it.isNotBlank() }.forEach { l ->
+        val lang = l.substringBefore(" (").substringBefore(" | ").trim().let { if (it.equals("Unknown", true) || it.equals("und", true)) "Unlabelled" else it }
+        out[lang] = (out[lang] ?: 0) + 1
     }
+    return out.toList()
 }
