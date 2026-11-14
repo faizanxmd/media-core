@@ -9,6 +9,7 @@ numbers by hand. Only the TV app's copy has the refined mark so far: Montserrat'
 core with its glow. The phone, web and engine copies still draw the older mark.
 
 Third-party:
+- Archivo, SIL Open Font License 1.1, Copyright 2016 The Archivo Project Authors (github.com/Omnibus-Type/Archivo). The TV app's type (`res/font/archivo.ttf`, the variable font with width and weight).
 - Montserrat, SIL Open Font License 1.1, Copyright 2024 The Montserrat.Git Project Authors. Used only to draw the logo.
 - Fluent UI System Icons, MIT License, Copyright (c) 2020 Microsoft Corporation. The TV's icons, and every icon on the phone and the web.
 - hls.js, Apache License 2.0 (`engine/web/vendor/hls.LICENSE`). The web player's streaming engine.
