@@ -274,8 +274,11 @@ fun PlayButton(
         if (progress != null) {
             val track = if (focused) Pal.OnInk.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.18f)
             val bar = if (focused) Pal.Accent else Color.White
-            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.px).background(track)) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0.03f, 1f)).background(bar))
+            // matchParentSize: the line takes the button's width, it never sets it
+            Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomStart) {
+                Box(Modifier.fillMaxWidth().height(4.px).background(track)) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0.03f, 1f)).background(bar))
+                }
             }
         }
     }
@@ -351,8 +354,10 @@ fun DownloadBlock(percent: Int, eta: String?, modifier: Modifier = Modifier) {
             Box(Modifier.padding(horizontal = 14.px).size(1.px, 22.px).background(Pal.Ink.copy(alpha = 0.22f)))
             DotLine(listOfNotNull("$percent%", eta), ts(19, 24, 600, Pal.Muted, tabular = true), gap = 10)
         }
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.px).background(Pal.Ink.copy(alpha = 0.10f))) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0f, 1f)).background(Pal.Accent))
+        Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomStart) {
+            Box(Modifier.fillMaxWidth().height(4.px).background(Pal.Ink.copy(alpha = 0.10f))) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0f, 1f)).background(Pal.Accent))
+            }
         }
     }
 }

@@ -1,0 +1,36 @@
+# The TV redesign's debug build: runs on every push to `redesign`, uploads the APK as an artifact.
+# No signing key, nothing published; scripts/ci-build.sh and Build apps stay the way to ship.
+name: Redesign debug build
+
+on:
+  push:
+    branches: [redesign]
+    paths: ["android/**", ".github/workflows/redesign-debug.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redesign-debug
+  cancel-in-progress: true
+
+jobs:
+  tv-debug:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Build the TV debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon :app:assembleTvDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tv-debug
+          path: android/app/build/outputs/apk/tv/debug/*.apk
+          retention-days: 14
+          if-no-files-found: error
