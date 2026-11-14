@@ -1,33 +1,100 @@
 package app.mediacore
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
 
-/** The TV app's screens, each one canvas: the tabs are part of the page and scroll away with it; title pages have none. */
+/**
+ * The TV app: Home is the whole app, with title pages and Settings opened from it. Under every screen lies one
+ * picture (ArtLayer) that each screen asks for; the screens themselves crossfade over it (250 ms), so a picture two
+ * screens share stays where it is.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
-    CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec()) { // every list scrolls alike
-        Box(Modifier.fillMaxSize().background(Base)) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val art = remember { ArtState(ctx.applicationContext, scope) }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec(), LocalArt provides art) {
+        Box(
+            Modifier.fillMaxSize().background(Pal.Base).onSizeChanged { art.w = it.width; art.h = it.height },
+        ) {
+            ArtLayer(art)
             BackHandler(enabled = nav.stack.size > 1) { nav.back() }
-            val s = nav.stack.last()
-            key(s) {
+            AnimatedContent(
+                nav.stack.last(),
+                transitionSpec = { fadeIn(Move.fade(Move.Screen)) togetherWith fadeOut(Move.fade(Move.Screen)) },
+                label = "screen",
+            ) { s ->
                 when (s) {
-                    is Screen.Detail -> DetailScreen(nav, s.id) // fades itself in, once its picture is ready
-                    Screen.Films -> FadeIn { LibraryScreen(nav, shows = false, onUpdate = onUpdate) }
-                    Screen.Shows -> FadeIn { LibraryScreen(nav, shows = true, onUpdate = onUpdate) }
-                    Screen.Search -> FadeIn { SearchScreen(nav, onUpdate) }
-                    else -> FadeIn { HomeScreen(nav, onUpdate = onUpdate) }
+                    is Screen.Detail -> TitlePage(nav, s.id)
+                    is Screen.Pending -> PendingPage(nav, s.title)
+                    Screen.Settings -> SettingsScreen(nav)
+                    Screen.Home -> HomeScreen(nav, onUpdate)
                 }
             }
+            Offline(nav)
+            // into and out of the player: the whole screen goes to black and comes back from it
+            val black = nav.black.value
+            if (black > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = black }.background(Color.Black))
         }
     }
+}
+
+/** "mint is offline", over everything, until mint answers again; then it fades back to the app. */
+@Composable
+private fun Offline(nav: Nav) {
+    val a by animateFloatAsState(if (nav.offline) 1f else 0f, Move.fade(Move.Screen), label = "offline")
+    if (a == 0f) return
+    val fr = remember { FocusRequester() }
+    // it holds focus while it's up, so the remote can't move around the app hidden under it
+    LaunchedEffect(nav.offline) { if (nav.offline) { delay(16); runCatching { fr.requestFocus() } } }
+    LaunchedEffect(nav.offline) {
+        while (nav.offline) {
+            delay(5000)
+            runCatching { nav.refresh++ }
+        }
+    }
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a }.background(Pal.Base).focusRequester(fr).focusable()) {
+        GrainPlain()
+        LogoMark(Modifier.offset(120.px, 56.px))
+        Text("mint is offline", style = ts(48, 54, 700, track = -0.015f), modifier = Modifier.offset(120.px, 470.px))
+    }
+}
+
+/** The base colour with the grain on it: board 13, and what's under a page that has no picture. */
+@Composable
+fun GrainPlain() {
+    val ctx = LocalContext.current
+    val art = LocalArt.current
+    val spec = ArtSpec(null, ArtStyle.Plain)
+    val bmp = remember { androidx.compose.runtime.mutableStateOf<android.graphics.Bitmap?>(Art.cached(spec)) }
+    LaunchedEffect(Unit) { if (bmp.value == null) bmp.value = Art.bake(ctx, spec, art.w, art.h) }
+    bmp.value?.let { b -> androidx.compose.foundation.Image(b.asImageBitmap(), null, Modifier.fillMaxSize()) }
 }

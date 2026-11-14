@@ -19,10 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -33,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.FileProvider
 import app.mediacore.core.Api
 import app.mediacore.core.Home
+import app.mediacore.core.Item
+import androidx.compose.animation.core.Animatable
 import app.mediacore.core.Offline
 import app.mediacore.core.Speed
 import kotlinx.coroutines.Dispatchers
@@ -44,10 +43,10 @@ import java.io.File
 
 sealed interface Screen {
     data object Home : Screen
-    data object Films : Screen
-    data object Shows : Screen
-    data object Search : Screen
     data class Detail(val id: String) : Screen
+    /** A title still downloading: not in the library yet, so all there is to show is its name and progress. */
+    data class Pending(val title: String) : Screen
+    data object Settings : Screen
 }
 
 /** App-wide state that must outlive a screen (so Back lands where you were). */
@@ -55,37 +54,19 @@ class Nav {
     val stack = mutableStateListOf<Screen>(Screen.Home)
     var refresh by mutableIntStateOf(0) // bumped when we come back from the player
     var update by mutableStateOf<Int?>(null) // newer app build on the server
-    // Home's scroll/focus memory
-    val homeList = LazyListState()
-    val rowStates = mutableMapOf<String, LazyListState>()
-    var homeFocus: String? = null // "row/id" of the last focused card
     var home by mutableStateOf<Home?>(null)
     var homeJson: String? = null // what [home] was parsed from: an identical answer changes nothing on screen
-    val gridStates = mutableMapOf<String, LazyGridState>()
-    val gridFocus = mutableMapOf<String?, String>() // "films"/"shows" -> id of the last focused poster
-    var query = ""
-    val railFocus = FocusRequester() // the current tab
-    var contentFocus: FocusRequester? = null // the card last focused on this page: Down from the tabs goes back to it
-
-    val tab: Tab get() = when (stack.lastOrNull { it !is Screen.Detail }) {
-        Screen.Films -> Tab.Films
-        Screen.Shows -> Tab.Shows
-        Screen.Search -> Tab.Search
-        else -> Tab.Home
-    }
-
-    /** Sidebar / bottom bar: Home is always underneath, so Back from a tab lands on Home. */
-    fun go(t: Tab) {
-        if (t != tab) { contentFocus = null; gridFocus.remove("search") }
-        stack.clear()
-        stack.add(Screen.Home)
-        when (t) {
-            Tab.Films -> stack.add(Screen.Films)
-            Tab.Shows -> stack.add(Screen.Shows)
-            Tab.Search -> stack.add(Screen.Search)
-            Tab.Home -> {}
-        }
-    }
+    var offline by mutableStateOf(false) // mint isn't answering
+    /** Home's focus, kept while a title page is open: "settings", "play", "info", or "row/id". */
+    var homeFocus: String? = null
+    val homeCols = mutableMapOf<String, Int>() // the card each row last had focused
+    /** Title pages already fetched, shown at once when opened again, then refreshed. */
+    val details = mutableMapOf<String, Pair<Item, Item?>>()
+    /** Into the player: the screen goes black first, and comes back from black. */
+    val black = Animatable(0f)
+    var inPlayer = false
+    var titleFocus: String? = null
+    var heroKey: String? = null // the title Home's hero last showed // the title page's button to land on when it comes back
 
     fun open(s: Screen) { stack.add(s) }
     fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
@@ -98,6 +79,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Api.init(this)
+        Px.init(this)
+        Move.read(this)
         Speed.start(this) // measures this connection in the background, for Original or Light
         Offline.init(this, overMetered = true)
         enableEdgeToEdge()
@@ -125,6 +108,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        Move.read(this)
+        if (nav.inPlayer) { // back from the player: the title page fades up from black
+            nav.inPlayer = false
+            scope.launch { nav.black.animateTo(0f, Move.fade(Move.Screen)) }
+        }
         keepUp.run()
         scope.launch { checkUpdate() }
     }
