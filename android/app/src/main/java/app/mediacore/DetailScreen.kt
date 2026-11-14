@@ -140,7 +140,10 @@ fun TitlePage(nav: Nav, id: String) {
         },
         Move.slide(Move.Screen), label = "page",
     )
+    // down in a film's cast and About, the art steps back behind a dark veil, so the words read on calm ground
+    val veil by animateFloatAsState(if (place == Place.More) 1f else 0f, Move.fade(Move.Screen), label = "veil")
     Box(Modifier.fillMaxSize()) {
+        if (veil > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Pal.Base.copy(alpha = 0.82f)))
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
             SettingsButton(nav, fr("settings"), fr("play")) { focus = "settings" }
             FirstScreen(main, show, target, fr = ::fr, onFocus = { focus = it }, onDown = {
@@ -191,10 +194,12 @@ private fun FirstScreen(
     onDown: () -> Unit, onPlay: (Boolean) -> Unit, onDetails: () -> Unit,
 ) {
     // a show's block sits higher, leaving room for "Episodes" and its first row at the bottom
-    // top of: logo, facts, story (two lines of 40), Starring, buttons
-    val y = if (show) listOf(180, 410, 458, 560, 674) else listOf(230, 500, 548, 650, 780)
-    Box(Modifier.offset(LEFT.px, y[0].px)) {
-        TitleArt(main.logo, main.displayTitle, 720, if (show) 210 else 250, Alignment.BottomStart, typeSize = if (show) 88 else 100, typeLine = if (show) 92 else 104)
+    // top of: logo (its foot 24 px over the facts), facts, story (two lines of 40), Starring, buttons
+    val y = listOf(0, 500, 548, 650, 780)
+    val logoW = if (show) 560 else 500
+    val logoH = if (show) 220 else 240
+    Box(Modifier.offset(LEFT.px, (y[1] - 24 - logoH).px)) {
+        TitleArt(main.logo, main.displayTitle, logoW, logoH, Alignment.BottomStart, typeSize = 84, typeLine = 88)
     }
     val facts = listOfNotNull(
         main.displayYear.takeIf { it > 0 }?.toString(), main.meta?.genres?.firstOrNull(),
@@ -231,8 +236,9 @@ private fun FirstScreen(
 
 // ---------- a show's seasons and episodes (boards 09 and 10) ----------
 
-private const val EPISODES_Y = 880 // "Episodes", under a show's first screen; its list starts 56 below
-private const val MORE_Y = 960 // a film's cast and the rest
+// Under the first screen only a heading shows, never half a picture: what's below it starts at the screen's foot
+private const val EPISODES_Y = 1024 // "Episodes"; its list starts 56 below
+private const val MORE_Y = 1024 // a film's cast and the rest
 private const val EP_X = 480
 private const val EP_W = 1920 - EDGE - EP_X
 private const val EP_PITCH = 204 // a 180 px row and 24 under it
@@ -330,7 +336,7 @@ private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Mo
         Box(Modifier.size(320.px, 180.px).lift(ringOf(focused)).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
             ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         }
-        Column(Modifier.padding(start = 32.px).widthIn(max = 800.px).weight(1f, fill = false)) {
+        Column(Modifier.padding(start = 32.px).weight(1f)) {
             Row {
                 Text("${ep.episode}", style = ts(29, 36, 700, Pal.Faint, tabular = true, track = -0.01f), modifier = Modifier.padding(end = 16.px))
                 Text(ep.title, style = ts(29, 36, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -339,8 +345,7 @@ private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Mo
                 Text(it, style = ts(23, 31, 400, Pal.Muted), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.px))
             }
         }
-        Spacer(Modifier.weight(1f))
-        Column(Modifier.padding(start = 24.px), horizontalAlignment = Alignment.End) {
+        Column(Modifier.padding(start = 48.px).width(220.px), horizontalAlignment = Alignment.End) {
             if (upNext) Text("Up next", style = ts(23, 28, 700), modifier = Modifier.padding(bottom = 6.px))
             val started = ep.pos > 0 && !ep.watched && ep.durMs > ep.pos
             val len = if (started) leftWords(ep.durMs - ep.pos) else runtimeOf(ep)?.let(::span)
@@ -368,13 +373,13 @@ private fun MoreBlock(main: Item, fr: FocusRequester, onUp: () -> Unit) {
             .focusable(),
     ) {
         // it has to fit one screen (Up goes straight back), so it shows a little of each
-        val cast = main.meta?.cast.orEmpty().take(9)
+        val cast = main.meta?.cast.orEmpty().take(8)
         if (cast.isNotEmpty()) {
             Heading("Cast")
-            Row(horizontalArrangement = Arrangement.spacedBy(20.px), modifier = Modifier.padding(top = 16.px)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(40.px), modifier = Modifier.padding(top = 16.px)) {
                 cast.forEach { p ->
-                    Column(Modifier.width(176.px)) {
-                        Box(Modifier.size(176.px, 220.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
+                    Column(Modifier.width(180.px)) {
+                        Box(Modifier.size(180.px, 225.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
                             Api.img(p.photo.ifEmpty { null }, "w185")?.let { AsyncImage(it, p.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                         }
                         Text(p.name, style = ts(23, 28, 700), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.px))
@@ -390,25 +395,7 @@ private fun MoreBlock(main: Item, fr: FocusRequester, onUp: () -> Unit) {
         }
         val about = listOfNotNull(dateWords(main.meta?.date), main.meta?.studio?.ifEmpty { null }, main.meta?.genres?.joinToString(", ")?.ifEmpty { null })
         if (about.isNotEmpty()) DotLine(about, ts(23, 28, 600, Pal.Muted), modifier = Modifier.padding(top = 12.px))
-        val chapters = main.raw.optJSONObject("info")?.optJSONArray("chapters").objects()
-        if (chapters.size > 1) {
-            Heading("Chapters", Modifier.padding(top = 36.px))
-            val shown = chapters.take(8)
-            Column(Modifier.padding(top = 6.px)) {
-                shown.chunked(4).forEach { line ->
-                    Row(Modifier.padding(top = 8.px)) {
-                        line.forEach { c ->
-                            Row(Modifier.width(440.px)) {
-                                Text("%02d".format(chapters.indexOf(c) + 1), style = ts(23, 28, 600, Pal.Faint, tabular = true), modifier = Modifier.width(48.px))
-                                Text(c.optString("title").ifEmpty { "Chapter ${chapters.indexOf(c) + 1}" }, style = ts(23, 28, 600, Pal.InkSoft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Text(app.mediacore.core.clock((c.optDouble("start") * 1000).toLong()), style = ts(23, 28, 400, Pal.Muted, tabular = true), modifier = Modifier.padding(start = 12.px, end = 32.px))
-                            }
-                        }
-                    }
-                }
-                if (chapters.size > shown.size) Text("and ${chapters.size - shown.size} more", style = ts(23, 28, 400, Pal.Muted), modifier = Modifier.padding(top = 8.px))
-            }
-        }
+        // chapters: their count is in Picture details; a list of "Chapter 1, Chapter 2…" says nothing
         fileLine(main)?.let {
             Heading("File", Modifier.padding(top = 36.px))
             DotLine(it, ts(25, 30, 600, Pal.InkSoft, tabular = true), modifier = Modifier.padding(top = 10.px))
@@ -445,7 +432,7 @@ fun PendingPage(nav: Nav, title: String) {
     LaunchedEffect(Unit) { withFrameNanos { }; runCatching { fr.requestFocus() } }
     Box(Modifier.fillMaxSize()) {
         SettingsButton(nav, fr, fr) {}
-        Box(Modifier.offset(LEFT.px, 230.px)) { TitleArt(null, title, 720, 250, Alignment.BottomStart, typeSize = 100, typeLine = 104) }
+        Box(Modifier.offset(LEFT.px, 236.px)) { TitleArt(null, title, 500, 240, Alignment.BottomStart, typeSize = 84, typeLine = 88) }
         if (d != null) DownloadBlock(d.progress, etaText(d.eta), Modifier.offset(LEFT.px, 780.px))
     }
 }

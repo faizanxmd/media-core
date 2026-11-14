@@ -48,6 +48,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,8 +132,8 @@ fun Nav.failed(e: Exception) {
 // ---------- home's numbers, in screen pixels at 1920 x 1080 (TV sizes: text 23 px and up, body 29) ----------
 
 private const val LEFT = EDGE
-private const val HERO_Y = 130 // the title's logo (or name), sitting on the meta line
-private const val HERO_H = 170
+private const val HERO_Y = 134 // the title's logo (or name), its foot 20 px over the meta line
+private const val HERO_H = 164
 private const val META_Y = 318
 private const val STORY_Y = 362 // two lines of 40
 private const val BUTTONS_Y = 470
@@ -339,8 +340,8 @@ private fun HeroWords(h: Hero, detail: Item?) {
     Box(Modifier.fillMaxSize()) {
         val it = h.item
         val name = it?.displayTitle ?: h.download!!.title
-        Box(Modifier.offset(LEFT.px, HERO_Y.px).size(680.px, HERO_H.px)) {
-            TitleArt(it?.logo, name, 680, HERO_H, Alignment.BottomStart, typeSize = 76, typeLine = 80)
+        Box(Modifier.offset(LEFT.px, HERO_Y.px).size(600.px, HERO_H.px)) {
+            TitleArt(it?.logo, name, 600, HERO_H, Alignment.BottomStart, typeSize = 68, typeLine = 72)
         }
         if (it != null) {
             val facts = if (it.isShow) {
@@ -384,11 +385,17 @@ fun TitleArt(logo: String?, name: String, w: Int, h: Int, align: Alignment, type
                 value = Logos.get(ctx, logo, w, h).also { if (it == null) failed = true }
             }
             img?.let { l ->
-                val pad = (l.pad / Px.screen).px
+                // the picture is the logo plus its shadow's margin all round: placed by hand, so the logo's own
+                // edges land on the box's left and its top or bottom, and the margin hangs outside
+                val bottom = align == Alignment.BottomStart
                 androidx.compose.foundation.Image(
                     l.bitmap.asImageBitmap(), name,
-                    Modifier.offset(x = -pad, y = if (align == Alignment.BottomStart) pad else -pad)
-                        .requiredWidth((l.bitmap.width / Px.screen).px).height((l.bitmap.height / Px.screen).px),
+                    Modifier.layout { m, c ->
+                        val p = m.measure(androidx.compose.ui.unit.Constraints.fixed(l.bitmap.width, l.bitmap.height))
+                        layout(c.maxWidth, c.maxHeight) {
+                            p.place(-l.pad, if (bottom) c.maxHeight - l.bitmap.height + l.pad else -l.pad)
+                        }
+                    },
                     contentScale = ContentScale.None,
                 )
             }
