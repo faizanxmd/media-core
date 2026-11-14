@@ -2,6 +2,17 @@
 
 Changes committed but not yet built or tested. Cleared after each build the user has tested.
 
+## The TV redesign (branch `redesign`, TV only)
+
+Home is the whole app now: the hero over Continue watching and Recently added, with Settings at the top right. Tabs, grids and search are gone. Title pages, a show's seasons and episodes, Picture details, Settings and the offline screen follow the boards in the redesign spec. The player is unchanged; only going into and out of it fades through black. Built from `redesign`, not main.
+
+### To test
+1. Home: Up and Down move between the buttons and the two rows, and the hero follows the focused card after a short pause.
+2. A film and a show open their title pages; Down on a show reaches Episodes, then More.
+3. Play and Resume fade to black, the player starts as before, and Back fades back to the same place.
+4. Settings changes values with Left and Right and shows the connection to mint. The player doesn't use these values yet.
+5. Unplug mint's network briefly: "mint is offline" appears and goes away by itself.
+
 ## A new Audio icon (TV and phone)
 
 The headphones are replaced by a sound wave in a disc, the same icon the web player now has. Only the icon's path changed in each app's `AppIcons.kt`. Not compiled yet.
