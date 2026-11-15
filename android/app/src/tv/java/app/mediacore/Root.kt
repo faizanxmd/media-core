@@ -101,6 +101,8 @@ private fun Offline(nav: Nav) {
     val a by animateFloatAsState(if (nav.offline) 1f else 0f, Move.fade(Move.Screen), label = "offline")
     if (a == 0f) return
     val fr = remember { FocusRequester() }
+    // Back does nothing while it's up: it would otherwise leave screens, or ask to quit, hidden under it
+    BackHandler(enabled = nav.offline) { }
     // it holds focus while it's up, so the remote can't move around the app hidden under it
     LaunchedEffect(nav.offline) { if (nav.offline) { delay(16); runCatching { fr.requestFocus() } } }
     LaunchedEffect(nav.offline) {

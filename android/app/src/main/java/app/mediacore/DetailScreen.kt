@@ -133,7 +133,16 @@ fun TitlePage(nav: Nav, id: String) {
         listOf(focus, "play", "details", "settings").firstOrNull { k -> runCatching { fr(k).requestFocus() }.getOrDefault(false) }
     }
     LaunchedEffect(nav.refresh) { // back from the player
-        if (nav.titleFocus != null) { focus = "play"; nav.titleFocus = null; withFrameNanos { }; runCatching { fr("play").requestFocus() } }
+        val back = nav.titleFocus ?: return@LaunchedEffect
+        nav.titleFocus = null
+        withFrameNanos { }
+        // started from the episodes: back on the episode list where you were; else on Play, at the top
+        if (back == "episodes" && place == Place.Episodes) {
+            runCatching { fr("ep/$season/${epOf(season)}").requestFocus() }
+        } else {
+            place = Place.First; focus = "play"
+            runCatching { fr("play").requestFocus() }
+        }
     }
     fun go(p: Place, k: String) { place = p; scope.launchFocus(fr(k)) }
     // "mint is offline" took focus while it was up: when it goes, focus comes back to where it was on this page
@@ -157,7 +166,8 @@ fun TitlePage(nav: Nav, id: String) {
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
             SettingsButton(nav, fr("settings"), fr("play")) { focus = "settings" }
             FirstScreen(main, show, target, fr = ::fr, onFocus = { focus = it }, onDown = {
-                if (show && main.seasons.isNotEmpty()) go(Place.Episodes, "ep/$season/${epOf(season)}")
+                // a season with no episodes yet: its name, so focus always lands on something
+                if (show && main.seasons.isNotEmpty()) go(Place.Episodes, if (main.seasons.getOrNull(season)?.episodes.isNullOrEmpty()) "season/$season" else "ep/$season/${epOf(season)}")
             }, onPlay = { fromStart ->
                 target?.let { t ->
                     nav.titleFocus = "play"
@@ -171,7 +181,7 @@ fun TitlePage(nav: Nav, id: String) {
                 onEpisode = { s, i -> season = s; epIndex[s] = i },
                 onUp = { go(Place.First, "play") },
                 onPlay = { ep ->
-                    nav.titleFocus = "play"
+                    nav.titleFocus = "episodes"
                     startPlay(ctx, scope, nav, ep, false, main.logo, episodeQueue(main))
                 },
             )
@@ -447,7 +457,7 @@ private fun PictureDetails(title: Item, it: Item, spec: ArtSpec, onClose: () -> 
         val raw = it.raw.optJSONObject("info")
         val name = if (it.isEpisode) "${title.displayTitle} · S${it.season} E${it.episode}" else title.displayTitle
         // just which title this is: the numbers speak for themselves, no "Picture details" heading over them
-        Text(name, style = ts(34, 42, 700), modifier = Modifier.offset(LEFT.px, 150.px))
+        Text(name, style = ts(34, 42, 700), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.offset(LEFT.px, 150.px).widthIn(max = (1920 - 2 * LEFT).px))
         // the four that matter most, big
         Row(Modifier.offset(LEFT.px, 260.px), horizontalArrangement = Arrangement.spacedBy(110.px)) {
             info?.res?.ifEmpty { null }?.let { Figure("Resolution", it, null) }

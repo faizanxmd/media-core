@@ -223,6 +223,9 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         hero = wanted
         nav.heroKey = wanted?.key
     }
+    // the same title with fresh numbers (back from the player, a download moving on): taken at once, so Resume
+    // starts where you stopped, not where Home last saw it
+    LaunchedEffect(wanted) { if (wanted != null && wanted.key == hero?.key) hero = wanted }
     // its show page, for the seasons count and what Play would start
     var heroDetail by remember { mutableStateOf<Pair<Item, Item?>?>(null) }
     LaunchedEffect(hero?.key) {
@@ -239,7 +242,8 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     LaunchedEffect(Unit) {
         withFrameNanos { }
         val k = nav.homeFocus ?: "play"
-        runCatching { fr(k).requestFocus() }.onFailure { runCatching { fr("play").requestFocus() } }
+        // no Play when the top title is a download or the library is empty: the first card, else Settings
+        listOf(k, "play", firstCardKey(rows, nav), "settings").firstOrNull { key -> runCatching { fr(key).requestFocus() }.getOrDefault(false) }
     }
     LaunchedEffect(nav.offline) {
         if (!nav.offline) { withFrameNanos { }; runCatching { fr(focus).requestFocus() } }

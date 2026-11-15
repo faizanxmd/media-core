@@ -160,7 +160,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (o?.kind == "next" && st.offer?.kind != "next") nextLeftMs = 10_000
         st.offer = o
         val now = System.currentTimeMillis()
-        if (o?.kind == "next" && player.isPlaying && st.sheet == null) {
+        // the countdown runs only while you can see it: not under a panel, nor while the controls hide the card
+        if (o?.kind == "next" && player.isPlaying && st.sheet == null && !(tv && st.mode == Mode.Full)) {
             nextLeftMs -= (now - lastTick).coerceIn(0, 1000)
             if (nextLeftMs <= 0) takeOffer()
         }
@@ -601,8 +602,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             if (audio != null) setPreferredAudioLanguage(audio)
             when (text) {
                 null -> {}
-                "off" -> setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT).setPreferredTextLanguage(null)
-                else -> setPreferredTextLanguage(text)
+                // off stays off, as when it was picked: forced or default tracks don't switch it back on
+                "off" -> setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT).setPreferredTextLanguage(null).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                else -> setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setPreferredTextLanguage(text)
             }
         }.build()
     }

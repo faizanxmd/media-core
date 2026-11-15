@@ -2,6 +2,18 @@
 
 Changes committed but not yet built or tested. Cleared after each build the user has tested.
 
+## Review fixes after tv-2026.11.16-0031 (TV)
+
+From two model reviews (Hydrogen, Argon), each checked against the code. Not compiled yet.
+- Home: back from the player, the hero's Resume starts where you stopped (it kept the old position).
+- Home: with an empty library or a download on top, focus lands on the first card or Settings, not nothing.
+- A show's page: back from an episode started in the list, you're on that episode in the list, not on an off-screen Play.
+- A show's page: Down on a season with no episodes lands on the season.
+- Picture details: a very long title stays on one line.
+- Player: the Next episode countdown pauses while the controls are up (its card is hidden then); it used to jump to the next episode unseen.
+- Player: subtitles turned Off stay off next time, even when the file marks a track as default.
+- "mint is offline": Back does nothing while it's up, instead of leaving screens hidden under it.
+
 ## A new Audio icon (TV and phone)
 
 The headphones are replaced by a sound wave in a disc, the same icon the web player now has. Only the icon's path changed in each app's `AppIcons.kt`. Not compiled yet.
