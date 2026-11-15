@@ -62,13 +62,13 @@ import kotlinx.coroutines.launch
 
 private const val LEFT = EDGE
 
-/** A title page's three places: its first screen, and what Down shows (episodes for a show, the rest for a film). */
-private enum class Place { First, Episodes, More }
+/** A title page's places: its first screen, and for a show, its episodes (Down). A film is one screen. */
+private enum class Place { First, Episodes }
 
 /**
- * A film's or a show's page (boards 04-10). The first screen is the title's art with its logo, one line of facts,
- * the story, the credits and the buttons. Down slides the page up: a show's seasons and episodes, or a film's cast,
- * About, chapters and file.
+ * A film's or a show's page (boards 04-10): the title's art with its logo, one line of facts, the story, the credits
+ * and the buttons. Nothing more: the file's numbers are in Picture details. On a show, Down slides the page up to
+ * its seasons and episodes.
  */
 @Composable
 fun TitlePage(nav: Nav, id: String) {
@@ -136,18 +136,14 @@ fun TitlePage(nav: Nav, id: String) {
         when (place) {
             Place.First -> 0f
             Place.Episodes -> -(EPISODES_Y - 110f) * Px.screen
-            Place.More -> -(MORE_Y - 110f) * Px.screen
         },
         Move.slide(Move.Screen), label = "page",
     )
-    // down in a film's cast and About, the art steps back behind a dark veil, so the words read on calm ground
-    val veil by animateFloatAsState(if (place == Place.More) 1f else 0f, Move.fade(Move.Screen), label = "veil")
     Box(Modifier.fillMaxSize()) {
-        if (veil > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Pal.Base.copy(alpha = 0.82f)))
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
             SettingsButton(nav, fr("settings"), fr("play")) { focus = "settings" }
             FirstScreen(main, show, target, fr = ::fr, onFocus = { focus = it }, onDown = {
-                if (show && main.seasons.isNotEmpty()) go(Place.Episodes, "ep/$season/${epOf(season)}") else if (!show) go(Place.More, "more")
+                if (show && main.seasons.isNotEmpty()) go(Place.Episodes, "ep/$season/${epOf(season)}")
             }, onPlay = { fromStart ->
                 target?.let { t ->
                     nav.titleFocus = "play"
@@ -165,7 +161,6 @@ fun TitlePage(nav: Nav, id: String) {
                     startPlay(ctx, scope, nav, ep, false, main.logo, episodeQueue(main))
                 },
             )
-            if (!show) MoreBlock(main, fr("more")) { go(Place.First, "play") }
         }
         val detailOf = if (show) (target?.item ?: focusedEp) else main
         if (sheet && detailOf != null) PictureDetails(main, detailOf, firstArt) { sheet = false; scope.launchFocus(fr("details")) }
@@ -236,9 +231,8 @@ private fun FirstScreen(
 
 // ---------- a show's seasons and episodes (boards 09 and 10) ----------
 
-// Under the first screen only a heading shows, never half a picture: what's below it starts at the screen's foot
+// Under a show's first screen only the heading shows, never half a picture: the list starts at the screen's foot
 private const val EPISODES_Y = 1024 // "Episodes"; its list starts 56 below
-private const val MORE_Y = 1024 // a film's cast and the rest
 private const val EP_X = 480
 private const val EP_W = 1920 - EDGE - EP_X
 private const val EP_PITCH = 204 // a 180 px row and 24 under it
@@ -361,61 +355,6 @@ fun dateWords(d: String?): String? = runCatching {
     val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
     "${months[p[1] - 1]} ${p[2]}, ${p[0]}"
 }.getOrNull()
-
-// ---------- below a film's first screen: cast, About, chapters, file (no board yet: plain, same style) ----------
-
-@Composable
-private fun MoreBlock(main: Item, fr: FocusRequester, onUp: () -> Unit) {
-    // one stop: everything below fits one screen, so Up goes straight back
-    Column(
-        Modifier.offset(LEFT.px, MORE_Y.px).width((1920 - 2 * EDGE).px).focusRequester(fr)
-            .onPreviewKeyEvent { e -> if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionUp) { onUp(); true } else e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown }
-            .focusable(),
-    ) {
-        // it has to fit one screen (Up goes straight back), so it shows a little of each
-        val cast = main.meta?.cast.orEmpty().take(8)
-        if (cast.isNotEmpty()) {
-            Heading("Cast")
-            Row(horizontalArrangement = Arrangement.spacedBy(40.px), modifier = Modifier.padding(top = 16.px)) {
-                cast.forEach { p ->
-                    Column(Modifier.width(180.px)) {
-                        Box(Modifier.size(180.px, 225.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
-                            Api.img(p.photo.ifEmpty { null }, "w185")?.let { AsyncImage(it, p.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                        }
-                        Text(p.name, style = ts(23, 28, 700), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.px))
-                        if (p.role.isNotEmpty()) Text(p.role, style = ts(23, 28, 400, Pal.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-        }
-        Heading("About", Modifier.padding(top = 36.px))
-        main.meta?.tagline?.ifEmpty { null }?.let { Text(it, style = ts(29, 36, 650), modifier = Modifier.padding(top = 12.px)) }
-        main.meta?.overview?.ifEmpty { null }?.let {
-            Text(it, style = ts(26, 36, 400, Pal.InkSoft), maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.px).width(1300.px))
-        }
-        val about = listOfNotNull(dateWords(main.meta?.date), main.meta?.studio?.ifEmpty { null }, main.meta?.genres?.joinToString(", ")?.ifEmpty { null })
-        if (about.isNotEmpty()) DotLine(about, ts(23, 28, 600, Pal.Muted), modifier = Modifier.padding(top = 12.px))
-        // chapters: their count is in Picture details; a list of "Chapter 1, Chapter 2…" says nothing
-        fileLine(main)?.let {
-            Heading("File", Modifier.padding(top = 36.px))
-            DotLine(it, ts(25, 30, 600, Pal.InkSoft, tabular = true), modifier = Modifier.padding(top = 10.px))
-        }
-    }
-}
-
-@Composable
-private fun Heading(text: String, modifier: Modifier = Modifier) = Text(text, style = ts(34, 40, 700, cond = true), modifier = modifier)
-
-private fun fileLine(it: Item): List<String>? {
-    val raw = it.raw.optJSONObject("info") ?: return null
-    return listOfNotNull(
-        raw.optString("container").ifEmpty { null }?.uppercase(),
-        it.size.takeIf { s -> s > 0 }?.let(::gb),
-        it.info?.dur?.takeIf { d -> d > 0 }?.let { d -> span((d * 1000).toLong()) },
-        it.info?.res?.ifEmpty { null },
-        it.info?.mbps?.takeIf { m -> m > 0 }?.let { m -> "%.1f Mb/s".format(m) },
-    ).takeIf { l -> l.isNotEmpty() }
-}
 
 // ---------- a title still downloading (board 08) ----------
 

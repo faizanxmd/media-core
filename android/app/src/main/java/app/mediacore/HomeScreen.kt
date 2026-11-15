@@ -137,7 +137,8 @@ private const val HERO_H = 164
 private const val META_Y = 318
 private const val STORY_Y = 362 // two lines of 40
 private const val BUTTONS_Y = 470
-private const val ROW0 = 600 // the first row's title: the focused row always lands here
+private const val ROW0 = 600 // the first row's title while focus is up on the buttons
+private const val ROW_IN = 492 // where the focused row's title lands once focus is in the rows: up into the buttons' place
 private const val ROW_TITLE = 40 // its line
 private const val TITLE_TO_CARDS = 20 // room for a focused card's lift
 private const val BAR_GAP = 20 // the same under it, before its progress bar
@@ -267,9 +268,9 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
             ) { hero?.item?.let { nav.open(Screen.Detail(it.id)) } }
         }
 
-        // the rows: the page slides so the focused row's title sits at ROW0
+        // the rows: the page slides so the focused row's title sits at ROW_IN, where Play and More info were
         val rowTops = remember(rows) { rowTops(rows) }
-        val pageY by animateFloatAsState(if (inRows) -(rowTops[focusRow] - ROW0) * Px.screen else 0f, Move.slide(Move.Screen), label = "page")
+        val pageY by animateFloatAsState(if (inRows) -(rowTops[focusRow] - ROW_IN) * Px.screen else 0f, Move.slide(Move.Screen), label = "page")
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
             rows.forEachIndexed { r, row ->
                 val gone by animateFloatAsState(if (inRows && r < focusRow) 0f else 1f, Move.fade(Move.Screen), label = "row")
