@@ -13,6 +13,14 @@ From two model reviews (Hydrogen, Argon), each checked against the code. Not com
 - Player: the Next episode countdown pauses while the controls are up (its card is hidden then); it used to jump to the next episode unseen.
 - Player: subtitles turned Off stay off next time, even when the file marks a track as default.
 - "mint is offline": Back does nothing while it's up, instead of leaving screens hidden under it.
+- "mint is offline": the arrows can't move focus to the screen hidden under it, and Settings gets its focus back after.
+- Home: Back with a download on top goes up to the first card, instead of asking to quit from the middle of the rows.
+- Player: holding Left/Right to scrub, then Back or the TV's Home button, no longer saves the preview spot as your progress.
+- Player: Back right after a quick skip leaves the player (it took two presses).
+- Player: switching to Light keeps audio and subtitles (a track picked in the original could leave Light silent).
+- Player: Audio & subtitles' three columns fit the screen; Subtitle size was squeezed.
+- Player: a show with hundreds of episodes plays (its queue was too big to hand to the player).
+- A downloading title's page closes when the download is cancelled, or finished under another name, instead of sitting empty.
 
 ## A new Audio icon (TV and phone)
 

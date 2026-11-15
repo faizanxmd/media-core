@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -111,7 +112,9 @@ private fun Offline(nav: Nav) {
             runCatching { nav.refresh++ }
         }
     }
-    Box(Modifier.fillMaxSize().fadeBy { a }.background(Pal.Base).focusRequester(fr).focusable()) {
+    Box(Modifier.fillMaxSize().fadeBy { a }.background(Pal.Base)
+        .focusProperties { up = FocusRequester.Cancel; down = FocusRequester.Cancel; left = FocusRequester.Cancel; right = FocusRequester.Cancel }
+        .focusRequester(fr).focusable()) {
         GrainPlain()
         Text("mint is offline", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 460.px))
     }

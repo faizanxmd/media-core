@@ -94,6 +94,9 @@ fun SettingsScreen(nav: Nav) {
     val all = Watching + PictureSound + Look
     val requesters = remember { all.associate { it.key to FocusRequester() } }
     LaunchedEffect(Unit) { withFrameNanos { }; runCatching { requesters.getValue(all.first().key).requestFocus() } }
+    LaunchedEffect(nav.offline) {
+        if (!nav.offline) { withFrameNanos { }; runCatching { requesters.getValue(all.first().key).requestFocus() } }
+    }
 
     Box(Modifier.fillMaxSize()) {
         Text("Settings", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 110.px))

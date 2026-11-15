@@ -410,7 +410,11 @@ fun PendingPage(nav: Nav, title: String) {
     val d = nav.home?.downloads?.firstOrNull { it.title == title }
     // when it's done it's in the library: its page replaces this one
     val done = nav.home?.recent?.firstOrNull { it.title == title || it.displayTitle == title }
-    LaunchedEffect(done?.id) { if (done != null && d == null) { nav.back(); nav.open(Screen.Detail(done.id)) } }
+    LaunchedEffect(done?.id, d == null) {
+        if (nav.home == null || d != null) return@LaunchedEffect
+        nav.back()
+        if (done != null) nav.open(Screen.Detail(done.id)) // else it was cancelled: back to where you came from
+    }
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) { withFrameNanos { }; runCatching { fr.requestFocus() } }
     Box(Modifier.fillMaxSize()) {

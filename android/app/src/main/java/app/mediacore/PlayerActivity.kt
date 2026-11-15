@@ -365,6 +365,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         lightIds += currentId
         slowAt = 0L
         stall.clear()
+        // a track picked in the original file isn't in the Light one; the language preference carries over
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
         player.setMediaItems(queue.map(::mediaItem), index, pos)
         player.prepare()
         player.playWhenReady = true
@@ -507,7 +509,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         Speed.start(this)
         Speed.freshen() // an old result on this network: measure again while it plays
         Offline.init(this, overMetered = true)
-        val arr = JSONArray(intent.getStringExtra("queue") ?: "[]")
+        val arr = JSONArray(intent.getStringExtra("queue") ?: bigQueue.also { bigQueue = null } ?: "[]")
         for (i in 0 until arr.length()) queue += arr.getJSONObject(i)
         if (queue.isEmpty()) { finish(); return }
         val index = intent.getIntExtra("index", 0).coerceIn(0, queue.size - 1)
@@ -535,7 +537,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                     st.error != null -> finish()
                     st.sheet != null -> closeSheet()
                     st.scrub != null && st.mode == Mode.Seek -> { ui.removeCallbacks(commit); st.scrub = null; st.mode = Mode.Hidden } // cancel the seek
-                    st.scrub != null -> { ui.removeCallbacks(settle); settle.run(); if (st.mode == Mode.Full && player.playWhenReady) st.mode = Mode.Hidden } // taps already landed
+                    st.scrub != null -> { ui.removeCallbacks(settle); settle.run(); if (st.mode == Mode.Full && player.playWhenReady) st.mode = Mode.Hidden else if (st.mode == Mode.Hidden) finish() } // taps already landed
                     st.mode == Mode.Full && tv -> if (player.playWhenReady) st.mode = Mode.Hidden else finish() // paused: leave
                     st.mode == Mode.Seek -> st.mode = Mode.Hidden
                     st.offer?.kind == "next" || st.offer?.kind == "slow" -> dismissOffer() // keep watching as it is
@@ -867,7 +869,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private fun report(ended: Boolean) {
         if (currentId.isEmpty() || finishedCurrent || released) return
         val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
-        send(currentId, player.currentPosition, dur, ended)
+        // while the picture strip is up the film sits at a preview, not where you are: report where you were
+        val pos = if (st.mode == Mode.Scrub) holdOrigin else player.currentPosition
+        send(currentId, pos, dur, ended)
     }
 
     private fun send(id: String, pos: Long, dur: Long, ended: Boolean) {
@@ -1077,12 +1081,19 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     companion object {
+        /** A queue too big for the Intent, waiting for the player to pick it up. */
+        private var bigQueue: String? = null
+
         fun play(ctx: Context, queue: List<Item>, index: Int, fromStart: Boolean = false, logo: String? = null) {
             val start = queue.getOrNull(index) ?: return
             val pos = if (!fromStart && !start.watched) start.pos else 0L
+            val json = JSONArray(queue.map { it.raw }).toString()
+            // a show with hundreds of episodes is too big to hand over in the Intent (TransactionTooLargeException)
+            val big = json.length > 200_000
+            bigQueue = if (big) json else null
             ctx.startActivity(
                 Intent(ctx, PlayerActivity::class.java)
-                    .putExtra("queue", JSONArray(queue.map { it.raw }).toString())
+                    .apply { if (!big) putExtra("queue", json) }
                     .putExtra("index", index)
                     .putExtra("pos", pos)
                     .putExtra("logo", logo),

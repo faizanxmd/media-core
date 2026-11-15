@@ -257,7 +257,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         val k = row?.cards?.getOrNull(col ?: 0)?.key ?: "play"
         withFrameNanos { }
         focus = k; nav.homeFocus = k
-        runCatching { fr(k).requestFocus() }.onFailure { runCatching { fr("play").requestFocus() } }
+        listOf(k, "play", firstCardKey(rows, nav), "settings").firstOrNull { key -> runCatching { fr(key).requestFocus() }.getOrDefault(false) }
     }
     fun onFocus(k: String) { focus = k; nav.homeFocus = k }
 
@@ -350,7 +350,9 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     // Back: from the rows it first goes up to the buttons; from there it asks before leaving the app
     var quitting by remember { mutableStateOf(false) }
     BackHandler(enabled = nav.stack.size == 1 && !quitting) {
-        if (inRows || focus == "settings" || focus == "update") runCatching { fr("play").requestFocus() }.onFailure { quitting = true }
+        // no Play (a download on top): up to the first card instead; from there it asks
+        val top = if (hero?.item != null) "play" else firstCardKey(rows, nav).takeIf { it != "play" }
+        if (top != null && top != focus && (inRows || focus == "settings" || focus == "update")) runCatching { fr(top).requestFocus() }.onFailure { quitting = true }
         else quitting = true
     }
     QuitAsk(quitting, onStay = { quitting = false; runCatching { fr(focus).requestFocus() } }) { (ctx as? Activity)?.finish() }

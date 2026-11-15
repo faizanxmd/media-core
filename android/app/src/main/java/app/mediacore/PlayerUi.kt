@@ -633,9 +633,9 @@ private fun TracksPanel(st: PlayerState, a: PlayerActions) {
             val audio = st.audio.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val text = st.text.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val sizeFirst = st.tracksAt == 2 && text.isNotEmpty()
-            TrackColumn("Audio", audio, 560, if (audio.isNotEmpty() && !sizeFirst) fr else null)
-            TrackColumn("Subtitles", text, 560, if (audio.isEmpty() && !sizeFirst) fr else null, empty = "None in this file")
-            if (text.isNotEmpty()) TrackColumn("Subtitle size", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } }, 440, if (sizeFirst) fr else null)
+            TrackColumn("Audio", audio, 520, if (audio.isNotEmpty() && !sizeFirst) fr else null)
+            TrackColumn("Subtitles", text, 520, if (audio.isEmpty() && !sizeFirst) fr else null, empty = "None in this file")
+            if (text.isNotEmpty()) TrackColumn("Subtitle size", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } }, 400, if (sizeFirst) fr else null)
         }
     }
 }
