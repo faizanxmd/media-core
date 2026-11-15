@@ -316,7 +316,7 @@ private fun BoxScope.SkipMark(st: PlayerState) {
 private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
     val full = st.mode == Mode.Full
     val barFr = remember { FocusRequester() }
-    val bar = remember { floatArrayOf(0f, 0f) } // the bar's left edge and width on screen, for the picture above it
+    val bar = remember { mutableStateOf(Offset.Zero) } // the bar's left edge (x) and width (y) on screen, for the picture above it
 
     data class Ctl(val icon: ImageVector, val word: String, val open: () -> Unit)
     val ctls = buildList {
@@ -374,7 +374,7 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
 
 /** Play state, the bar, and the time left at its end. */
 @Composable
-private fun BarRow(st: PlayerState, a: PlayerActions, fr: FocusRequester, upTo: FocusRequester?, bar: FloatArray) {
+private fun BarRow(st: PlayerState, a: PlayerActions, fr: FocusRequester, upTo: FocusRequester?, bar: androidx.compose.runtime.MutableState<Offset>) {
     var focused by remember { mutableStateOf(false) }
     val big by animateFloatAsState(if (focused || st.scrub != null || st.mode == Mode.Scrub) 1f else 0f, Move.fade(Move.Focus), label = "bar")
     Row(Modifier.fillMaxWidth().height(BAR_ROW.px), verticalAlignment = Alignment.CenterVertically) {
@@ -383,7 +383,7 @@ private fun BarRow(st: PlayerState, a: PlayerActions, fr: FocusRequester, upTo: 
         val accent = Pal.Accent
         Canvas(
             Modifier.weight(1f).fillMaxSize()
-                .onGloballyPositioned { bar[0] = it.positionInRoot().x; bar[1] = it.size.width.toFloat() }
+                .onGloballyPositioned { bar.value = Offset(it.positionInRoot().x, it.size.width.toFloat()) }
                 .focusRequester(fr)
                 .focusProperties { if (upTo != null) up = upTo; down = FocusRequester.Cancel }
                 .onFocusChanged { focused = it.isFocused; st.barFocused = it.isFocused }
@@ -428,7 +428,7 @@ private fun TimeLeft(st: PlayerState) {
  * Before the pictures arrive, just the time.
  */
 @Composable
-private fun BoxScope.ScrubPreview(st: PlayerState, bar: FloatArray) {
+private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime.State<Offset>) {
     val looking = st.scrub != null || st.mode == Mode.Scrub
     val shown by animateFloatAsState(if (looking) 1f else 0f, Move.fade(Move.Focus), label = "preview")
     if (shown == 0f) return
@@ -440,7 +440,8 @@ private fun BoxScope.ScrubPreview(st: PlayerState, bar: FloatArray) {
             .offset {
                 val k = Px.screen
                 val dur = st.dur.coerceAtLeast(1).toFloat()
-                val x = bar[0] + ((st.scrub ?: st.pos) / dur).coerceIn(0f, 1f) * bar[1] - w * k / 2
+                val b = bar.value // read here: the picture moves once the bar has been placed
+                val x = b.x + ((st.scrub ?: st.pos) / dur).coerceIn(0f, 1f) * b.y - w * k / 2
                 val screen = 1920 * k
                 IntOffset(x.coerceIn(EDGE * k, screen - EDGE * k - w * k).roundToInt(), 0)
             }

@@ -282,6 +282,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.scrub = null // the film never moved
         if (holdResume) player.playWhenReady = true
         poke()
+        if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1200) // a hold that began as a tap: the bar goes
     }
 
     override fun scrub(deltaMs: Long) {
