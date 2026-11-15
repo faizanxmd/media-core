@@ -698,10 +698,11 @@ private fun EpisodesPanel(st: PlayerState) {
                 .background(Brush.verticalGradient(0f to Color.Transparent, 0.25f to Pal.BaseDeep.copy(alpha = 0.86f), 1f to Pal.BaseDeep.copy(alpha = 0.97f)))
                 .padding(top = 120.px, bottom = 56.px),
         ) {
-            Text("Episodes", style = ts(34, 40, 700), modifier = Modifier.padding(start = EDGE.px))
+            // on the controls' own edge (SIDE), so the list lines up with Play and the icons it came from
+            Text("Episodes", style = ts(34, 40, 700), modifier = Modifier.padding(start = SIDE.px))
             LazyRow(
                 state = state,
-                contentPadding = PaddingValues(horizontal = EDGE.px, vertical = 24.px),
+                contentPadding = PaddingValues(horizontal = SIDE.px, vertical = 24.px),
                 horizontalArrangement = Arrangement.spacedBy(28.px),
             ) {
                 itemsIndexed(pics) { i, p -> EpisodeCard(p, if (i == sel) fr else null, first = i == 0, last = i == pics.lastIndex) }

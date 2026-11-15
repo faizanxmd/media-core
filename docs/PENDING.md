@@ -88,6 +88,8 @@ A second model read the TV screens for bugs; these were real. Not compiled yet.
 - Player: Up from Play returns to the icon you came from; if the pill you were on is rebuilt away, focus goes to the first pill.
 - Player: Skip intro and Next episode hide while the controls are up (focus couldn't reach them there) and come back when they hide.
 - Player: a scrub cut short by the next episode or an error no longer leaves subtitles hidden.
+- A title page's credits stay on screen: a long cast list ends in "…" instead of running off the right edge.
+- Player: the Episodes list starts on the same left edge as Play and the icons.
 
 ### To test
 - Pause during an intro: the controls show without Skip intro; play again and Skip intro is back, OK takes it.

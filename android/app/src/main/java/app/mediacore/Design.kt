@@ -473,7 +473,8 @@ fun DotLine(parts: List<String>, style: TextStyle, gap: Int = 14, modifier: Modi
                 Text("·", style = style.copy(color = Pal.Faint, fontFeatureSettings = null), maxLines = 1)
                 Spacer(Modifier.width(gap.px))
             }
-            Text(p, style = if (i == 0 && lead != null) lead else style, maxLines = 1, softWrap = false)
+            // short of room (a long cast list), the last words end in "…" instead of running off the screen
+            Text(p, style = if (i == 0 && lead != null) lead else style, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
 }

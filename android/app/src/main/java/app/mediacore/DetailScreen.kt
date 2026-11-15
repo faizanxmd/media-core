@@ -226,7 +226,7 @@ private fun FirstScreen(
         meta?.music.orEmpty().take(1).ifEmpty { null }?.let { "MUSIC" to it },
         meta?.cast.orEmpty().take(3).map { it.name }.ifEmpty { null }?.let { "STARRING" to it },
     )
-    if (credits.isNotEmpty()) Row(Modifier.offset(LEFT.px, y[3].px), horizontalArrangement = Arrangement.spacedBy(56.px)) {
+    if (credits.isNotEmpty()) Row(Modifier.offset(LEFT.px, y[3].px).widthIn(max = (1920 - 2 * LEFT).px), horizontalArrangement = Arrangement.spacedBy(56.px)) {
         credits.forEach { (label, names) ->
             Column {
                 Text(label, style = CapsLabel)
