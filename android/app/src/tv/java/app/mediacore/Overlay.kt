@@ -8,6 +8,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 /** The TV app's player controls (D-pad driven). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DeviceOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Boolean) -> Unit) {
+fun DeviceOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Float) -> Unit) {
     CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec()) { PlayerOverlay(st, a, tv, onChrome) }
 }

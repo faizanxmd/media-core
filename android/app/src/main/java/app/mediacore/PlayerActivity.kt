@@ -104,9 +104,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var holdFrom = Mode.Hidden
     private var holdResume = false
     private var holdOrigin = 0L // where you were before skipping or scrubbing: Back returns here
-    private var holdSeeked = false // a skip's press had already moved the film when the hold began
-    private var holding = false // the key is down right now; the strip stays after it comes up
-    private var seekedTo = -1L // a skip's first press lands at once; later presses add to it
+    private var holding = false // the key is down right now; the playhead stays after it comes up
 
     private val current get() = queue.firstOrNull { it.optString("id") == currentId }
 
@@ -166,7 +164,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             nextLeftMs -= (now - lastTick).coerceIn(0, 1000)
             if (nextLeftMs <= 0) takeOffer()
         }
-        st.countdown = if (st.offer?.kind == "next") ((nextLeftMs + 999) / 1000).toInt().coerceIn(0, 10) else 0
+        st.nextLeft = if (st.offer?.kind == "next") nextLeftMs.coerceIn(0, 10_000) else 0
         lastTick = now
     }
 
@@ -208,22 +206,26 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.playing = player.playWhenReady
     }
 
-    /** A press of Left/Right: skips, with only a small mark on screen. Presses in quick succession add up. */
+    /**
+     * A press of Left/Right: the bar, the picture you'll land on and the turning mark move at once, 10 s a tap,
+     * and the taps add up. The film itself jumps only once, when the presses stop.
+     */
     private fun tapSkip(dir: Int) {
-        val first = st.scrub == null
-        if (first) holdOrigin = player.currentPosition
+        ui.removeCallbacks(commit)
+        ui.removeCallbacks(hideSeek)
+        ui.removeCallbacks(autoHide)
+        ui.removeCallbacks(clearSkipped)
+        if (st.scrub == null) { holdOrigin = player.currentPosition; st.scrubFrom = holdOrigin }
         val from = st.scrub ?: player.currentPosition
         val to = (from + dir * 10_000L).coerceIn(0, maxOf(0, st.dur - 1000))
         st.scrub = to
-        if (st.mode == Mode.Hidden) {
-            st.skipped += ((to - from) / 1000).toInt() // what the film really moved, near its start or end
-            ui.removeCallbacks(clearSkipped)
-            ui.postDelayed(clearSkipped, 1000)
-        }
-        if (first) { seekExact(to); seekedTo = to }
-        ui.removeCallbacks(commit)
-        ui.removeCallbacks(autoHide)
-        ui.postDelayed(commit, 350)
+        if (st.skipped != 0 && (st.skipped > 0) != (dir > 0)) st.skipped = 0 // turned back: count afresh
+        st.skipped += ((to - from) / 1000).toInt() // what the film really moves, near its start or end
+        st.taps++
+        if (st.mode == Mode.Hidden) st.mode = Mode.Seek
+        st.thumbs?.ensure()
+        ui.postDelayed(clearSkipped, 900)
+        ui.postDelayed(commit, 600)
     }
 
     /**
@@ -237,9 +239,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         ui.removeCallbacks(autoHide)
         holdFrom = st.mode
         holdResume = player.playWhenReady
-        holdSeeked = st.scrub != null
-        if (!holdSeeked) holdOrigin = player.currentPosition
-        seekedTo = -1
+        if (st.scrub == null) holdOrigin = player.currentPosition
         st.scrub = st.scrub ?: player.currentPosition
         player.playWhenReady = false
         st.mode = Mode.Scrub
@@ -279,8 +279,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         view.subtitleView?.visibility = android.view.View.VISIBLE
         st.focusMenu = false
         st.mode = holdFrom
-        st.scrub = null
-        if (holdSeeked) seekExact(holdOrigin)
+        st.scrub = null // the film never moved
         if (holdResume) player.playWhenReady = true
         poke()
     }
@@ -305,16 +304,18 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun commitScrub() {
         ui.removeCallbacks(commit)
         val to = st.scrub ?: return
-        if (to != seekedTo) seekExact(to)
-        seekedTo = -1
+        seekSync(to)
         st.scrub = null
         refresh()
-        if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1500) else poke()
+        if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1200) else poke()
     }
 
-    /** Lands on the exact frame asked for: the decoder runs up to it from the keyframe before, unseen. */
-    private fun seekExact(to: Long) {
-        player.setSeekParameters(SeekParameters.EXACT)
+    /**
+     * Lands on the nearest keyframe: the picture is there at once. An exact seek decodes forward from the keyframe
+     * before, which is the freeze a skip used to have.
+     */
+    private fun seekSync(to: Long) {
+        player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
         player.seekTo(to)
     }
 
@@ -351,7 +352,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun takeOffer() {
         when (st.offer?.kind) {
             "slow" -> switchToLight()
-            "intro" -> current?.optJSONObject("intro")?.let { seekExact((it.optDouble("end") * 1000).toLong()) }
+            "intro" -> current?.optJSONObject("intro")?.let { seekSync((it.optDouble("end") * 1000).toLong()) }
             "next" -> {
                 send(currentId, 0, 0, ended = true)
                 finishedCurrent = true
@@ -365,7 +366,6 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         when (s) {
             Sheet.Tracks -> buildTrackOptions(player.currentTracks)
             Sheet.Episodes -> buildEpisodes()
-            Sheet.Chapters -> {}
         }
         st.sheet = s
         ui.removeCallbacks(autoHide)
@@ -378,15 +378,28 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         poke()
     }
 
-    override fun cycleSpeed() {
-        val speeds = listOf(1f, 1.25f, 1.5f, 2f, 0.75f)
-        setSpeed(speeds[(speeds.indexOf(st.speed).coerceAtLeast(0) + 1) % speeds.size])
+    /** Back on the next-episode buttons, or Watch credits: let the credits run. */
+    override fun dismissOffer() {
+        when (st.offer?.kind) {
+            "next" -> dismissedNext = currentId
+            "slow" -> slowAt = 0L
+        }
+        st.offer = null
+        if (st.mode == Mode.Full) poke()
     }
 
-    override fun setSpeed(speed: Float) {
-        player.setPlaybackSpeed(speed)
-        st.speed = speed
-        poke()
+    private val settings by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+
+    /** Small, Medium or Large, kept for every title. */
+    override fun subSize(size: Int) {
+        st.subSize = size.coerceIn(0, SubSizes.lastIndex)
+        settings.edit().putString("subsize", SubSizes[st.subSize]).apply()
+        applySubSize()
+    }
+
+    private fun applySubSize() {
+        val scale = listOf(0.86f, 1.02f, 1.24f)[st.subSize]
+        view.subtitleView?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * scale)
     }
 
     override fun tapped() {
@@ -445,10 +458,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
     }
 
-    private fun loadChapters(j: JSONObject?) {
-        st.chapters = j?.optJSONObject("info")?.optJSONArray("chapters").objects()
-            .map { Chapter((it.optDouble("start") * 1000).toLong(), it.optString("title")) }
-            .takeIf { it.size > 1 } ?: emptyList()
+    private fun loadThumbs(j: JSONObject?) {
         // pictures for scrubbing: fetched right away at home, only when first needed over Tailscale
         if (j != null) st.thumbs?.load(j.optString("id"), j.optInt("thumbs"), eager = !Api.viaTailscale)
     }
@@ -465,6 +475,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         Api.init(this)
+        Px.init(this)
         Speed.start(this)
         Speed.freshen() // an old result on this network: measure again while it plays
         Offline.init(this, overMetered = true)
@@ -484,7 +495,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         buildViews()
         currentId = queue[index].optString("id")
         showTitle(queue[index])
-        loadChapters(queue[index])
+        loadThumbs(queue[index])
         buildEpisodes()
         start(index, startPos)
         ui.postDelayed(report10s, 10_000)
@@ -498,8 +509,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                     st.scrub != null -> { ui.removeCallbacks(commit); st.scrub = null; st.mode = Mode.Hidden } // cancel the seek
                     st.mode == Mode.Full && tv -> if (player.playWhenReady) st.mode = Mode.Hidden else finish() // paused: leave
                     st.mode == Mode.Seek -> st.mode = Mode.Hidden
-                    st.offer?.kind == "next" -> { dismissedNext = currentId; st.offer = null }
-                    st.offer?.kind == "slow" -> { slowAt = 0L; st.offer = null } // keep this one
+                    st.offer?.kind == "next" || st.offer?.kind == "slow" -> dismissOffer() // keep watching as it is
                     else -> finish()
                 }
             }
@@ -728,7 +738,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             val changed = item?.mediaId != currentId
             currentId = item?.mediaId ?: ""
             finishedCurrent = false
-            current?.let { showTitle(it); loadChapters(it) }
+            current?.let { showTitle(it); loadThumbs(it) }
             buildEpisodes()
             if (changed) {
                 stall.clear()
@@ -920,13 +930,14 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 setStyle(
                     CaptionStyleCompat(
                         Color.WHITE, Color.TRANSPARENT, Color.TRANSPARENT,
-                        CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, 0xE6000000.toInt(), Typeface.create("sans-serif-medium", Typeface.NORMAL),
+                        CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, 0xE6000000.toInt(), subtitleFace(),
                     ),
                 )
-                setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 1.02f)
                 setBottomPaddingFraction(0.09f)
             }
         }
+        st.subSize = SubSizes.indexOf(settings.getString("subsize", null)).takeIf { it >= 0 } ?: 1
+        applySubSize()
         root.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         shade = android.view.View(this).apply { setBackgroundColor(Color.BLACK) }
         root.addView(shade, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -936,9 +947,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             setContent {
                 CompositionLocalProvider(LocalTv provides tv) {
                     AppTheme {
-                        DeviceOverlay(st, this@PlayerActivity, tv, onChrome = { up ->
+                        DeviceOverlay(st, this@PlayerActivity, tv, onChrome = { lift ->
                             // moved as a whole: image subtitles (PGS) ignore padding
-                            view.subtitleView?.let { sv -> sv.animate().translationY(if (up) -0.28f * sv.height else 0f).setDuration(Motion.FadeInMs.toLong()).start() }
+                            view.subtitleView?.let { sv -> sv.animate().translationY(-lift * sv.height).setDuration(if (Move.reduced) 0L else Move.Screen.toLong()).setInterpolator(ease).start() }
                         })
                     }
                 }
@@ -949,6 +960,13 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         root.addView(curtain, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
     }
+
+    /** The app's own Source Sans for subtitles, at a sturdy 600, as a file: a variable font's weight needs one. */
+    private fun subtitleFace(): Typeface = runCatching {
+        val f = java.io.File(cacheDir, "subtitles-${BuildConfig.VERSION_CODE}.ttf")
+        if (f.length() == 0L) resources.openRawResource(R.font.source_sans).use { i -> f.outputStream().use { i.copyTo(it) } }
+        Typeface.Builder(f).setFontVariationSettings("'wght' 600").build()
+    }.getOrNull() ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
 
     /** Leaving while on screen: fade to black first; the app underneath then fades up from black. */
     override fun finish() {

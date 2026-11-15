@@ -4,7 +4,7 @@ Changes committed but not yet built or tested. Cleared after each build the user
 
 ## The TV redesign (branch `redesign`, TV only)
 
-Home is the whole app now: the hero over Continue watching and Recently added, with Settings at the top right. Tabs, grids and search are gone. Title pages, a show's seasons and episodes, Picture details, Settings and the offline screen follow the boards in the redesign spec. The player is unchanged; only going into and out of it fades through black. Built from `redesign`, not main.
+Home is the whole app now: the hero over Continue watching and Recently added, with Settings at the top right. Tabs, grids and search are gone. Title pages, a show's seasons and episodes, Picture details, Settings and the offline screen follow the boards in the redesign spec. Going into and out of the player fades through black (the player itself has its own section below). Built from `redesign`, not main.
 
 Built so far as 2026.11.15-0933 (items 1-22). Since build 2026.11.14-2048: everything is sized for a TV across the room (body text 29 px at 1080p, nothing under 23, the old app's 80 px edges). A focused picture lifts with a white border; Play and Resume turn deep blue when focused, other buttons white. The stamped-on logo mark is gone; Home instead has the small MEDIA/CORE wordmark top-left, level with Settings, drawn sharp from its outlines with no glow, and it fades out with the buttons when you move down into the rows. Title logos stay in their box, a film's page is one screen (no cast photos, About or file below; the file's numbers are in Picture details) with one line of names under the story: Director (Created by for a show), Music and three of the cast, only "Episodes" peeks under a show's page, and on Home the rows rise into the buttons' place once you move down. The background fade is darker on the words' side and the film grain is gone.
 
@@ -39,6 +39,22 @@ Built so far as 2026.11.15-0933 (items 1-22). Since build 2026.11.14-2048: every
 28. A film opens its page instantly (from what Home already has), with no empty moment.
 29. Focus moves feel as quick as before or quicker (cards no longer redraw their layout on every frame of the lift), and download bars move smoothly.
 30. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+
+## The Netflix-style TV player (branch `redesign`, TV only)
+
+The player's screens are rebuilt after Netflix's TV player (docs/player-netflix.md), in the redesign's look. Speed control and chapters are gone. A tap of Left or Right no longer moves the film straight away: the bar, the picture you'll land on and a turning circular arrow with the seconds move at once, the taps add up, and the film jumps once, to the nearest keyframe, about 0.6 s after the last tap. That removes the freeze on a skip. Not compiled yet: the next build is its first check.
+
+### To test
+1. Starting a title: its art, dimmed, with a turning ring in the accent and the title under it, then the picture.
+2. Tap Right a few times while playing: the bar shows with the picture you'll land on above the playhead and its time, the arrow on the right turns on each tap and counts 10, 20, 30. The film keeps playing, then jumps once with no freeze. Left does the same on the left; Back before it lands cancels.
+3. Hold Right: the film waits, the playhead runs faster the longer you hold, with the pictures above it. OK lands and plays, Back goes back to where you were.
+4. Pause (OK): a dark fade from the bottom with the title (or its logo), the episode line, Episodes, Audio & Subtitles and Next episode as icons with words, and the bar with the time left at its end. Focus starts on the bar; Up goes to the buttons, Down back. A focused button brightens and grows a little; there are no boxes.
+5. Audio & Subtitles opens one panel along the bottom, with Audio, Subtitles and Subtitle size side by side, while the film plays on. OK changes a track at once and the tick moves; Back closes it and focus returns to the button.
+6. Subtitle size Small, Medium and Large change the text at once and stay chosen for every title. Subtitles are in Source Sans now.
+7. Episodes: a row of stills with names, the one playing marked "Now playing".
+8. Skip intro shows lit at the bottom right for the whole intro; OK skips it.
+9. In an episode's credits: "Watch credits" beside "Next episode", which fills with white over 10 s and then plays the next one. OK plays it now, Back lets the credits run.
+10. Subtitles rise above the controls and panels while they show, and come back down after.
 
 ## A new Audio icon (TV and phone)
 
