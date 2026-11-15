@@ -529,10 +529,11 @@ private fun WideCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Bool
             CardProgress { shown }
         }
         Text(it.showTitle, style = ts(26, 34, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 16.px))
-        val left = (it.durMs - it.pos).takeIf { l -> it.pos > 0 && l > 0 }?.let { l -> leftWords(l) }
+        // part-way: what's left; not started yet (the next episode): its length. Never a dot with nothing after it.
+        val left = (it.durMs - it.pos).takeIf { l -> it.pos > 0 && l > 0 }?.let { l -> leftWords(l) } ?: runtimeOf(it)?.let(::span)
         val lead = if (it.isEpisode) "S${it.season} E${it.episode}" else it.displayYear.takeIf { y -> y > 0 }?.toString()
         Row(Modifier.padding(top = 2.px)) {
-            if (lead != null) Text("$lead · ", style = ts(23, 30, 400, Pal.Muted, tabular = true), maxLines = 1)
+            if (lead != null) Text(if (left != null) "$lead · " else lead, style = ts(23, 30, 400, Pal.Muted, tabular = true), maxLines = 1)
             if (left != null) Text(left, style = ts(23, 30, 400, Pal.InkSoft, tabular = true), maxLines = 1)
         }
     }
