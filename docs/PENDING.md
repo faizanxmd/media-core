@@ -6,7 +6,7 @@ Changes committed but not yet built or tested. Cleared after each build the user
 
 Home is the whole app now: the hero over Continue watching and Recently added, with Settings at the top right. Tabs, grids and search are gone. Title pages, a show's seasons and episodes, Picture details, Settings and the offline screen follow the boards in the redesign spec. The player is unchanged; only going into and out of it fades through black. Built from `redesign`, not main.
 
-Since build 2026.11.14-2048: everything is sized for a TV across the room (body text 29 px at 1080p, nothing under 23, the old app's 80 px edges). A focused picture lifts with a white border; Play and Resume turn deep blue when focused, other buttons white. The stamped-on logo mark is gone; Home instead has the small MEDIA/CORE wordmark top-left, level with Settings, drawn sharp from its outlines with no glow, and it fades out with the buttons when you move down into the rows. Title logos stay in their box, a film's page is one screen (no cast photos, About or file below; the file's numbers are in Picture details) with one line of names under the story: Director (Created by for a show), Music and three of the cast, only "Episodes" peeks under a show's page, and on Home the rows rise into the buttons' place once you move down. The background fade is darker on the words' side and the film grain is gone.
+Built so far as 2026.11.15-0933 (items 1-22). Since build 2026.11.14-2048: everything is sized for a TV across the room (body text 29 px at 1080p, nothing under 23, the old app's 80 px edges). A focused picture lifts with a white border; Play and Resume turn deep blue when focused, other buttons white. The stamped-on logo mark is gone; Home instead has the small MEDIA/CORE wordmark top-left, level with Settings, drawn sharp from its outlines with no glow, and it fades out with the buttons when you move down into the rows. Title logos stay in their box, a film's page is one screen (no cast photos, About or file below; the file's numbers are in Picture details) with one line of names under the story: Director (Created by for a show), Music and three of the cast, only "Episodes" peeks under a show's page, and on Home the rows rise into the buttons' place once you move down. The background fade is darker on the words' side and the film grain is gone.
 
 ### To test
 1. Home: Up and Down move between the buttons and the two rows, and the hero follows the focused card after a short pause.
@@ -31,7 +31,10 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 20. The type is Source Sans 3 everywhere (one width, a little larger and never lighter than medium). Nothing is cut off or overlapping on Home, a title, Episodes, Settings or the quit question.
 21. Continue watching: the progress is a thin bar inside the picture's foot, over a soft dark fade, and it lifts with the card; the same on episode stills and downloading posters.
 22. Up and Down between rows land on the card straight above or below on screen, not where that row was last.
-23. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+23. A downloading title's page keeps its progress moving and turns into the film's page when done; "mint is offline" goes away by itself on any screen.
+24. Press Play then Back straight away: the screen comes back from black and Play works again.
+25. Background art changes without a hitch at the start of its fade; a picture that failed to load is tried again next time.
+26. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

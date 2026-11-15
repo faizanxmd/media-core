@@ -45,6 +45,7 @@ fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
         Box(
             Modifier.fillMaxSize().background(Pal.Base).onSizeChanged { art.w = it.width; art.h = it.height },
         ) {
+            HomeData(nav)
             ArtLayer(art)
             BackHandler(enabled = nav.stack.size > 1) { nav.back() }
             AnimatedContent(

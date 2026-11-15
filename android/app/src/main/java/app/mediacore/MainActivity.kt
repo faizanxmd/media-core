@@ -66,6 +66,8 @@ class Nav {
     /** Into the player: the screen goes black first, and comes back from black. */
     val black = Animatable(0f)
     var inPlayer = false
+    /** For work that outlives a screen (the fade into the player); it has Compose's frame clock for animations. */
+    val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + AndroidUiDispatcher.Main)
     var titleFocus: String? = null
     var introDone by mutableStateOf(false) // the wordmark at start has made way for Home
     var heroKey: String? = null // the title Home's hero last showed // the title page's button to land on when it comes back
@@ -124,6 +126,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        nav.scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
 
     private suspend fun checkUpdate() {

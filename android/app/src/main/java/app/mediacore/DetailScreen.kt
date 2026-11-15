@@ -125,7 +125,8 @@ fun TitlePage(nav: Nav, id: String) {
     LaunchedEffect(Unit) {
         withFrameNanos { }
         nav.titleFocus = null
-        runCatching { fr(focus).requestFocus() }.onFailure { runCatching { fr("play").requestFocus() } }
+        // where it was, else Play, else Picture details, else Settings: never nothing focused
+        listOf(focus, "play", "details", "settings").firstOrNull { k -> runCatching { fr(k).requestFocus() }.getOrDefault(false) }
     }
     LaunchedEffect(nav.refresh) { // back from the player
         if (nav.titleFocus != null) { focus = "play"; nav.titleFocus = null; withFrameNanos { }; runCatching { fr("play").requestFocus() } }
@@ -304,6 +305,8 @@ private fun EpisodesBlock(
         val top by animateFloatAsState(-focusedI * EP_PITCH * Px.screen, Move.slide(Move.Screen), label = "list")
         Box(Modifier.graphicsLayer { translationY = top }) {
             eps.forEachIndexed { i, ep ->
+                // only the rows near focus are built: a long season doesn't load every still at once
+                if (i < focusedI - 1 || i > focusedI + 5) return@forEachIndexed
                 // above the top slot: out of the way of the heading
                 val shown by animateFloatAsState(if (i < focusedI) 0f else 1f, Move.fade(Move.Focus), label = "ep")
                 val key = "ep/$s/$i"

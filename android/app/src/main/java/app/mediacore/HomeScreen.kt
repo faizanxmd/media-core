@@ -101,6 +101,33 @@ fun Nav.restoreHome(cache: java.io.File) {
     }
 }
 
+/**
+ * Keeps [Nav.home] current for every screen, not just Home: the last answer from disk first (off the UI thread),
+ * then mint's, again on each [Nav.refresh], and every 5 s while something downloads (a download's page and the
+ * offline screen depend on it too).
+ */
+@Composable
+fun HomeData(nav: Nav) {
+    val ctx = LocalContext.current
+    val cache = remember { java.io.File(ctx.cacheDir, "home.json") }
+    LaunchedEffect(Unit) { withContext(Dispatchers.Default) { nav.restoreHome(cache) } }
+    LaunchedEffect(nav.refresh) {
+        try {
+            nav.loadHome(cache)
+            nav.offline = false
+        } catch (e: Exception) {
+            nav.failed(e)
+        }
+    }
+    val downloading = nav.home?.downloads?.isNotEmpty() == true
+    LaunchedEffect(downloading) {
+        while (downloading) {
+            delay(5000)
+            runCatching { nav.loadHome(cache) }
+        }
+    }
+}
+
 /** Asks mint for Home, off the UI thread. An unchanged answer redraws nothing (every return from the player asks). */
 suspend fun Nav.loadHome(cache: java.io.File) {
     Api.settled()
@@ -153,10 +180,10 @@ private const val GAP = 16 // between cards: a focused wide card grows 10 px int
 private const val WIDE_BLOCK = WIDE_H + 12 + 32 + 2 + 28 // picture (its progress inside it), title, line under it
 private const val POSTER_BLOCK = POSTER_H
 
-private class HomeRow(val key: String, val title: String, val wide: Boolean, val cards: List<Card>)
+private data class HomeRow(val key: String, val title: String, val wide: Boolean, val cards: List<Card>)
 
 /** A card: a library item, or a title still downloading. */
-private class Card(val key: String, val item: Item?, val download: Download?)
+private data class Card(val key: String, val item: Item?, val download: Download?)
 
 /** What the hero describes: the show for an episode, the film itself, or a download. */
 private data class Hero(val item: Item?, val download: Download?, val key: String)
@@ -171,25 +198,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val art = LocalArt.current
-    val cache = remember { java.io.File(ctx.cacheDir, "home.json") }
-    remember { nav.restoreHome(cache) }
-
-    LaunchedEffect(nav.refresh) {
-        try {
-            nav.loadHome(cache)
-            nav.offline = false
-        } catch (e: Exception) {
-            nav.failed(e)
-        }
-    }
-    val home = nav.home ?: return
-    // while something downloads, ask often, so its progress moves smoothly instead of jumping once a minute
-    LaunchedEffect(home.downloads.isNotEmpty()) {
-        while (home.downloads.isNotEmpty()) {
-            delay(5000)
-            runCatching { nav.loadHome(cache) }
-        }
-    }
+    val home = nav.home ?: return // HomeData (in Root) loads it, whichever screen is up
 
     val rows = remember(home) { homeRows(home) }
     val showsById = remember(home) { home.shows.associateBy { it.id } }
@@ -599,14 +608,22 @@ fun etaText(eta: String): String? {
 fun startPlay(ctx: Context, scope: CoroutineScope, nav: Nav, it: Item, fromStart: Boolean, logo: String? = null, queue: List<Item>? = null) {
     if (nav.inPlayer) return
     nav.inPlayer = true
-    scope.launch {
-        nav.black.animateTo(1f, Move.fade(Move.Black))
-        when {
-            queue != null -> PlayerActivity.play(ctx, queue, queue.indexOfFirst { q -> q.id == it.id }.coerceAtLeast(0), fromStart, logo)
-            it.isEpisode -> playEpisode(ctx, it, fromStart)
-            else -> PlayerActivity.play(ctx, listOf(it), 0, fromStart)
+    // on the app's own scope, not the screen's: Back during the fade leaves the screen but mustn't strand it dark
+    nav.scope.launch {
+        try {
+            nav.black.animateTo(1f, Move.fade(Move.Black))
+            when {
+                queue != null -> PlayerActivity.play(ctx, queue, queue.indexOfFirst { q -> q.id == it.id }.coerceAtLeast(0), fromStart, logo)
+                it.isEpisode -> playEpisode(ctx, it, fromStart)
+                else -> PlayerActivity.play(ctx, listOf(it), 0, fromStart)
+            }
+            (ctx as? Activity)?.overridePendingTransition(R.anim.player_in, R.anim.hold)
+        } catch (e: Exception) {
+            // it never started (no answer from mint, or cancelled): come back from black, Play works again
+            nav.inPlayer = false
+            nav.black.snapTo(0f)
+            if (e is kotlinx.coroutines.CancellationException) throw e
         }
-        (ctx as? Activity)?.overridePendingTransition(R.anim.player_in, R.anim.hold)
     }
 }
 

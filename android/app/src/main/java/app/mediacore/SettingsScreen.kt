@@ -87,7 +87,8 @@ fun SettingsScreen(nav: Nav) {
     val prefs = remember { ctx.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     LaunchedEffect(Unit) {
         val h = nav.home?.let { (it.cont + it.recent).firstOrNull() }
-        val pic = h?.let { nav.home?.shows?.firstOrNull { s -> s.id == h.showId } ?: h }?.banner
+        // blurred and darkened to near black: a small picture does, no need for the original
+        val pic = h?.let { nav.home?.shows?.firstOrNull { s -> s.id == h.showId } ?: h }?.meta?.backdrop?.let { b -> app.mediacore.core.Api.img(b, "w780") }
         art.show(ArtSpec(pic, ArtStyle.Blurred), Move.Screen)
     }
     val all = Watching + PictureSound + Look

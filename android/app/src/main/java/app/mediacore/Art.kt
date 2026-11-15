@@ -60,8 +60,13 @@ object Art {
     suspend fun bake(ctx: Context, spec: ArtSpec, w: Int, h: Int): Bitmap {
         cache.get(spec)?.let { return it }
         val src = spec.url?.let { load(ctx, it, if (spec.style == ArtStyle.Episode) w * 2 / 3 else w, h) }
-        val out = withContext(Dispatchers.Default) { draw(spec, src, w, h) }
-        cache.put(spec, out)
+        val out = withContext(Dispatchers.Default) {
+            val soft = draw(spec, src, w, h)
+            // handed to the GPU now, off the UI thread, so the crossfade's first frame doesn't stall uploading 8 MB
+            soft.copy(Bitmap.Config.HARDWARE, false)?.also { soft.recycle() } ?: soft.apply { prepareToDraw() }
+        }
+        // a picture that failed to load isn't kept: the next visit tries again instead of showing no art all session
+        if (spec.url == null || src != null) cache.put(spec, out)
         return out
     }
 
@@ -70,7 +75,9 @@ object Art {
     /** A picture as plain pixels (not a GPU-only bitmap: it's drawn into another), decoded near the size it's shown. */
     suspend fun load(ctx: Context, url: String, w: Int, h: Int): Bitmap? {
         val r = ctx.imageLoader.execute(
-            ImageRequest.Builder(ctx).data(url).size(w, h).precision(Precision.INEXACT).allowHardware(false).build(),
+            // not kept in Coil's memory too: only the finished background is kept (in [cache])
+            ImageRequest.Builder(ctx).data(url).size(w, h).precision(Precision.INEXACT).allowHardware(false)
+                .memoryCachePolicy(coil3.request.CachePolicy.DISABLED).build(),
         )
         return (r as? SuccessResult)?.image?.toBitmap()
     }
