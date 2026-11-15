@@ -21,7 +21,9 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 10. From Recently added, Up to Continue watching: the row appears once the page has slid, without crossing the title's story.
 11. A show's Episodes: seasons are plain words (Season 1, its episode count), white when focused. An episode reads "Episode 2", or for a named one its name under a small EPISODE 2, never "2 Episode 2".
 12. Settings, Look: Accent colour steps through Blue, White, Ember and Red. The focused Play, progress bars and Settings' headings change at once and stay changed after a restart; the wordmark's core stays blue. With White, a focused Play has dark words.
-13. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+13. Home's rows sit tighter: 16 px between cards, the progress bar close under its card, and a card that has slid past the left edge fades away instead of peeking in half-cut. A focused card's border still clears its neighbours.
+14. A title's year line and story (Home and title page) read clearly over bright art: near-white with a soft shadow.
+15. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

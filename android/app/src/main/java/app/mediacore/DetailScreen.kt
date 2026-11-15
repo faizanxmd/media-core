@@ -201,9 +201,9 @@ private fun FirstScreen(
         main.displayYear.takeIf { it > 0 }?.toString(), main.meta?.genres?.firstOrNull(),
         if (show) null else runtimeOf(main)?.let(::span), main.meta?.cert?.ifEmpty { null },
     )
-    DotLine(facts, ts(26, 32, 600, Pal.InkSoft, cond = true, track = 0.01f), modifier = Modifier.offset(LEFT.px, y[1].px))
+    DotLine(facts, ts(26, 32, 600, Pal.Ink, cond = true, track = 0.01f).copy(shadow = WordShadow), modifier = Modifier.offset(LEFT.px, y[1].px))
     main.meta?.overview?.ifEmpty { null }?.let {
-        Text(it, style = ts(29, 40, 400, Pal.InkSoft), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.offset(LEFT.px, y[2].px).width(940.px))
+        Text(it, style = ts(29, 40, 500, Pal.Ink.copy(alpha = 0.9f)).copy(shadow = WordShadow), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.offset(LEFT.px, y[2].px).width(940.px))
     }
     // The credits: who made it, who scored it, and three of the cast. Each column only when TMDB has it.
     val meta = main.meta

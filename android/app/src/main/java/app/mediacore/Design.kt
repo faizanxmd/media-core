@@ -143,6 +143,9 @@ fun ts(size: Number, line: Number, weight: Int, color: Color = Pal.Ink, cond: Bo
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
 )
 
+/** Under words that sit on art (a title's facts and story): soft and dark, so any picture behind stays readable. */
+val WordShadow get() = androidx.compose.ui.graphics.Shadow(Pal.BaseDeep.copy(alpha = 0.75f), Offset(0f, 2 * Px.screen), 14 * Px.screen)
+
 /** One curve and three speeds for everything that moves (SPEC.md, Motion). */
 object Move {
     val Ease = CubicBezierEasing(0.2f, 0f, 0f, 1f) // fast out, gentle stop

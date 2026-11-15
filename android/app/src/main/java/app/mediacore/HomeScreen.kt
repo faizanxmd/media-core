@@ -143,14 +143,14 @@ private const val BUTTONS_Y = 470
 private const val ROW0 = 600 // the first row's title while focus is up on the buttons
 private const val ROW_IN = 492 // where the focused row's title lands once focus is in the rows: up into the buttons' place
 private const val ROW_TITLE = 40 // its line
-private const val TITLE_TO_CARDS = 20 // room for a focused card's lift
-private const val BAR_GAP = 20 // the same under it, before its progress bar
+private const val TITLE_TO_CARDS = 16 // room for a focused card's lift (6 px) and border (3)
+private const val BAR_GAP = 12 // under it, before its progress bar: close enough to belong to the card
 private const val ROW_GAP = 30 // under a row's last line, before the next row's title, which shows whole at the bottom
 private const val WIDE_W = 400
 private const val WIDE_H = 225
 private const val POSTER_W = 200
 private const val POSTER_H = 300
-private const val GAP = 28 // between cards: a focused card grows 10 px into it and its border 3 more
+private const val GAP = 16 // between cards: a focused wide card grows 10 px into it and its border 3 more
 private const val WIDE_BLOCK = WIDE_H + BAR_GAP + 6 + 12 + 32 + 2 + 28 // picture, bar, title, line under it
 private const val POSTER_BLOCK = POSTER_H
 
@@ -397,10 +397,11 @@ private fun HeroWords(h: Hero, detail: Item?) {
                 it.displayYear.takeIf { y -> y > 0 }?.toString(), it.meta?.genres?.firstOrNull(),
                 runtimeOf(it)?.let(::span), it.meta?.cert?.ifEmpty { null },
             )
-            DotLine(facts, ts(26, 32, 600, Pal.InkSoft, cond = true, track = 0.01f), modifier = Modifier.offset(LEFT.px, META_Y.px))
+            // the words over the art: near-white with a soft dark shadow, so any picture behind them stays readable
+            DotLine(facts, ts(26, 32, 600, Pal.Ink, cond = true, track = 0.01f).copy(shadow = WordShadow), modifier = Modifier.offset(LEFT.px, META_Y.px))
             it.meta?.overview?.ifEmpty { null }?.let { o ->
                 Text(
-                    o, style = ts(29, 40, 400, Pal.InkSoft), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    o, style = ts(29, 40, 500, Pal.Ink.copy(alpha = 0.9f)).copy(shadow = WordShadow), maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.offset(LEFT.px, STORY_Y.px).width(900.px),
                 )
             }
@@ -471,8 +472,12 @@ private fun CardRow(
                     right = if (i < row.cards.lastIndex) fr(row.cards[i + 1].key) else FocusRequester.Cancel
                 }
             val focused = { f: Boolean -> if (f) { onFocus(c.key); nav.homeCols[row.key] = i } }
-            if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
-            else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }
+            // cards that have slid past the left edge go, rather than peek in half-cut at the screen's side
+            val gone by animateFloatAsState(if (i < col) 0f else 1f, Move.fade(Move.Focus), label = "past")
+            Box(Modifier.graphicsLayer { alpha = gone }) {
+                if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
+                else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }
+            }
         }
     }
 }
