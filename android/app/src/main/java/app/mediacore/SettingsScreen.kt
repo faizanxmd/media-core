@@ -51,7 +51,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 
 /** One setting: its name, the values it steps through, and where it's kept. */
-private class Setting(val key: String, val name: String, val values: List<String>, val default: String)
+private class Setting(val key: String, val name: String, val values: List<String>, val default: String, val onChange: (String) -> Unit = {})
 
 private val Watching = listOf(
     Setting("audio", "Audio language", listOf("Original", "English", "Hindi"), "English"),
@@ -64,6 +64,15 @@ private val PictureSound = listOf(
     Setting("range", "Match dynamic range", listOf("On", "Off"), "On"),
     Setting("passthrough", "Audio passthrough", listOf("On", "Off"), "On"),
 )
+private val Look = listOf(
+    Setting("accent", "Accent colour", AccentColor.entries.map { it.name }, AccentColor.Blue.name) { v -> Pal.accent = AccentColor.valueOf(v) },
+)
+
+/** The accent kept in Settings, read once at start. */
+fun loadAccent(ctx: Context) {
+    val v = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("accent", null)
+    Pal.accent = AccentColor.entries.firstOrNull { it.name == v } ?: AccentColor.Blue
+}
 
 /**
  * Settings (board 12): one list. Up and Down move, Left and Right change the value in place. On the right, read-only,
@@ -81,20 +90,22 @@ fun SettingsScreen(nav: Nav) {
         val pic = h?.let { nav.home?.shows?.firstOrNull { s -> s.id == h.showId } ?: h }?.banner
         art.show(ArtSpec(pic, ArtStyle.Blurred), Move.Screen)
     }
-    val all = Watching + PictureSound
+    val all = Watching + PictureSound + Look
     val requesters = remember { all.associate { it.key to FocusRequester() } }
     LaunchedEffect(Unit) { withFrameNanos { }; runCatching { requesters.getValue(all.first().key).requestFocus() } }
 
     Box(Modifier.fillMaxSize()) {
-        Text("Settings", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 140.px))
+        Text("Settings", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 110.px))
         // the rows' words line up with the edge; a focused row's white reaches 24 px out from them
-        Column(Modifier.offset((EDGE - 24).px, 244.px).width(940.px)) {
+        Column(Modifier.offset((EDGE - 24).px, 210.px).width(940.px)) {
             Section("Watching", top = 0)
             Watching.forEachIndexed { i, s -> SettingRow(s, prefs, requesters.getValue(s.key), up = all.getOrNull(all.indexOf(s) - 1)?.let { requesters[it.key] }) }
-            Section("Picture and sound", top = 30)
+            Section("Picture and sound", top = 24)
             PictureSound.forEach { s -> SettingRow(s, prefs, requesters.getValue(s.key), up = null) }
+            Section("Look", top = 24)
+            Look.forEach { s -> SettingRow(s, prefs, requesters.getValue(s.key), up = null) }
         }
-        Connection(nav, Modifier.offset(1180.px, 244.px).width(660.px))
+        Connection(nav, Modifier.offset(1180.px, 210.px).width(660.px))
         Text(
             "Film and show information from TMDB. This app is not endorsed or certified by TMDB.",
             style = ts(23, 28, 400, Pal.Faint), modifier = Modifier.align(Alignment.BottomStart).padding(start = EDGE.px, bottom = TOP.px),
@@ -121,10 +132,11 @@ private fun SettingRow(s: Setting, prefs: android.content.SharedPreferences, fr:
             dir = d
             index = n
             prefs.edit().putString(s.key, s.values[n]).apply()
+            s.onChange(s.values[n])
         }
     }
     Row(
-        Modifier.padding(bottom = 4.px).fillMaxWidth().height(76.px).clip(Corner).background(fill)
+        Modifier.padding(bottom = 4.px).fillMaxWidth().height(68.px).clip(Corner).background(fill)
             .focusRequester(fr).onFocusChanged { focused = it.isFocused }
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false

@@ -91,6 +91,14 @@ object Px {
 val Number.px: Dp get() = (toFloat() * Px.k).dp
 val Number.fs: TextUnit get() = (toFloat() * Px.k / Px.font).sp
 
+/** The accent choices. Each has a deep shade for a focused Play, so it never glows. */
+enum class AccentColor(val main: Color, val deep: Color, val light: Boolean = false) {
+    Blue(Color(0xFF1D39F3), Color(0xFF1F2F8C)),
+    White(Color(0xFFF2F3F7), Color(0xFFF2F3F7), light = true),
+    Ember(Color(0xFFD9622B), Color(0xFF8C3415)),
+    Red(Color(0xFFE50914), Color(0xFFA8070F)),
+}
+
 object Pal {
     val BaseDeep = Color(0xFF040507) // ends of fades, vignette corners
     val Base = Color(0xFF090B0E) // every screen
@@ -101,12 +109,15 @@ object Pal {
     val Label = Color(0xFF8B909A) // small capitals over credits and figures
     val Faint = Color(0xFF6B707A) // middle dots, dates, episode numbers
     val RowTitle = Color(0xFFC9CCD3) // row titles while focus is down in the rows
-    val Accent = Color(0xFF1D39F3) // big areas: Play, progress, Settings headings
+    /** The accent, chosen in Settings: Play while focused, progress bars, Settings' headings. */
+    var accent by mutableStateOf(AccentColor.Blue)
+    val Accent: Color get() = accent.main // big areas: progress, Settings headings
     val Cobalt = Color(0xFF4F84FE) // small marks
     val Problem = Color(0xFFF08A84)
     val ProblemBg = Color(0xFF2A1416)
     val Glass = Color(0xD124272E) // rgba(36,39,46,.82): every resting control over art
-    val Deep = Color(0xFF1F2F8C) // Play and Resume while focused: the brand's blue, deep enough not to glow
+    val Deep: Color get() = accent.deep // Play and Resume while focused: deep enough not to glow
+    val OnDeep: Color get() = if (accent.light) OnInk else Ink // their words
     val OnInk = Color(0xFF0B0D11) // text on a focused (white) control
     val OnInkSoft = Color(0xFF4A4F5A) // its quieter parts
 }
@@ -213,7 +224,7 @@ fun Wordmark(modifier: Modifier = Modifier, height: Dp = 44.px) {
                 addOval(androidx.compose.ui.geometry.Rect(c.x - 14.601f, c.y - 15.875f, c.x + 14.601f, c.y + 15.875f))
             }
             drawPath(ring, ink)
-            drawCircle(Brush.radialGradient(0f to Color(0xFF7FA2FF), 0.55f to Color(0xFF3A5CF8), 1f to Pal.Accent, center = c, radius = 9f), 9f, c)
+            drawCircle(Brush.radialGradient(0f to Color(0xFF7FA2FF), 0.55f to Color(0xFF3A5CF8), 1f to Color(0xFF1D39F3), center = c, radius = 9f), 9f, c) // the brand's blue, whatever the accent
         }
     }
 }
@@ -277,7 +288,7 @@ fun Modifier.softShadow(kind: ShadowKind): Modifier = drawBehind {
 const val BUTTON_H = 76
 
 /**
- * Play or Resume: grey like every control at rest, deep blue when focused. "Play | S2 E1", "Resume | 2 h 4 m left".
+ * Play or Resume: grey like every control at rest, the accent's deep shade when focused. "Play | S2 E1", "Resume | 2 h 4 m left".
  * How far along a title is shows on its card, not here.
  */
 @Composable
@@ -291,17 +302,19 @@ fun PlayButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val fill = focusFill(focused, Pal.Glass, Pal.Deep)
+    val ink = focusFill(focused, Pal.Ink, Pal.OnDeep)
+    val soft = focusFill(focused, Pal.InkSoft, if (Pal.accent.light) Pal.OnInkSoft else Pal.InkSoft)
     Row(
         modifier.softShadow(ShadowKind.Button).clip(Corner).background(fill)
             .control(fr, { focused = it; onFocus(it) }, onClick).height(BUTTON_H.px).padding(start = 30.px, end = 34.px),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Play, null, tint = Pal.Ink, modifier = Modifier.size(22.px, 26.px))
+        Icon(Icons.Play, null, tint = ink, modifier = Modifier.size(22.px, 26.px))
         Spacer(Modifier.width(16.px))
-        Text(word, style = ts(29, 36, 700), maxLines = 1)
+        Text(word, style = ts(29, 36, 700, ink), maxLines = 1)
         if (detail != null) {
-            Box(Modifier.padding(horizontal = 18.px).size(2.px, 30.px).background(Pal.Ink.copy(alpha = 0.25f)))
-            Text(detail, style = ts(26, 32, 600, Pal.InkSoft, tabular = true), maxLines = 1)
+            Box(Modifier.padding(horizontal = 18.px).size(2.px, 30.px).background(ink.copy(alpha = 0.25f)))
+            Text(detail, style = ts(26, 32, 600, soft, tabular = true), maxLines = 1)
         }
     }
 }

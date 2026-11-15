@@ -12,7 +12,7 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 1. Home: Up and Down move between the buttons and the two rows, and the hero follows the focused card after a short pause.
 2. A film and a show open their title pages; Down on a show reaches Episodes. Under the story, a film shows Director, Music and Starring, a show Created by, Music and Starring; a title missing a credit just leaves that column out.
 3. Play and Resume fade to black, the player starts as before, and Back fades back to the same place.
-4. Settings changes values with Left and Right and shows the connection to mint. The player doesn't use these values yet.
+4. Settings (rows a little shorter now, to fit the new Look section) changes values with Left and Right and shows the connection to mint. The player doesn't use these values yet.
 5. Unplug mint's network briefly: "mint is offline" appears and goes away by itself.
 6. Down on a film does nothing; Down on a show reaches its episodes. On Home, moving down into the rows leaves no empty band above them.
 7. Home: the wordmark sits top-left, centred on Settings' height, with clear space above the title's logo; it fades away when you move down into the rows and comes back when you return to the buttons.
@@ -20,7 +20,8 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 9. Back on Home: from the rows it first goes up to Play; from the top it asks "Leave Media Core?" with Stay focused. Back or Stay keeps you in, Leave quits.
 10. From Recently added, Up to Continue watching: the row appears once the page has slid, without crossing the title's story.
 11. A show's Episodes: seasons are plain words (Season 1, its episode count), white when focused. An episode reads "Episode 2", or for a named one its name under a small EPISODE 2, never "2 Episode 2".
-12. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+12. Settings, Look: Accent colour steps through Blue, White, Ember and Red. The focused Play, progress bars and Settings' headings change at once and stay changed after a restart; the wordmark's core stays blue. With White, a focused Play has dark words.
+13. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

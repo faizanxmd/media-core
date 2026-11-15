@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
         Api.init(this)
         Px.init(this)
         Move.read(this)
+        loadAccent(this)
         Speed.start(this) // measures this connection in the background, for Original or Light
         Offline.init(this, overMetered = true)
         enableEdgeToEdge()
