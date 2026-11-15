@@ -16,7 +16,11 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 5. Unplug mint's network briefly: "mint is offline" appears and goes away by itself.
 6. Down on a film does nothing; Down on a show reaches its episodes. On Home, moving down into the rows leaves no empty band above them.
 7. Home: the wordmark sits top-left, centred on Settings' height, with clear space above the title's logo; it fades away when you move down into the rows and comes back when you return to the buttons.
-8. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+8. Back from the player (any way: Back, or the film ending) lands on the title page or Home it came from, never the TV's launcher. The app used to crash right there.
+9. Back on Home: from the rows it first goes up to Play; from the top it asks "Leave Media Core?" with Stay focused. Back or Stay keeps you in, Leave quits.
+10. From Recently added, Up to Continue watching: the row appears once the page has slid, without crossing the title's story.
+11. A show's Episodes: seasons are plain words (Season 1, its episode count), white when focused. An episode reads "Episode 2", or for a named one its name under a small EPISODE 2, never "2 Episode 2".
+12. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

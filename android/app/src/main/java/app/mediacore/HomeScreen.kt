@@ -1,5 +1,7 @@
 package app.mediacore
 
+import androidx.compose.foundation.focusGroup
+import androidx.activity.compose.BackHandler
 import android.app.Activity
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
@@ -277,7 +279,14 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         val pageY by animateFloatAsState(if (inRows) -(rowTops[focusRow] - ROW_IN) * Px.screen else 0f, Move.slide(Move.Screen), label = "page")
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
             rows.forEachIndexed { r, row ->
-                val gone by animateFloatAsState(if (inRows && r < focusRow) 0f else 1f, Move.fade(Move.Screen), label = "row")
+                // a row above the focused one leaves at once; coming back, it waits for the page to finish sliding,
+                // so it never crosses the hero's words on its way down
+                val back = !(inRows && r < focusRow)
+                val gone by animateFloatAsState(
+                    if (back) 1f else 0f,
+                    if (back && !Move.reduced) tween(Move.Focus, delayMillis = Move.Screen, easing = Move.Ease) else Move.fade(Move.Focus),
+                    label = "row",
+                )
                 val titleColor by animateColorAsState(if (inRows) Pal.RowTitle else Pal.Ink, Move.fade(Move.Focus), label = "rowtitle")
                 Column(Modifier.offset(LEFT.px, rowTops[r].px).graphicsLayer { alpha = gone }) {
                     Text(row.title, style = ts(34, ROW_TITLE, 700, titleColor, cond = true, track = -0.005f))
@@ -298,6 +307,35 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                 "Nothing in the library yet. Add links at mint:8780.", style = ts(29, 40, 400, Pal.InkSoft),
                 modifier = Modifier.offset(LEFT.px, ROW0.px),
             )
+        }
+    }
+
+    // Back: from the rows it first goes up to the buttons; from there it asks before leaving the app
+    var quitting by remember { mutableStateOf(false) }
+    BackHandler(enabled = nav.stack.size == 1 && !quitting) {
+        if (inRows || focus == "settings" || focus == "update") runCatching { fr("play").requestFocus() }.onFailure { quitting = true }
+        else quitting = true
+    }
+    QuitAsk(quitting, onStay = { quitting = false; runCatching { fr(focus).requestFocus() } }) { (ctx as? Activity)?.finish() }
+}
+
+/** "Leave Media Core?" over a dimmed Home, Stay focused first. Back is Stay. */
+@Composable
+private fun QuitAsk(shown: Boolean, onStay: () -> Unit, onLeave: () -> Unit) {
+    val a by animateFloatAsState(if (shown) 1f else 0f, Move.fade(Move.Focus), label = "quit")
+    if (a == 0f && !shown) return
+    val stay = remember { FocusRequester() }
+    LaunchedEffect(shown) { if (shown) { withFrameNanos { }; runCatching { stay.requestFocus() } } }
+    BackHandler(enabled = shown, onBack = onStay)
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a }.background(Pal.BaseDeep.copy(alpha = 0.88f)).focusGroup()) {
+        Column(Modifier.offset(LEFT.px, 420.px)) {
+            Text("Leave Media Core?", style = ts(60, 68, 700, track = -0.015f))
+            Row(Modifier.padding(top = 48.px), horizontalArrangement = Arrangement.spacedBy(16.px)) {
+                // focus stays on these two while the question is up
+                val no = FocusRequester.Cancel
+                GlassButton("Stay", null, Modifier.focusProperties { left = no; up = no; down = no }, fr = stay, padStart = 40, padEnd = 40, onClick = onStay)
+                GlassButton("Leave", null, Modifier.focusProperties { right = no; up = no; down = no }, padStart = 40, padEnd = 40, onClick = onLeave)
+            }
         }
     }
 }

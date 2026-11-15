@@ -1,5 +1,6 @@
 package app.mediacore
 
+import androidx.compose.ui.graphics.Color
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
@@ -244,7 +245,8 @@ private const val EPISODES_Y = 1024 // "Episodes"; its list starts 56 below
 private const val EP_X = 480
 private const val EP_W = 1920 - EDGE - EP_X
 private const val EP_PITCH = 204 // a 180 px row and 24 under it
-private const val SEASON_PITCH = 174 // a 150 px poster and 24 under it
+private const val SEASON_PITCH = 88 // a 76 px row and 12 under it
+private const val SEASON_W = 340
 
 /**
  * "Episodes ⌄", then the seasons down the left and the season's episodes on the right. Laid out under the first
@@ -261,12 +263,13 @@ private fun EpisodesBlock(
     }
     var focusedSeason by remember { mutableStateOf(-1) }
     var focusedEpisode by remember { mutableStateOf<String?>(null) }
-    // seasons: the one in view is named in ink, the others muted; the focused one lifts
+    // seasons, as words only: the one in view is named in ink, the others muted; the focused one fills white
     Box(Modifier.offset(LEFT.px, (EPISODES_Y + 56).px)) {
         main.seasons.forEachIndexed { s, it ->
             val name by androidx.compose.animation.animateColorAsState(if (s == season) Pal.Ink else Pal.Muted, Move.fade(Move.Focus), label = "season")
             Row(
                 Modifier.offset(y = (s * SEASON_PITCH).px)
+                    .size(SEASON_W.px, 76.px).clip(Corner).background(focusFill(focusedSeason == s, Color.Transparent, Pal.Ink))
                     .focusRequester(fr("season/$s"))
                     .onFocusChanged { f -> if (f.isFocused) { focusedSeason = s; onSeason(s) } else if (focusedSeason == s) focusedSeason = -1 }
                     .focusProperties {
@@ -276,19 +279,17 @@ private fun EpisodesBlock(
                         left = FocusRequester.Cancel
                     }
                     .onPreviewKeyEvent { e -> if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionUp && s == 0) { onUp(); true } else false }
-                    .focusable(),
+                    .focusable()
+                    .padding(horizontal = 24.px),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(100.px, 150.px).lift(ringOf(focusedSeason == s)).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
-                    Api.img(it.meta?.poster?.ifEmpty { null } ?: main.meta?.poster, "w185")?.let { u -> AsyncImage(u, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                }
-                Column(Modifier.padding(start = 22.px).width(240.px)) {
-                    Text(it.title, style = ts(30, 36, 700, name, cond = true), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        if (it.unseen == 0 && it.episodes.isNotEmpty()) "All watched" else "${it.episodes.size} episode" + if (it.episodes.size == 1) "" else "s",
-                        style = ts(23, 28, 400, Pal.Muted), modifier = Modifier.padding(top = 4.px),
-                    )
-                }
+                val on = focusedSeason == s
+                val ink = focusFill(on, name, Pal.OnInk)
+                Text(it.title, style = ts(29, 36, 700, ink), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(
+                    if (it.unseen == 0 && it.episodes.isNotEmpty()) "Watched" else "${it.episodes.size} ep",
+                    style = ts(23, 28, 600, focusFill(on, Pal.Muted, Pal.OnInkSoft), tabular = true),
+                )
             }
         }
     }
@@ -339,10 +340,10 @@ private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Mo
             ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         }
         Column(Modifier.padding(start = 32.px).weight(1f)) {
-            Row {
-                Text("${ep.episode}", style = ts(29, 36, 700, Pal.Faint, tabular = true, track = -0.01f), modifier = Modifier.padding(end = 16.px))
-                Text(ep.title, style = ts(29, 36, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            // a real name gets "EPISODE 2" over it; a nameless one is just "Episode 2"
+            val named = ep.episode > 0 && !ep.title.equals("Episode ${ep.episode}", ignoreCase = true)
+            if (named) Text("EPISODE ${ep.episode}", style = CapsLabel, modifier = Modifier.padding(bottom = 6.px))
+            Text(ep.title, style = ts(29, 36, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             ep.meta?.overview?.ifEmpty { null }?.let {
                 Text(it, style = ts(23, 31, 400, Pal.Muted), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.px))
             }

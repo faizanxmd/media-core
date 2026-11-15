@@ -1,5 +1,6 @@
 package app.mediacore
 
+import androidx.compose.ui.platform.AndroidUiDispatcher
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
@@ -111,7 +112,8 @@ class MainActivity : ComponentActivity() {
         Move.read(this)
         if (nav.inPlayer) { // back from the player: the title page fades up from black
             nav.inPlayer = false
-            scope.launch { nav.black.animateTo(0f, Move.fade(Move.Screen)) }
+            // an animation needs Compose's frame clock: MainScope alone has none, and the app crashed here
+            scope.launch(AndroidUiDispatcher.Main) { nav.black.animateTo(0f, Move.fade(Move.Screen)) }
         }
         keepUp.run()
         scope.launch { checkUpdate() }
