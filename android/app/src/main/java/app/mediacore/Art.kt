@@ -280,10 +280,12 @@ enum class ShadowKind(val layers: List<Triple<Float, Float, Float>>) { // (dy, b
 class BakedShadow(val bitmap: Bitmap, val pad: Int, val dy: Int = 0)
 
 object Shadows {
-    private val cache = HashMap<String, BakedShadow>()
+    // only the recent sizes: a button's width changes with its words, and every new width would stay forever
+    private val cache = android.util.LruCache<String, BakedShadow>(40)
 
     fun get(kind: ShadowKind, w: Int, h: Int): BakedShadow = synchronized(cache) {
-        cache.getOrPut("$kind/$w/$h") { bake(kind, w, h) }
+        val k = "$kind/$w/$h"
+        cache.get(k) ?: bake(kind, w, h).also { cache.put(k, it) }
     }
 
     private fun bake(kind: ShadowKind, w: Int, h: Int): BakedShadow {
@@ -293,7 +295,7 @@ object Shadows {
         val bh = h + 2 * pad
         val out = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
-        val radius = 6 * f
+        val radius = CORNER * f // the shapes it sits under
         for ((dy, blur, a) in kind.layers) {
             // CSS blur radius is two standard deviations; three box passes of r give a deviation of about r
             val sigma = blur * f / 2

@@ -77,7 +77,10 @@ fun TitlePage(nav: Nav, id: String) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val art = LocalArt.current
-    var data by remember(id) { mutableStateOf(nav.details[id]) }
+    // shown at once: what was fetched before, else (a film) what Home already knows of it; mint's answer follows
+    var data by remember(id) {
+        mutableStateOf(nav.details[id] ?: nav.home?.let { h -> (h.cont + h.recent + h.movies).firstOrNull { it.id == id && it.type == "movie" } }?.let { it to null })
+    }
     LaunchedEffect(id, nav.refresh) {
         try {
             data = nav.fetchDetail(id)
@@ -192,8 +195,8 @@ private fun FirstScreen(
     onDown: () -> Unit, onPlay: (Boolean) -> Unit, onDetails: () -> Unit,
 ) {
     // a show's block sits higher, leaving room for "Episodes" and its first row at the bottom
-    // top of: logo (its foot 24 px over the facts), facts, story (two lines of 40), Starring, buttons
-    val y = listOf(0, 500, 548, 650, 780)
+    // top of: logo (its foot 24 px over the facts), facts, story (two lines of 44), credits, buttons
+    val y = listOf(0, 500, 552, 680, 808)
     val logoW = if (show) 560 else 500
     val logoH = if (show) 220 else 240
     Box(Modifier.offset(LEFT.px, (y[1] - 24 - logoH).px)) {
@@ -205,7 +208,7 @@ private fun FirstScreen(
     )
     DotLine(facts, ts(26, 32, 600, Pal.Ink, cond = true, track = 0.01f).copy(shadow = WordShadow), modifier = Modifier.offset(LEFT.px, y[1].px))
     main.meta?.overview?.ifEmpty { null }?.let {
-        Text(it, style = ts(29, 40, 500, Pal.Ink.copy(alpha = 0.9f)).copy(shadow = WordShadow), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.offset(LEFT.px, y[2].px).width(940.px))
+        Text(it, style = ts(29, 44, 500, Pal.Ink.copy(alpha = 0.9f)).copy(shadow = WordShadow), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.offset(LEFT.px, y[2].px).width(940.px))
     }
     // The credits: who made it, who scored it, and three of the cast. Each column only when TMDB has it.
     val meta = main.meta
@@ -343,7 +346,7 @@ private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Mo
         Box(Modifier.size(320.px, 180.px).lift(ringOf(focused)).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
             ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             // part-watched: how far, inside the still's foot, as on Home's cards
-            if (ep.progress > 0f && !ep.watched) CardProgress(ep.progress)
+            if (ep.progress > 0f && !ep.watched) CardProgress { ep.progress }
         }
         Column(Modifier.padding(start = 32.px).weight(1f)) {
             // a real name gets "EPISODE 2" over it; a nameless one is just "Episode 2"

@@ -185,7 +185,8 @@ private fun Connection(nav: Nav, modifier: Modifier) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             delay = runCatching { (1..3).minOf { ping() } }.getOrNull()
-            speed = runCatching { measure() }.getOrNull()
+            val job = coroutineContext[kotlinx.coroutines.Job]
+            speed = runCatching { measure { job?.isActive != false } }.getOrNull()
         }
     }
     val heaviest = nav.home?.let { h -> (h.cont + h.recent + h.movies).mapNotNull { it.info?.mbps }.maxOrNull() }
@@ -225,13 +226,13 @@ private fun ping(): Long {
 }
 
 /** Megabits per second over a 16 MB download from mint's speed test. */
-private fun measure(): Double {
+private fun measure(alive: () -> Boolean): Double {
     val bytes = 16L shl 20
     val t = SystemClock.elapsedRealtime()
     Api.http.newCall(Request.Builder().url("${Api.base}/api/v1/speedtest?bytes=$bytes").build()).execute().use { r ->
         val s = r.body!!.byteStream()
         val buf = ByteArray(64 shl 10)
-        while (s.read(buf) >= 0) Unit
+        while (s.read(buf) >= 0) if (!alive()) error("left Settings") // stop reading once Settings closes
     }
     val sec = (SystemClock.elapsedRealtime() - t).coerceAtLeast(1) / 1000.0
     return bytes * 8 / sec / 1e6

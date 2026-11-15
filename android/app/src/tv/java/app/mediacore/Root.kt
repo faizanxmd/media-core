@@ -63,8 +63,7 @@ fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
             Offline(nav)
             Intro(nav)
             // into and out of the player: the whole screen goes to black and comes back from it
-            val black = nav.black.value
-            if (black > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = black }.background(Color.Black))
+            Black(nav)
         }
     }
 }
@@ -88,6 +87,12 @@ private fun Intro(nav: Nav) {
     Box(Modifier.fillMaxSize().graphicsLayer { alpha = a.value }.background(Pal.Base), contentAlignment = androidx.compose.ui.Alignment.Center) {
         Wordmark(height = 120.px)
     }
+}
+
+/** The black into and out of the player. Its own small composable, so its fade doesn't recompose all of Root. */
+@Composable
+private fun Black(nav: Nav) {
+    if (nav.black.value > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = nav.black.value }.background(Color.Black))
 }
 
 /** "mint is offline", over everything, until mint answers again; then it fades back to the app. */

@@ -2,6 +2,8 @@
 
 package app.mediacore
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.State
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
@@ -127,7 +129,8 @@ object Pal {
     val OnInkSoft = Color(0xFF4A4F5A) // its quieter parts
 }
 
-val Corner get() = RoundedCornerShape(8.px)
+val Corner get() = RoundedCornerShape(CORNER.px)
+const val CORNER = 12 // every picture and control: soft, not sharp
 
 /**
  * Source Sans 3 (Adobe, SIL Open Font License; android/app/brand-fonts-OFL.txt), one family at one width for
@@ -153,7 +156,7 @@ fun ts(size: Number, line: Number, weight: Int, color: Color = Pal.Ink, @Suppres
  * holds on the brightest art. Call it last inside the picture's Box.
  */
 @Composable
-fun androidx.compose.foundation.layout.BoxScope.CardProgress(p: Float) {
+fun androidx.compose.foundation.layout.BoxScope.CardProgress(p: () -> Float) {
     Box(
         Modifier.align(Alignment.BottomStart).fillMaxWidth().height(90.px)
             .background(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.8f))),
@@ -161,7 +164,13 @@ fun androidx.compose.foundation.layout.BoxScope.CardProgress(p: Float) {
     Box(
         Modifier.align(Alignment.BottomStart).padding(start = 16.px, end = 16.px, bottom = 14.px).fillMaxWidth().height(6.px)
             .clip(RoundedCornerShape(3.px)).background(Color.White.copy(alpha = 0.28f)),
-    ) { Box(Modifier.fillMaxHeight().fillMaxWidth(p.coerceIn(0.03f, 1f)).clip(RoundedCornerShape(3.px)).background(Pal.Accent)) }
+    ) {
+        // the fill is drawn, not laid out: a download's slow-moving bar redraws without recomposing the card
+        val fill = Pal.Accent
+        Box(Modifier.fillMaxSize().drawBehind {
+            drawRoundRect(fill, size = Size(size.width * p().coerceIn(0.03f, 1f), size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+        })
+    }
 }
 
 /** Under words that sit on art (a title's facts and story): soft and dark, so any picture behind stays readable. */
@@ -282,25 +291,27 @@ const val TOP = 60
  * Focus on a picture (a card, an episode's still, a season's poster): it lifts 5% and a 3 px white border appears
  * just outside its edge, both over 150 ms. [t] is ringOf(focused). Gaps around pictures leave room for the lift.
  */
-fun Modifier.lift(t: Float): Modifier = graphicsLayer {
-    val s = 1f + 0.05f * t
+fun Modifier.lift(ring: State<Float>): Modifier = graphicsLayer {
+    // read here, while drawing, not while composing: the card doesn't recompose on each frame of its lift
+    val s = 1f + 0.05f * ring.value
     scaleX = s
     scaleY = s
 }.drawWithContent {
     drawContent()
+    val t = ring.value
     if (t > 0f) {
         val w = 3 * Px.screen
         drawRoundRect(
             Pal.Ink.copy(alpha = t), topLeft = Offset(-w / 2, -w / 2), size = Size(size.width + w, size.height + w),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(8 * Px.screen + w / 2), style = Stroke(w),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(CORNER * Px.screen + w / 2), style = Stroke(w),
         )
     }
 }
 
 /** How far along focus is: 0 to 1 over 150 ms. */
 @Composable
-fun ringOf(focused: Boolean): Float =
-    animateFloatAsState(if (focused) 1f else 0f, Move.fade(Move.Focus), label = "ring").value
+fun ringOf(focused: Boolean): State<Float> =
+    animateFloatAsState(if (focused) 1f else 0f, Move.fade(Move.Focus), label = "ring")
 
 /** A control's fill as focus comes and goes (150 ms). */
 @Composable
@@ -415,7 +426,7 @@ fun IconButton(
         // the name hangs under the button and takes no room, so nothing moves when it shows
         Text(
             name, style = ts(23, 28, 600, Pal.InkSoft), maxLines = 1, softWrap = false,
-            modifier = Modifier.wrapUnbounded().padding(top = (BUTTON_H + 14).px).graphicsAlpha(label),
+            modifier = Modifier.wrapUnbounded().padding(top = (BUTTON_H + 14).px).graphicsLayer { alpha = label.value },
         )
     }
 }

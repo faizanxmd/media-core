@@ -164,20 +164,20 @@ private const val LEFT = EDGE
 private const val HERO_Y = 144 // the title's logo (or name), its foot 20 px over the meta line, its top 32 under the wordmark
 private const val HERO_H = 154
 private const val MARK_H = 44 // the wordmark, top-left, centred on Settings' midline
-private const val META_Y = 318
-private const val STORY_Y = 362 // two lines of 40
-private const val BUTTONS_Y = 470
-private const val ROW0 = 600 // the first row's title while focus is up on the buttons
-private const val ROW_IN = 492 // where the focused row's title lands once focus is in the rows: up into the buttons' place
+private const val META_Y = 316
+private const val STORY_Y = 364 // two lines of 44
+private const val BUTTONS_Y = 482
+private const val ROW0 = 616 // the first row's title while focus is up on the buttons
+private const val ROW_IN = 500 // where the focused row's title lands once focus is in the rows: up into the buttons' place
 private const val ROW_TITLE = 40 // its line
-private const val TITLE_TO_CARDS = 16 // room for a focused card's lift (6 px) and border (3)
-private const val ROW_GAP = 60 // under a row's last line, before the next row's title, which shows whole at the bottom
+private const val TITLE_TO_CARDS = 20 // room for a focused card's lift (6 px) and border (3)
+private const val ROW_GAP = 56 // under a row's last line, before the next row's title, which shows whole at the bottom
 private const val WIDE_W = 400
 private const val WIDE_H = 225
 private const val POSTER_W = 200
 private const val POSTER_H = 300
-private const val GAP = 16 // between cards: a focused wide card grows 10 px into it and its border 3 more
-private const val WIDE_BLOCK = WIDE_H + 12 + 34 + 2 + 30 // picture (its progress inside it), title, line under it
+private const val GAP = 20 // between cards: a focused wide card grows 10 px into it and its border 3 more
+private const val WIDE_BLOCK = WIDE_H + 16 + 34 + 2 + 30 // picture (its progress inside it), title, line under it
 private const val POSTER_BLOCK = POSTER_H
 
 private data class HomeRow(val key: String, val title: String, val wide: Boolean, val cards: List<Card>)
@@ -427,7 +427,7 @@ private fun HeroWords(h: Hero, detail: Item?) {
             DotLine(facts, ts(26, 32, 600, Pal.Ink, cond = true, track = 0.01f).copy(shadow = WordShadow), modifier = Modifier.offset(LEFT.px, META_Y.px))
             it.meta?.overview?.ifEmpty { null }?.let { o ->
                 Text(
-                    o, style = ts(29, 40, 500, Pal.Ink.copy(alpha = 0.9f)).copy(shadow = WordShadow), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    o, style = ts(29, 44, 500, Pal.Ink.copy(alpha = 0.9f)).copy(shadow = WordShadow), maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.offset(LEFT.px, STORY_Y.px).width(900.px),
                 )
             }
@@ -526,9 +526,9 @@ private fun WideCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Bool
         ) {
             it.wideSmall?.let { u -> AsyncImage(u, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             val shown by animateFloatAsState(it.progress, Move.slide(Move.Art), label = "progress")
-            CardProgress(shown)
+            CardProgress { shown }
         }
-        Text(it.showTitle, style = ts(26, 34, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.px))
+        Text(it.showTitle, style = ts(26, 34, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 16.px))
         val left = (it.durMs - it.pos).takeIf { l -> it.pos > 0 && l > 0 }?.let { l -> leftWords(l) }
         val lead = if (it.isEpisode) "S${it.season} E${it.episode}" else it.displayYear.takeIf { y -> y > 0 }?.toString()
         Row(Modifier.padding(top = 2.px)) {
@@ -556,7 +556,7 @@ private fun PosterCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Bo
             )
             c.download?.let { d ->
                 val shown by animateFloatAsState(d.progress / 100f, tween(if (Move.reduced) 0 else 4800), label = "download")
-                CardProgress(shown)
+                CardProgress { shown }
             }
         }
     }
