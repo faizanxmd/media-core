@@ -22,6 +22,16 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
 
+// The accent, chosen in Settings, as on the TV: Play, progress and Settings' headings. Kept in this browser.
+// main, under the pointer, progress, as words, words on it. The player keeps its own look.
+const ACCENTS = { Blue: ["#1B34D6", "#2643EE", "#3355FF", "#7C95FF", "#FFFFFF"], White: ["#F2F3F7", "#FFFFFF", "#F2F3F7", "#F2F3F7", "#090B0E"],
+  Ember: ["#C2521D", "#D6612A", "#E8692F", "#F2945F", "#FFFFFF"], Red: ["#D20812", "#E81620", "#E50914", "#FF6B70", "#FFFFFF"] };
+function applyAccent(name) {
+  const a = ACCENTS[name] || ACCENTS.Blue, r = document.documentElement.style;
+  ["--accent", "--accent-up", "--bar", "--word", "--on-accent"].forEach((k, i) => r.setProperty(k, a[i]));
+}
+applyAccent(store.get("accent"));
+
 let noteT;
 // note: a line at the foot of the page. bad: something went wrong, so it stays until it's read (a click) or 12 s pass.
 function note(msg, bad) {
@@ -68,15 +78,10 @@ const cantPlay = it => it && playsMap.blocked[it.id];
 const cantChip = it => cantPlay(it) ? `<span class="cant" title="${esc("Doesn't play on this device: it can't show " + cantPlay(it))}">${icon("No")}</span>` : "";
 
 // ---------- pieces ----------
-// The bar stays put across pages: the wordmark (it goes Home), the places, then Search and Manager on the right.
-// A title page has no place lit; Esc, or the browser's Back, returns from it.
-const tabsDef = [["#/", "Home"], ["#/films", "Films"], ["#/shows", "Shows"]];
+// The bar, as on the TV: the wordmark on the left (it goes Home), Settings on the right. Nothing else: everything is on Home.
 function tabs(current) {
-  const busy = window.Manager?.busy?.();
   $("#topbar").innerHTML = `<a class="brand" href="#/" aria-label="Media Core, Home"><img src="/wordmark.svg" alt="" width="89" height="34"></a>
-    ${tabsDef.map(([h, l]) => `<a class="tab ${l === current ? "on" : ""}" href="${h}">${l}</a>`).join("")}<span class="sp"></span>
-    <a class="tab ${current === "Search" ? "on" : ""}" href="#/search" aria-label="Search" title="Search">${icon("Search")}</a>
-    <a class="tab ${current === "Manager" ? "on" : ""}" href="#/manager" id="mgrTab">${busy ? `<i class="dot"></i>` : ""}Manager</a>`;
+    <span class="sp"></span><a class="tab ${current === "Settings" || current === "Manager" ? "on" : ""}" href="#/settings">${icon("Settings")}Settings</a>`;
   return "";
 }
 const barState = () => $("#topbar").classList.toggle("solid", scrollY > 24);
@@ -90,7 +95,7 @@ const art = path => `<div class="art">${path ? `<img src="${img(path, bigPic())}
 function posterCard(it, named) {
   const name = esc(displayTitle(it));
   const pic = it.meta?.poster ? `<img src="${img(it.meta.poster, "w342")}" alt="${name}" loading="lazy" decoding="async">` : `<span class="none">${name}</span>`;
-  if (!named) return `<a class="card poster p ${cantPlay(it) ? "dimmed" : ""}" href="#/title/${it.id}" title="${name}">${cantChip(it)}${pic}</a>`;
+  if (!named) return `<a class="card poster p ${cantPlay(it) ? "dimmed" : ""}" href="#/title/${it.id}" title="${name}" data-hid="${it.id}">${cantChip(it)}${pic}</a>`;
   return `<a class="pc" href="#/title/${it.id}"><span class="card poster ${cantPlay(it) ? "dimmed" : ""}">${cantChip(it)}${pic}</span>
     <span class="label one">${name}</span><span class="meta mut fig">${displayYear(it) || ""}</span></a>`;
 }
@@ -98,7 +103,7 @@ function wideCard(it) {
   const pic = img(it.meta?.backdrop, "w780") || img(it.meta?.still, "w780");
   const left = pos(it) > 0 && durMs(it) > pos(it) ? leftText(durMs(it) - pos(it)) : "";
   const sub = [it.type === "episode" ? `S${it.season}, E${it.episode}` : "", left].filter(Boolean).join(" · ");
-  return `<div class="w"><button class="card wide ${cantPlay(it) ? "dimmed" : ""}" data-open="${it.id}" data-resume="1" aria-label="${esc(showTitle(it))}">${cantChip(it)}${pic ? `<img src="${pic}" alt="" loading="lazy" decoding="async">` : ""}${progress(it) ? track(progress(it)) : ""}</button>
+  return `<div class="w" data-hid="${it.id}"><button class="card wide ${cantPlay(it) ? "dimmed" : ""}" data-open="${it.id}" data-resume="1" aria-label="${esc(showTitle(it))}">${cantChip(it)}${pic ? `<img src="${pic}" alt="" loading="lazy" decoding="async">` : ""}${progress(it) ? track(progress(it)) : ""}</button>
     <div class="label one">${esc(showTitle(it))}</div>${sub ? `<div class="meta mut one fig">${esc(sub)}</div>` : ""}</div>`;
 }
 function row(title, list, make) {
@@ -165,32 +170,30 @@ function errorPage(retry) {
 }
 
 // ---------- Home ----------
-let homeJson = "", homeT;
+// As on the TV: the picture and words at the top belong to the card you're on (under the pointer, or the keyboard's),
+// then Continue watching and Recently added. A title still downloading leads Recently added.
+let homeJson = "", homeT, homeData = null, heroId = "", heroT;
 async function home(refresh) {
   if (!refresh && !homeJson) loadingPage();
   const [h] = await Promise.all([api("/api/v1/home"), plays()]);
   if (h.error) { if (!homeJson) errorPage(() => home()); return; }
   const text = JSON.stringify(h);
   if (refresh && text === homeJson) return;
-  const here = route.key === "home";
-  if (!here) return;
-  homeJson = text;
+  if (route.key !== "home") return;
+  homeJson = text; homeData = h;
   const keep = refresh ? $$(".cards", page()).map(c => c.scrollLeft) : null;
-  const shows = h.shows || [], movies = h.movies || [];
-  const f = [...(h.continue || []), ...(h.recent || []), ...shows, ...movies][0];
-  const none = !movies.length && !shows.length ? `<p class="mut plain" style="padding-left:var(--side)">Nothing in the library yet. <a href="#/manager" style="color:var(--ink)">Add links</a>.</p>` : "";
-  // Each title once where it can be: the featured one isn't repeated under Continue Watching,
-  // and Recently Added goes when it would only list the whole library again.
-  const going = (h.continue || []).filter(x => x.id !== f?.id);
-  const recent = h.recent || [], all = [...shows, ...movies];
-  const fresh = all.every(t => recent.some(r => r.id === t.id)) ? [] : recent;
-  const small = all.length < 8;
-  const kinds = small ? row("Library", [...recent, ...all.filter(t => !recent.some(r => r.id === t.id))], posterCard)
-    : row("Recently Added", fresh, posterCard) + row("Shows", shows, posterCard) + row("Films", movies, posterCard);
-  const html = tabs("Home") + `<div class="home">${f ? stage(f, shows) : ""}${row("Continue Watching", going, wideCard)}${kinds}${none}</div>`;
+  const shows = h.shows || [], movies = h.movies || [], cont = h.continue || [], recent = h.recent || [];
+  const dls = (h.downloading || []).map(d => ({ dl: d }));
+  const kept = refresh ? [...cont, ...recent].find(x => x.id === heroId) : null;
+  const f = kept || cont[0] || recent[0];
+  heroId = f?.id || "";
+  const none = !movies.length && !shows.length && !dls.length ? `<p class="mut plain" style="padding-left:var(--side)">Nothing in the library yet. <a href="#/manager" style="color:var(--ink)">Add links in Manager</a>.</p>` : "";
+  const html = tabs("Home") + `<div class="home">${f ? stage(f, shows) : ""}${row("Continue watching", cont, wideCard)}${row("Recently added", [...dls, ...recent], x => x.dl ? dlCard(x.dl) : posterCard(x))}${none}</div>`;
   if (refresh) { page().innerHTML = html; wireRows(page()); $$(".cards", page()).forEach((c, i) => c.scrollLeft = keep[i] || 0); }
   else show(html);
 }
+// a title on its way: its name on a plain card, how far along inside its foot; it opens Manager
+const dlCard = d => `<a class="card poster p dl" href="#/manager" title="${esc(d.title)}"><span class="dlw"><span class="caps">${d.state === "downloading" ? "Downloading" : "Getting ready"}</span><span class="name">${esc(d.title)}</span>${d.eta ? `<span class="meta mut fig">${esc(d.eta)} left</span>` : ""}</span>${track((d.progress || 0) / 100)}</a>`;
 function stage(it, shows) {
   const show = it.type === "episode" ? shows.find(s => s.id === it.show_id) : null;
   const base = show || it;
@@ -207,6 +210,34 @@ function stage(it, shows) {
         <a class="word ic" href="#/title/${it.show_id || it.id}">${icon("Info")}More info</a>${leftNote(it)}</div>
     </div></section></div>`;
 }
+// The top follows the card you're on once you rest on it (300 ms, as the TV waits for the remote to settle):
+// the new picture fades in over the old one, the words fade through.
+function heroTo(id) {
+  if (!homeData || id === heroId) return;
+  const it = [...(homeData.continue || []), ...(homeData.recent || [])].find(x => x.id === id);
+  const st = $(".home .stage");
+  if (!it || !st) return;
+  heroId = id;
+  const next = document.createElement("div"); next.innerHTML = stage(it, homeData.shows || []);
+  const box = $(".art", st), img = $(".art img", next), olds = $$("img", box);
+  if (img) {
+    img.removeAttribute("onload");
+    const done = () => { img.classList.add("in"); setTimeout(() => olds.forEach(o => o.remove()), 520); };
+    box.append(img);
+    img.complete && img.naturalWidth ? requestAnimationFrame(done) : img.addEventListener("load", done, { once: true });
+  } else olds.forEach(o => o.classList.remove("in"));
+  const hero = $(".hero", st), nh = $(".hero", next);
+  hero.classList.add("out");
+  setTimeout(() => { hero.innerHTML = nh.innerHTML; hero.className = nh.className + " out"; requestAnimationFrame(() => requestAnimationFrame(() => hero.classList.remove("out"))); }, 150);
+}
+const heroFrom = e => {
+  const c = e.target.closest?.(".home .cards [data-hid]");
+  if (!c) return;
+  clearTimeout(heroT); heroT = setTimeout(() => heroTo(c.dataset.hid), 300);
+};
+document.addEventListener("pointerover", heroFrom);
+document.addEventListener("focusin", heroFrom);
+document.addEventListener("pointerout", e => { if (e.target.closest?.(".home .cards [data-hid]") && !e.relatedTarget?.closest?.(".home .cards [data-hid]")) clearTimeout(heroT); });
 
 // Continue Watching and the featured title play straight away, when this browser has something to play
 document.addEventListener("click", async e => {
@@ -220,37 +251,21 @@ document.addEventListener("click", async e => {
   location.hash = `#/title/${it.show_id || id}`;
 });
 
-// ---------- Films, Shows ----------
-async function library(shows) {
-  const key = route.key;
-  loadingPage();
-  const [r] = await Promise.all([api(shows ? "/api/v1/shows" : "/api/v1/movies"), plays()]);
-  if (route.key !== key) return;
-  if (r.error) { errorPage(() => library(shows)); return; }
-  const items = r.items || [];
-  show(tabs(shows ? "Shows" : "Films") + (items.length
-    ? `<div class="plain"><h1 class="ptitle">${shows ? "Shows" : "Films"}<span class="count fig">${items.length}</span></h1><div class="grid">${items.map(x => posterCard(x, true)).join("")}</div></div>` : `<p class="mut plain" style="padding-left:var(--side)">Nothing here yet.</p>`));
-}
-
-// ---------- Search ----------
-let lastQuery = "";
-async function search() {
-  show(tabs("Search") + `<div class="plain"><label class="query">${icon("Search")}<input id="q" type="search" placeholder="Titles and cast" aria-label="Search titles and cast" autocomplete="off" spellcheck="false" value="${esc(lastQuery)}"></label><div id="found" class="grid"></div></div>`);
-  const q = $("#q"); q.focus();
-  const [mv, sh] = await Promise.all([api("/api/v1/movies"), api("/api/v1/shows")]);
-  const all = [...(sh.items || []), ...(mv.items || [])];
-  let t;
-  const run = async () => {
-    lastQuery = q.value;
-    const text = q.value.trim(), box = $("#found");
-    if (!box) return;
-    if (!text) { box.innerHTML = all.map(x => posterCard(x, true)).join(""); return; }
-    const r = await api(`/api/v1/search?q=${encodeURIComponent(text)}`);
-    if (q.value.trim() !== text || !$("#found")) return;
-    box.innerHTML = r.items?.length ? r.items.map(x => posterCard(x, true)).join("") : `<p class="mut" style="grid-column:1/-1">No matches for “${esc(text)}”.</p>`;
+// ---------- Settings ----------
+// As on the TV: one list of what can be set, under headings in the accent. Only what works here is listed.
+function settings() {
+  const cur = ACCENTS[store.get("accent")] ? store.get("accent") : "Blue";
+  show(tabs("Settings") + `<div class="plain setpage"><h1 class="ptitle">Settings</h1>
+    <section><h2 class="sech">Look</h2>
+      <div class="setline"><div><div class="label">Accent colour</div><small>Play, progress bars and these headings</small></div>
+        <div class="seg swatches" id="accent">${Object.keys(ACCENTS).map(n => `<button class="${n === cur ? "on" : ""}" data-a="${n}"><i style="background:${ACCENTS[n][2]}"></i>${n}</button>`).join("")}</div></div></section>
+    <section><h2 class="sech">Library</h2>
+      <a class="setline go" href="#/manager"><div><div class="label">Manager</div><small>Add links, follow downloads, look after the files and mint</small></div>${icon("ExpandMore")}</a></section>
+    <p class="tmdb">Film and show information from TMDB. This app is not endorsed or certified by TMDB.</p></div>`);
+  for (const b of $$("#accent button")) b.onclick = () => {
+    store.set("accent", b.dataset.a); applyAccent(b.dataset.a);
+    $$("#accent button").forEach(x => x.classList.toggle("on", x === b));
   };
-  q.oninput = () => { clearTimeout(t); t = setTimeout(run, 250); };
-  run();
 }
 
 // ---------- title pages ----------
@@ -296,10 +311,8 @@ async function title(id) {
   // two lines of story, and beside them one line: its length, what's left of it, or Watched.
   const episodes = () => {
     const s = seasons[season]; if (!s) return "";
-    const head = seasons.length > 1
-      ? seasons.map((x, i) => `<button class="kind ${i === season ? "on" : ""}" data-season="${i}">${esc(x.title)}</button>`).join("")
-      : `<h2 class="rowt">${esc(s.title)}</h2>`;
-    return `<section class="sect"><div class="srow">${head}</div><div class="elist">${(s.episodes || []).map(e => {
+    const list = seasons.map((x, i) => `<button class="sea ${i === season ? "on" : ""}" data-season="${i}"><span class="label">${esc(x.title)}</span><span class="meta fig">${(x.episodes || []).length} ${(x.episodes || []).length === 1 ? "episode" : "episodes"}</span></button>`).join("");
+    return `<section class="sect"><h2 class="rowt">Episodes</h2><div class="split"><nav class="seasons">${list}</nav><div class="elist">${(s.episodes || []).map(e => {
         const len = durMs(e) || (e.meta?.runtime || 0) * 60000, part = !e.watch?.watched && resumable(e), next = up && e.id === up.id;
         const named = e.episode > 0 && e.title && e.title.toLowerCase() !== `episode ${e.episode}`;
 
@@ -307,7 +320,7 @@ async function title(id) {
           <span class="card wide">${e.meta?.still || e.meta?.backdrop ? `<img src="${img(e.meta.still || e.meta.backdrop, "w500")}" alt="" loading="lazy" decoding="async">` : ""}${part ? track(progress(e)) : ""}</span>
           <span class="txt">${named ? `<span class="caps fig">Episode ${e.episode}</span>` : ""}<span class="label one">${esc(e.title || `Episode ${e.episode}`)}</span>${e.meta?.overview ? `<p>${esc(e.meta.overview)}</p>` : ""}</span>
           <span class="end fig">${e.watch?.watched ? `<span class="seen">${icon("Check")}Watched</span>` : part ? `<span class="len now">${esc(leftText(durMs(e) - pos(e)))}</span>` : len ? `<span class="len">${esc(mins(len))}</span>` : ""}</span></button>`;
-      }).join("")}</div></section>`;
+      }).join("")}</div></div></section>`;
   };
   // who made it, who scored it, and three of the cast, as words in columns under the story (the TV's credits). No photos.
   const credits = () => {
@@ -317,19 +330,6 @@ async function title(id) {
     if (!cols.length) return "";
     return `<div class="credits">${cols.map(([k, v]) => `<div><div class="caps">${k}</div><div class="names dots">${v.map(n => `<span>${esc(n)}</span>`).join("")}</div></div>`).join("")}</div>`;
   };
-  // the facts about the title itself
-  const about = () => {
-    const m = main.meta || {}, n = seasons.reduce((a, x) => a + (x.episodes || []).length, 0);
-    const day = m.date && !isNaN(new Date(m.date)) ? new Date(m.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "";
-    const rows = [[isShow ? "First shown" : "Released", day], ["Length", !isShow && m.runtime ? mins(m.runtime * 60000) : ""],
-      ["In the library", isShow ? `${seasons.length} ${seasons.length === 1 ? "season" : "seasons"}, ${n} ${n === 1 ? "episode" : "episodes"}` : ""],
-      [(m.genres || []).length > 1 ? "Genres" : "Genre", (m.genres || []).join(", ")], ["Rated", m.cert], [isShow ? "Network" : "Studio", m.studio],
-      ["Status", isShow ? (m.status || "").replace("Returning Series", "Still running") : ""]].filter(r => r[1]);
-    const story = "";
-    if (!rows.length) return "";
-    return `<section class="about"><h2 class="rowt">About</h2>${story ? `<p class="mut">${esc(story)}</p>` : ""}
-      <div class="infogrid">${rows.map(([k, v]) => `<div><div class="caps">${k}</div><div class="label">${esc(v)}</div></div>`).join("")}</div></section>`;
-  };
   const head = [displayYear(main) || "", ...(main.meta?.genres || []).slice(0, 2),
     !isShow && (durMs(main) || (main.meta?.runtime || 0) * 60000) ? hm(durMs(main) || main.meta.runtime * 60000) : "", main.meta?.cert].filter(Boolean).map(x => `<span>${esc(x)}</span>`).join("");
   const draw = () => {
@@ -338,7 +338,7 @@ async function title(id) {
         <div class="facts">${head ? `<span class="dots fig">${head}</span>` : ""}${marksAfter((target || main).info)}</div>
         <div id="words">${words()}</div>${credits()}<div class="btns" id="btns">${buttons()}</div>
         ${target && !ready[target.id] ? `<p class="meta whynot">${icon("No")}<span>This browser can't show ${esc(blocked[target.id] || "this picture")}. A Light copy, added in Manager, would play here. Details lists where it does play.</span></p>` : ""}</div></section></div>
-      <div id="below">${isShow ? episodes() + about() : ""}</div></div>`);
+      <div id="below">${isShow ? episodes() : ""}</div></div>`);
     wire();
   };
   const wire = () => {
@@ -346,7 +346,7 @@ async function title(id) {
     const st = $("#pStory"); if (st) st.onclick = () => st.classList.toggle("open");
     for (const b of $$("[data-season]")) b.onclick = () => {
       season = +b.dataset.season;
-      $("#below").innerHTML = episodes() + about(); wireRows($("#below")); wire();
+      $("#below").innerHTML = episodes(); wire();
     };
     for (const c of $$("[data-ep]")) {
       const ep = seasons[season].episodes.find(e => e.id === c.dataset.ep);
@@ -379,7 +379,9 @@ async function details(it, main) {
   const langs = subs.length ? [...tracks, ["Subtitles", subs.some(s => /english/i.test(s)) ? "English" : "No English"]] : tracks;
   const picture = [i.w > 0 && i.h > 0 ? ["Resolution", `${i.w} × ${i.h}`] : null, i.vcodec ? ["Video", codecName(i.vcodec)] : null, i.hdr ? ["HDR", i.hdr] : null].filter(Boolean);
   const m = main.meta || {}, released = m.date && !isNaN(new Date(m.date)) ? new Date(m.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "";
-  const film = main.type === "movie" ? [released ? ["Released", released] : null, m.studio ? ["Studio", m.studio] : null].filter(Boolean) : [];
+  const film = main.type === "movie" ? [released ? ["Released", released] : null, m.studio ? ["Studio", m.studio] : null].filter(Boolean)
+    : main.type === "show" ? [released ? ["First shown", released] : null, m.studio ? ["Network", m.studio] : null,
+      m.status ? ["Status", m.status.replace("Returning Series", "Still running")] : null].filter(Boolean) : [];
   const file = [it.size > 0 ? ["Size", gb(it.size)] : null, i.dur > 0 ? ["Length", lengthName(i.dur)] : null].filter(Boolean);
   const scrim = document.createElement("div"); scrim.className = "scrim";
   const sheetBg = document.createElement("div"); sheetBg.className = "scrim";
@@ -390,7 +392,7 @@ async function details(it, main) {
   s.innerHTML = `<div class="head"><div style="min-width:0"><h2 class="title">Details</h2>${it.type === "episode" ? `<div class="meta mut one" style="margin-top:.4rem">${esc(epWords(it))}</div>` : ""}</div>
       <button class="tool" aria-label="Close" title="Close">${icon("Close")}</button></div>
     <div class="figures">${i.res ? fig(i.res, QUALITY[i.res] || i.res) : ""}${i.mbps > 0 ? fig(i.mbps.toFixed(1), "Mb/s") : ""}${i.fps > 0 ? fig(i.fps.toFixed(3).replace(".000", ""), "fps") : ""}</div>
-    <div id="dPlays"></div>${group("Picture", picture)}${group("Languages", langs)}${group("Film", film)}${group("File", file)}`;
+    <div id="dPlays"></div>${group("Picture", picture)}${group("Languages", langs)}${group(main.type === "show" ? "Show" : "Film", film)}${group("File", file)}`;
   document.body.append(sheetBg, scrim, s);
   s.focus();
   const close = () => { off(); sheetBg.remove(); scrim.remove(); s.remove(); removeEventListener("keydown", onKey, true); $("#pInfo")?.focus(); };
@@ -410,7 +412,7 @@ async function details(it, main) {
 // Back to where you came from; Esc does the same on a title page, as Back does on the remote.
 function goBack() { if (history.length > 1) history.back(); else location.hash = "#/"; }
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && route.key.startsWith("title") && !$("#player") && !$(".scrim")) { e.preventDefault(); goBack(); }
+  if (e.key === "Escape" && (route.key.startsWith("title") || route.key === "settings") && !$("#player") && !$(".scrim")) { e.preventDefault(); goBack(); }
 });
 
 // ---------- the keyboard: arrows move between things, as the remote does ----------
@@ -463,9 +465,8 @@ function route() {
   if (leavingPlayer && page().innerHTML) homeJson = "";
   switch (parts[0]) {
     case "": route.key = "home"; homeJson = ""; home(); homeT = setInterval(() => document.visibilityState === "visible" && home(true), 60000); break;
-    case "films": route.key = "films"; library(false); break;
-    case "shows": route.key = "shows"; library(true); break;
-    case "search": route.key = "search"; search(); break;
+    case "settings": route.key = "settings"; settings(); break;
+    case "films": case "shows": case "search": location.replace("#/"); break; // gone: everything is on Home, as on the TV
     case "title": route.key = "title" + parts[1]; title(parts[1]); break;
     case "manager": route.key = "manager"; Manager.page(); break;
     case "add": location.replace("#/manager"); break;
