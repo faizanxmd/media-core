@@ -6,7 +6,7 @@ Changes committed but not yet built or tested. Cleared after each build the user
 
 Home is the whole app now: the hero over Continue watching and Recently added, with Settings at the top right. Tabs, grids and search are gone. Title pages, a show's seasons and episodes, Picture details, Settings and the offline screen follow the boards in the redesign spec. The player is unchanged; only going into and out of it fades through black. Built from `redesign`, not main.
 
-Since build 2026.11.14-2048: everything is sized for a TV across the room (body text 29 px at 1080p, nothing under 23, the old app's 80 px edges). A focused picture lifts with a white border; Play and Resume turn deep blue when focused, other buttons white. The logo mark is gone. Title logos stay in their box, a film's page is one screen (no cast photos, About or file below; the file's numbers are in Picture details) with one line of names under the story: Director (Created by for a show), Music and three of the cast, only "Episodes" peeks under a show's page, and on Home the rows rise into the buttons' place once you move down. The background fade is darker on the words' side and the film grain is gone.
+Since build 2026.11.14-2048: everything is sized for a TV across the room (body text 29 px at 1080p, nothing under 23, the old app's 80 px edges). A focused picture lifts with a white border; Play and Resume turn deep blue when focused, other buttons white. The stamped-on logo mark is gone; Home instead has the small MEDIA/CORE wordmark top-left, level with Settings, drawn sharp from its outlines with no glow, and it fades out with the buttons when you move down into the rows. Title logos stay in their box, a film's page is one screen (no cast photos, About or file below; the file's numbers are in Picture details) with one line of names under the story: Director (Created by for a show), Music and three of the cast, only "Episodes" peeks under a show's page, and on Home the rows rise into the buttons' place once you move down. The background fade is darker on the words' side and the film grain is gone.
 
 ### To test
 1. Home: Up and Down move between the buttons and the two rows, and the hero follows the focused card after a short pause.
@@ -15,7 +15,8 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 4. Settings changes values with Left and Right and shows the connection to mint. The player doesn't use these values yet.
 5. Unplug mint's network briefly: "mint is offline" appears and goes away by itself.
 6. Down on a film does nothing; Down on a show reaches its episodes. On Home, moving down into the rows leaves no empty band above them.
-7. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+7. Home: the wordmark sits top-left, centred on Settings' height, with clear space above the title's logo; it fades away when you move down into the rows and comes back when you return to the buttons.
+8. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

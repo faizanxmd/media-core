@@ -132,8 +132,9 @@ fun Nav.failed(e: Exception) {
 // ---------- home's numbers, in screen pixels at 1920 x 1080 (TV sizes: text 23 px and up, body 29) ----------
 
 private const val LEFT = EDGE
-private const val HERO_Y = 134 // the title's logo (or name), its foot 20 px over the meta line
-private const val HERO_H = 164
+private const val HERO_Y = 144 // the title's logo (or name), its foot 20 px over the meta line, its top 32 under the wordmark
+private const val HERO_H = 154
+private const val MARK_H = 44 // the wordmark, top-left, centred on Settings' midline
 private const val META_Y = 318
 private const val STORY_Y = 362 // two lines of 40
 private const val BUTTONS_Y = 470
@@ -238,6 +239,9 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     val heroPlay = hero?.item?.let { playTarget(it, heroDetail, home) }
 
     Box(Modifier.fillMaxSize()) {
+        // the wordmark belongs to the top row: it leaves with the buttons when focus goes down into the rows
+        val mark by animateFloatAsState(if (inRows) 0f else 1f, Move.fade(Move.Focus), label = "mark")
+        Wordmark(Modifier.offset(LEFT.px, (TOP + 30 - MARK_H / 2).px).graphicsLayer { alpha = mark }, height = MARK_H.px)
         TopRight(nav, onUpdate, fr("settings"), fr("update"), down = fr(if (hero?.download != null) firstCardKey(rows, nav) else "play")) { onFocus(it) }
 
         // the hero's words: logo, meta line, story. They fade out and in on their own, apart from the art

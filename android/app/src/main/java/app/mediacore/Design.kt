@@ -2,6 +2,8 @@
 
 package app.mediacore
 
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.PathParser
 import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FiniteAnimationSpec
@@ -192,27 +194,36 @@ object Icons {
 // ---------- the logo mark, top-left on every screen ----------
 
 /**
- * The O of the wordmark (android/brand/mark.svg), cropped so the ring fills [size]: Montserrat's ring, thinner at the
- * top and bottom, around a lit core whose soft cobalt glow fills the counter.
+ * The Media Core wordmark: a small MEDIA over a wide CORE whose O is the ring with the lit blue core, drawn from
+ * android/brand/wordmark.svg's outlines so it stays sharp at any size. [height] is the whole mark's height; it is
+ * about 2.6 times as wide. No glow at this size: the core is the only colour.
  */
 @Composable
-fun LogoMark(modifier: Modifier = Modifier, size: Dp = 48.px) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.width / 60f // the mark's ring is 60 units across
-        val c = Offset(this.size.width / 2, this.size.height / 2)
-        drawCircle(Brush.radialGradient(0f to Pal.Accent.copy(alpha = 0.7f), 1f to Pal.Accent.copy(alpha = 0f), center = c, radius = 20.114f * s), 20.114f * s, c)
-        val ring = Path().apply {
-            fillType = PathFillType.EvenOdd
-            addOval(androidx.compose.ui.geometry.Rect(c, 30f * s))
-            addOval(androidx.compose.ui.geometry.Rect(c.x - 18.499f * s, c.y - 20.114f * s, c.x + 18.499f * s, c.y + 20.114f * s))
+fun Wordmark(modifier: Modifier = Modifier, height: Dp = 44.px) {
+    val letters = remember { PathParser().parsePathString(WORDMARK_LETTERS).toPath() }
+    Canvas(modifier.size(height * (WM_W / WM_H), height)) {
+        val s = size.height / WM_H
+        withTransform({ scale(s, s, Offset.Zero); translate(-WM_X, -WM_Y) }) {
+            val ink = Color(0xFFF4F5F8)
+            drawPath(letters, ink)
+            val c = Offset(134.678f, 106f)
+            val ring = Path().apply {
+                fillType = PathFillType.EvenOdd
+                addOval(androidx.compose.ui.geometry.Rect(c, 23.678f))
+                addOval(androidx.compose.ui.geometry.Rect(c.x - 14.601f, c.y - 15.875f, c.x + 14.601f, c.y + 15.875f))
+            }
+            drawPath(ring, ink)
+            drawCircle(Brush.radialGradient(0f to Color(0xFF7FA2FF), 0.55f to Color(0xFF3A5CF8), 1f to Pal.Accent, center = c, radius = 9f), 9f, c)
         }
-        drawPath(ring, Color(0xFFF4F5F8))
-        drawCircle(
-            Brush.radialGradient(0f to Color(0xFF7FA2FF), 0.55f to Color(0xFF3A5CF8), 1f to Pal.Accent, center = c, radius = 11.403f * s),
-            11.403f * s, c,
-        )
     }
 }
+
+// The wordmark's outline box in the SVG's units, and its letters (the O is drawn as the ring above).
+private const val WM_X = 55.987f
+private const val WM_Y = 50f
+private const val WM_W = 263.377f - WM_X
+private const val WM_H = 129.678f - WM_Y
+private const val WORDMARK_LETTERS = "M80.631,129.678Q75.329,129.678 70.822,127.937Q66.315,126.195 63.001,123.002Q59.688,119.808 57.838,115.486Q55.987,111.163 55.987,106Q55.987,100.837 57.838,96.514Q59.688,92.192 63.028,88.998Q66.368,85.805 70.875,84.063Q75.383,82.322 80.684,82.322Q86.38,82.322 91.092,84.288Q95.805,86.253 99.006,90.081L93.222,95.567Q90.76,92.844 87.712,91.484Q84.664,90.125 81.099,90.125Q77.604,90.125 74.675,91.287Q71.746,92.449 69.588,94.574Q67.43,96.699 66.243,99.608Q65.055,102.518 65.055,106Q65.055,109.482 66.243,112.392Q67.43,115.301 69.588,117.426Q71.746,119.551 74.675,120.713Q77.604,121.875 81.099,121.875Q84.664,121.875 87.712,120.516Q90.76,119.156 93.222,116.38L99.006,121.865Q95.805,125.681 91.092,127.68Q86.38,129.678 80.631,129.678Z M172.35,129L172.35,83L191.51,83Q200.898,83 206.2,87.372Q211.503,91.745 211.503,99.442Q211.503,104.498 209.105,108.155Q206.706,111.813 202.259,113.77Q197.813,115.727 191.635,115.727L177.378,115.727L181.434,111.7L181.434,129ZM202.514,129L190.782,112.296L200.525,112.296L212.337,129ZM181.434,112.662L177.378,108.352L191.232,108.352Q196.745,108.352 199.543,105.999Q202.34,103.646 202.34,99.442Q202.34,95.184 199.543,92.858Q196.745,90.531 191.232,90.531L177.378,90.531L181.434,86.168Z M228.35,129L228.35,83L262.462,83L262.462,90.482L237.378,90.482L237.378,121.518L263.377,121.518L263.377,129ZM236.694,109.283L236.694,102.007L259.636,102.007L259.636,109.283Z M114.996,65L114.996,50L117.532,50L124.209,60.838L122.866,60.838L129.436,50L131.972,50L131.999,65L129.088,65L129.061,54.414L129.653,54.414L124.178,63.33L122.791,63.33L117.226,54.414L117.908,54.414L117.908,65Z M138.997,65L138.997,50L149.712,50L149.712,52.482L141.885,52.482L141.885,62.518L149.998,62.518L149.998,65ZM141.667,58.59L141.667,56.178L148.828,56.178L148.828,58.59Z M156.996,65L156.996,50L163.698,50Q166.162,50 168.029,50.936Q169.895,51.872 170.944,53.552Q171.992,55.232 171.992,57.5Q171.992,59.764 170.944,61.446Q169.895,63.128 168.029,64.064Q166.162,65 163.698,65ZM160.027,62.49L163.549,62.49Q165.193,62.49 166.397,61.872Q167.6,61.254 168.268,60.131Q168.935,59.007 168.935,57.5Q168.935,55.972 168.268,54.859Q167.6,53.746 166.397,53.128Q165.193,52.51 163.549,52.51L160.027,52.51Z M178.996,65L178.996,50L181.997,50L181.997,65Z M188.991,65L195.547,50L198.438,50L205.01,65L201.951,65L196.393,51.574L197.558,51.574L191.999,65ZM192.103,61.61L192.879,59.282L200.657,59.282L201.45,61.61Z"
 
 // ---------- controls ----------
 
