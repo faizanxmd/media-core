@@ -34,7 +34,8 @@ Built so far as 2026.11.15-0933 (items 1-22). Since build 2026.11.14-2048: every
 23. A downloading title's page keeps its progress moving and turns into the film's page when done; "mint is offline" goes away by itself on any screen.
 24. Press Play then Back straight away: the screen comes back from black and Play works again.
 25. Background art changes without a hitch at the start of its fade; a picture that failed to load is tried again next time.
-26. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+26. Continue watching's progress bar is clearly visible on bright pictures (6 px, the accent on a dark track over a darker fade), Recently added sits well clear of the line above it, and all type is a size larger than 0933.
+27. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

@@ -132,7 +132,7 @@ val Corner get() = RoundedCornerShape(8.px)
 /**
  * Source Sans 3 (Adobe, SIL Open Font License; android/app/brand-fonts-OFL.txt), one family at one width for
  * everything. It runs small and light for its size next to the Archivo the boards were drawn in, so every size is
- * drawn 7% larger (line heights, which place things, stay), nothing is lighter than 500, and tight tracking is eased.
+ * drawn 14% larger (line heights, which place things, stay), nothing is lighter than 500, and tight tracking is eased.
  */
 val SourceSans = FontFamily(
     listOf(500, 600, 650, 700, 800).map { w -> Font(R.font.source_sans, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w))) },
@@ -141,7 +141,7 @@ val SourceSans = FontFamily(
 /** A text style in board pixels: size, line height, weight, colour, [track] in em. [cond] is kept for the boards' sake. */
 fun ts(size: Number, line: Number, weight: Int, color: Color = Pal.Ink, @Suppress("UNUSED_PARAMETER") cond: Boolean = false, track: Float = 0f, tabular: Boolean = false) = TextStyle(
     fontFamily = SourceSans,
-    fontSize = (size.toFloat() * 1.07f).fs, lineHeight = line.fs, fontWeight = FontWeight(maxOf(weight, 500)), color = color,
+    fontSize = (size.toFloat() * 1.14f).fs, lineHeight = line.fs, fontWeight = FontWeight(maxOf(weight, 500)), color = color,
     letterSpacing = maxOf(track, -0.01f).em,
     fontFeatureSettings = if (tabular) "tnum" else null,
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
@@ -149,19 +149,19 @@ fun ts(size: Number, line: Number, weight: Int, color: Color = Pal.Ink, @Suppres
 
 /**
  * How far along, inside a picture's foot (a card, an episode's still), as Netflix and Apple TV do: it lifts with the
- * picture. A 4 px bar 16 px in from the sides and 14 up, the accent's light shade on white at 30%, over a dark
- * gradient so it holds on bright art. Call it last inside the picture's Box.
+ * picture. A 6 px bar 16 px in from the sides and 14 up, in the accent, on a dark track, over a dark gradient, so it
+ * holds on the brightest art. Call it last inside the picture's Box.
  */
 @Composable
 fun androidx.compose.foundation.layout.BoxScope.CardProgress(p: Float) {
     Box(
-        Modifier.align(Alignment.BottomStart).fillMaxWidth().height(72.px)
-            .background(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.6f))),
+        Modifier.align(Alignment.BottomStart).fillMaxWidth().height(90.px)
+            .background(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.8f))),
     )
     Box(
-        Modifier.align(Alignment.BottomStart).padding(start = 16.px, end = 16.px, bottom = 14.px).fillMaxWidth().height(4.px)
-            .clip(RoundedCornerShape(2.px)).background(Color.White.copy(alpha = 0.3f)),
-    ) { Box(Modifier.fillMaxHeight().fillMaxWidth(p.coerceIn(0.03f, 1f)).background(Pal.AccentText)) }
+        Modifier.align(Alignment.BottomStart).padding(start = 16.px, end = 16.px, bottom = 14.px).fillMaxWidth().height(6.px)
+            .clip(RoundedCornerShape(3.px)).background(Color.White.copy(alpha = 0.28f)),
+    ) { Box(Modifier.fillMaxHeight().fillMaxWidth(p.coerceIn(0.03f, 1f)).clip(RoundedCornerShape(3.px)).background(Pal.Accent)) }
 }
 
 /** Under words that sit on art (a title's facts and story): soft and dark, so any picture behind stays readable. */

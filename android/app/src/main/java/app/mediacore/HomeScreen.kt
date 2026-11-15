@@ -171,13 +171,13 @@ private const val ROW0 = 600 // the first row's title while focus is up on the b
 private const val ROW_IN = 492 // where the focused row's title lands once focus is in the rows: up into the buttons' place
 private const val ROW_TITLE = 40 // its line
 private const val TITLE_TO_CARDS = 16 // room for a focused card's lift (6 px) and border (3)
-private const val ROW_GAP = 30 // under a row's last line, before the next row's title, which shows whole at the bottom
+private const val ROW_GAP = 60 // under a row's last line, before the next row's title, which shows whole at the bottom
 private const val WIDE_W = 400
 private const val WIDE_H = 225
 private const val POSTER_W = 200
 private const val POSTER_H = 300
 private const val GAP = 16 // between cards: a focused wide card grows 10 px into it and its border 3 more
-private const val WIDE_BLOCK = WIDE_H + 12 + 32 + 2 + 28 // picture (its progress inside it), title, line under it
+private const val WIDE_BLOCK = WIDE_H + 12 + 34 + 2 + 30 // picture (its progress inside it), title, line under it
 private const val POSTER_BLOCK = POSTER_H
 
 private data class HomeRow(val key: String, val title: String, val wide: Boolean, val cards: List<Card>)
@@ -528,12 +528,12 @@ private fun WideCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Bool
             val shown by animateFloatAsState(it.progress, Move.slide(Move.Art), label = "progress")
             CardProgress(shown)
         }
-        Text(it.showTitle, style = ts(26, 32, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.px))
+        Text(it.showTitle, style = ts(26, 34, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.px))
         val left = (it.durMs - it.pos).takeIf { l -> it.pos > 0 && l > 0 }?.let { l -> leftWords(l) }
         val lead = if (it.isEpisode) "S${it.season} E${it.episode}" else it.displayYear.takeIf { y -> y > 0 }?.toString()
         Row(Modifier.padding(top = 2.px)) {
-            if (lead != null) Text("$lead · ", style = ts(23, 28, 400, Pal.Muted, tabular = true), maxLines = 1)
-            if (left != null) Text(left, style = ts(23, 28, 400, Pal.InkSoft, tabular = true), maxLines = 1)
+            if (lead != null) Text("$lead · ", style = ts(23, 30, 400, Pal.Muted, tabular = true), maxLines = 1)
+            if (left != null) Text(left, style = ts(23, 30, 400, Pal.InkSoft, tabular = true), maxLines = 1)
         }
     }
 }
