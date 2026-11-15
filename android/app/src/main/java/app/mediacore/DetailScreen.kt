@@ -136,6 +136,13 @@ fun TitlePage(nav: Nav, id: String) {
         if (nav.titleFocus != null) { focus = "play"; nav.titleFocus = null; withFrameNanos { }; runCatching { fr("play").requestFocus() } }
     }
     fun go(p: Place, k: String) { place = p; scope.launchFocus(fr(k)) }
+    // "mint is offline" took focus while it was up: when it goes, focus comes back to where it was on this page
+    LaunchedEffect(nav.offline) {
+        if (nav.offline) return@LaunchedEffect
+        withFrameNanos { }
+        val keys = if (place == Place.Episodes) listOf("ep/$season/${epOf(season)}", "season/$season") else listOf(focus, "play", "details", "settings")
+        keys.firstOrNull { k -> runCatching { fr(k).requestFocus() }.getOrDefault(false) }
+    }
 
     BackHandler(enabled = place != Place.First && !sheet) { go(Place.First, "play") }
 
@@ -269,11 +276,15 @@ private fun EpisodesBlock(
     var focusedEpisode by remember { mutableStateOf<String?>(null) }
     // seasons, as words only: the one in view is named in ink, the others muted; the focused one fills white.
     // The fill reaches 24 px left of the margin, so "Season 1" lines up under "Episodes" and the page's left edge.
-    Box(Modifier.offset((LEFT - 24).px, (EPISODES_Y + 56).px)) {
+    // a show with many seasons: the list slides so the one in view stays on screen (about 9 fit)
+    val seasonShift = (season - 7).coerceAtLeast(0)
+    val seasonsY by animateFloatAsState(-seasonShift * SEASON_PITCH * Px.screen, Move.slide(Move.Screen), label = "seasons")
+    Box(Modifier.offset((LEFT - 24).px, (EPISODES_Y + 56).px).graphicsLayer { translationY = seasonsY }) {
         main.seasons.forEachIndexed { s, it ->
+            val gone by animateFloatAsState(if (s < seasonShift) 0f else 1f, Move.fade(Move.Focus), label = "season-gone")
             val name by androidx.compose.animation.animateColorAsState(if (s == season) Pal.Ink else Pal.Muted, Move.fade(Move.Focus), label = "season")
             Row(
-                Modifier.offset(y = (s * SEASON_PITCH).px)
+                Modifier.offset(y = (s * SEASON_PITCH).px).fadeBy { gone }
                     .size(SEASON_W.px, 76.px).clip(Corner).background(focusFill(focusedSeason == s, Color.Transparent, Pal.Ink))
                     .focusRequester(fr("season/$s"))
                     .onFocusChanged { f -> if (f.isFocused) { focusedSeason = s; onSeason(s) } else if (focusedSeason == s) focusedSeason = -1 }

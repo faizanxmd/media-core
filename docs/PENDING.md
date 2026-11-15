@@ -77,6 +77,22 @@ Picture details no longer has a big "Picture details" heading; just the title's 
 - A show's page: "Episodes" at the foot with no arrow; Down slides up and the seasons line up under the heading.
 - Home: from Recently added, Up to Continue watching: the first card's left side should come back whole (it was cut while fading in; the fades no longer draw into a clipped hidden picture).
 
+## Fixes from a code audit (branch `redesign`, TV only)
+
+A second model read the TV screens for bugs; these were real. Not compiled yet.
+- Home: when the focused card goes away (a download finishes, a film leaves Continue watching), focus moves to the nearest card or Play instead of nothing.
+- Home: Play on a show whose episodes haven't loaded opens its page instead of doing nothing.
+- Starting a title that isn't in its episode list (a show with no seasons yet) plays that title, instead of black or a different episode.
+- A title's logo never shows the previous title's logo while its own loads.
+- A show's page: focus comes back after "mint is offline" goes away; a show with many seasons slides the season list so the one in view stays on screen.
+- Player: Up from Play returns to the icon you came from; if the pill you were on is rebuilt away, focus goes to the first pill.
+- Player: Skip intro and Next episode hide while the controls are up (focus couldn't reach them there) and come back when they hide.
+- Player: a scrub cut short by the next episode or an error no longer leaves subtitles hidden.
+
+### To test
+- Pause during an intro: the controls show without Skip intro; play again and Skip intro is back, OK takes it.
+- Episodes icon, Down to Play, Up: back on Episodes.
+
 ## A new Audio icon (TV and phone)
 
 The headphones are replaced by a sound wave in a disc, the same icon the web player now has. Only the icon's path changed in each app's `AppIcons.kt`. Not compiled yet.

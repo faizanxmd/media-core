@@ -139,7 +139,7 @@ class PlayerState {
     var combos by mutableStateOf<List<TrackOption>>(emptyList()) // the likely audio and subtitle pairs, as pills under the bar
     var tracksAt = 0 // the panel opens on audio (0) or on subtitle size (2)
     var focusTo: String? = null // where focus lands when the controls show: Play/Pause unless this names an icon or a pill
-    var lastKey = "play" // the icon or pill focus was last on, to come back to after a panel
+    var lastKey by mutableStateOf("play") // the icon or pill focus was last on, to come back to after a panel
     var barFocused = false // Left/Right on the bar skip and scrub, as they do with nothing on screen
 }
 
@@ -202,7 +202,8 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Flo
         AnimatedVisibility(st.sheet == Sheet.Episodes, enter = fadeIn(Move.fade(Move.Screen)), exit = fadeOut(Move.fade(Move.Focus))) { EpisodesPanel(st) }
 
         val offer = st.offer
-        if (offer != null && st.sheet == null && st.error == null && st.mode != Mode.Scrub && st.scrub == null) {
+        // not while the controls are up on the TV: focus can't reach it there, so it waits until they hide again
+        if (offer != null && st.sheet == null && st.error == null && st.mode != Mode.Scrub && st.scrub == null && !(tv && st.mode == Mode.Full)) {
             val armed = tv && st.mode != Mode.Full // OK does it, with nothing to focus
             val above = if (st.mode == Mode.Hidden) 72 else 1080 - ROW_Y + PLAY_D / 2 + 24 // above the bar while it shows
             Box(Modifier.align(Alignment.BottomEnd).padding(end = SIDE.px, bottom = above.px)) {
@@ -369,6 +370,16 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
             ?: if (st.focusTo?.startsWith("pill") == true) pills.firstOrNull()?.key else null
         runCatching { fr(want ?: "play").requestFocus() }
         st.focusTo = null
+    }
+
+    // the pill focus was on went away (the pairs were rebuilt after a pick): focus moves to the first pill, or Play
+    val pillKeys = pills.map { it.key }
+    LaunchedEffect(pillKeys) {
+        val k = st.lastKey
+        if (!tv || !full || panelOpen || !k.startsWith("pill/") || k in pillKeys) return@LaunchedEffect
+        val to = pillKeys.firstOrNull() ?: "play"
+        st.lastKey = to
+        runCatching { fr(to).requestFocus() }
     }
 
     // the title, the icons and the pills step aside while you look for a place

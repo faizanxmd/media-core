@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -243,6 +244,17 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     LaunchedEffect(nav.offline) {
         if (!nav.offline) { withFrameNanos { }; runCatching { fr(focus).requestFocus() } }
     }
+    // the focused card went away (a download finished and became a title, a film finished and left Continue
+    // watching): focus moves to the nearest card in that row, or the first row, or Play; never to nothing
+    LaunchedEffect(rows) {
+        if (!inRows || rows.any { r -> r.cards.any { it.key == focus } }) return@LaunchedEffect
+        val row = rows.firstOrNull { r -> focus.startsWith(r.key + "/") } ?: rows.firstOrNull()
+        val col = row?.let { r -> (nav.homeCols[r.key] ?: 0).coerceIn(0, (r.cards.size - 1).coerceAtLeast(0)) }
+        val k = row?.cards?.getOrNull(col ?: 0)?.key ?: "play"
+        withFrameNanos { }
+        focus = k; nav.homeFocus = k
+        runCatching { fr(k).requestFocus() }.onFailure { runCatching { fr("play").requestFocus() } }
+    }
     fun onFocus(k: String) { focus = k; nav.homeFocus = k }
 
     val heroPlay = hero?.item?.let { playTarget(it, heroDetail, home) }
@@ -282,7 +294,11 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                 p?.word ?: "Play", p?.detail,
                 modifier = Modifier.focusProperties { up = fr("settings"); down = fr(downKey) },
                 fr = fr("play"), onFocus = { if (it) onFocus("play") },
-            ) { p?.let { t -> startPlay(ctx, scope, nav, t.item, fromStart = false) } }
+            ) {
+                // what Play starts isn't known yet (a show whose episodes haven't loaded): its page, not nothing
+                if (p != null) startPlay(ctx, scope, nav, p.item, fromStart = false)
+                else hero?.item?.let { nav.open(Screen.Detail(it.id)) }
+            }
             GlassButton(
                 "More info", Icons.Info,
                 modifier = Modifier.focusProperties { up = fr("settings"); down = fr(downKey) },
@@ -292,7 +308,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
 
         // the rows: the page slides so the focused row's title sits at ROW_IN, where Play and More info were
         val rowTops = remember(rows) { rowTops(rows) }
-        val pageY by animateFloatAsState(if (inRows) -(rowTops[focusRow] - ROW_IN) * Px.screen else 0f, Move.slide(Move.Screen), label = "page")
+        val pageY by animateFloatAsState(if (inRows) -((rowTops.getOrNull(focusRow) ?: ROW_IN) - ROW_IN) * Px.screen else 0f, Move.slide(Move.Screen), label = "page")
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
             rows.forEachIndexed { r, row ->
                 // a row above the focused one leaves at once; coming back, it waits for the page to finish sliding,
@@ -459,8 +475,11 @@ fun TitleArt(logo: String?, name: String, w: Int, h: Int, align: Alignment, type
     var failed by remember(logo) { mutableStateOf(logo == null) }
     Box(modifier.size(w.px, h.px), contentAlignment = align) {
         if (!failed) {
-            val img by androidx.compose.runtime.produceState<LogoArt?>(Logos.cached(logo!!, w, h), logo) {
-                value = Logos.get(ctx, logo, w, h).also { if (it == null) failed = true }
+            // keyed by the logo: another title never shows the last one's logo while its own loads
+            val img by key(logo) {
+                androidx.compose.runtime.produceState<LogoArt?>(Logos.cached(logo!!, w, h), logo) {
+                    value = Logos.get(ctx, logo, w, h).also { if (it == null) failed = true }
+                }
             }
             // a logo already in memory is there at once; one that has to load fades in, never pops
             val shown by animateFloatAsState(if (img != null) 1f else 0f, Move.fade(Move.Focus), label = "logo")
@@ -622,7 +641,9 @@ fun startPlay(ctx: Context, scope: CoroutineScope, nav: Nav, it: Item, fromStart
         try {
             nav.black.animateTo(1f, Move.fade(Move.Black))
             when {
-                queue != null -> PlayerActivity.play(ctx, queue, queue.indexOfFirst { q -> q.id == it.id }.coerceAtLeast(0), fromStart, logo)
+                // a queue that doesn't hold this item (a show with no seasons yet) plays just the item, never another one
+                queue != null && queue.any { q -> q.id == it.id } -> PlayerActivity.play(ctx, queue, queue.indexOfFirst { q -> q.id == it.id }, fromStart, logo)
+                queue != null -> PlayerActivity.play(ctx, listOf(it), 0, fromStart, logo)
                 it.isEpisode -> playEpisode(ctx, it, fromStart)
                 else -> PlayerActivity.play(ctx, listOf(it), 0, fromStart)
             }

@@ -272,6 +272,14 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         ui.removeCallbacks(holdTick)
     }
 
+    /** A hold cut short by something else (the next episode, an error): stop it and bring the subtitles back. */
+    private fun abandonHold() {
+        if (st.mode != Mode.Scrub && !holding) return
+        stopHold()
+        view.subtitleView?.visibility = android.view.View.VISIBLE
+        st.scrub = null
+    }
+
     /** OK: land there and play. */
     private fun landHold() {
         stopHold()
@@ -796,6 +804,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             if (changed) {
                 stall.clear()
                 st.firstFrame = false
+                abandonHold()
                 st.mode = Mode.Hidden
                 // a track picked for one episode doesn't exist in the next; the language preference carries over
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
@@ -846,6 +855,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 network -> "Lost the connection to mint. Away from home? Check that Tailscale is on."
                 else -> "Something went wrong while playing."
             }
+            abandonHold()
             st.mode = Mode.Hidden
             st.sheet = null
             st.error = PlayError("Can't play this", hint, "${error.errorCodeName}  ${error.cause?.message ?: error.message ?: ""}".trim())
