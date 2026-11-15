@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -84,6 +85,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.unit.dp
 import app.mediacore.core.ThumbStore
 import app.mediacore.core.clock
 import coil3.compose.AsyncImage
@@ -129,8 +135,10 @@ class PlayerState {
     var subSize by mutableIntStateOf(1) // 0 small, 1 medium, 2 large
     var episodes by mutableStateOf<List<TrackOption>>(emptyList())
     var thumbs: ThumbStore? = null // scrub pictures (TV)
-    var focusMenu = false // Full opened with Down, or a panel closed: land on the buttons instead of the bar
-    var lastButton = 0 // the button a panel was opened from, to come back to
+    var combos by mutableStateOf<List<TrackOption>>(emptyList()) // the likely audio and subtitle pairs, as pills under the bar
+    var tracksAt = 0 // the panel opens on audio (0) or on subtitle size (2)
+    var focusTo: String? = null // where focus lands when the controls show: Play/Pause unless this names an icon or a pill
+    var lastKey = "play" // the icon or pill focus was last on, to come back to after a panel
     var barFocused = false // Left/Right on the bar skip and scrub, as they do with nothing on screen
 }
 
@@ -149,6 +157,7 @@ interface PlayerActions {
     fun openSheet(s: Sheet)
     fun closeSheet()
     fun subSize(size: Int)
+    fun startOver()
     fun tapped()
     fun retry()
     fun close()
@@ -165,9 +174,7 @@ fun scrubStep(repeat: Int): Long = when {
 val SubSizes = listOf("Small", "Medium", "Large")
 
 // Board px, on the 1920 x 1080 board. Everything sits on the bar, which never moves between modes.
-private const val BOTTOM = 56 // the bar's distance from the bottom
-private const val BAR_ROW = 44 // the bar's row: play state, bar, time left
-private const val BUTTONS = 64 // the button row above it
+private const val BUTTONS = 64 // offer buttons' height
 private const val THUMB_W = 416
 private const val THUMB_H = 234
 
@@ -178,8 +185,8 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Flo
     val lift = when {
         st.error != null -> 0f
         st.sheet != null -> 0.40f
-        st.mode == Mode.Full -> 0.31f
-        st.mode == Mode.Seek -> 0.08f
+        st.mode == Mode.Full -> 0.22f
+        st.mode == Mode.Seek -> 0.14f
         else -> 0f
     }
     LaunchedEffect(lift) { onChrome(lift) }
@@ -196,8 +203,8 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Flo
         val offer = st.offer
         if (offer != null && st.sheet == null && st.error == null && st.mode != Mode.Scrub && st.scrub == null) {
             val armed = tv && st.mode != Mode.Full // OK does it, with nothing to focus
-            val above = if (st.mode == Mode.Hidden) 72 else BOTTOM + BAR_ROW + 34 // beside the buttons when they show
-            Box(Modifier.align(Alignment.BottomEnd).padding(end = EDGE.px, bottom = above.px)) {
+            val above = if (st.mode == Mode.Hidden) 72 else 1080 - ROW_Y + PLAY_D / 2 + 24 // above the bar while it shows
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = SIDE.px, bottom = above.px)) {
                 if (offer.kind == "next") NextUp(st, offer, armed, a)
                 else OfferPill(offer.title, if (offer.kind == "slow") null else AppIcons.SkipNext, armed, onClick = a::takeOffer)
             }
@@ -310,82 +317,194 @@ private fun BoxScope.SkipMark(st: PlayerState) {
     }
 }
 
-// ---------- the bar, and everything that sits on it ----------
+// ---------- the controls: Netflix's TV player ----------
+//
+// Top left, bare icons: Back, Start over, Next episode, Episodes; the focused one names itself underneath.
+// Top right, the title and the episode. Bottom: a round Play/Pause, the time watched, the bar, the time left.
+// Under the bar, the likely audio and subtitle pairs as pills, then Other... and a gear for the rest.
+
+private const val SIDE = 112 // the controls sit further in than the rest of the app, as Netflix's do
+private const val PLAY_D = 96 // the round Play/Pause
+private const val ROW_Y = 890 // the centre of Play/Pause and the bar, on the 1080 board
+private const val PILL_H = 52
+
+private val ArrowBack by lazy { lineIcon("Back", "M20 12H4.5" to 2f, "M10.5 5.5 4 12l6.5 6.5" to 2f) }
+private val NextEp by lazy { lineIcon("NextEp", "M5.5 4.8v14.4L16.5 12z" to 1.8f, "M19.5 4.5v15" to 2f) }
+
+private fun lineIcon(name: String, vararg parts: Pair<String, Float>) =
+    ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+        parts.forEach { (d, w) ->
+            addPath(addPathNodes(d), stroke = SolidColor(Color.White), strokeLineWidth = w, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round)
+        }
+    }.build()
 
 @Composable
 private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
     val full = st.mode == Mode.Full
-    val barFr = remember { FocusRequester() }
     val bar = remember { mutableStateOf(Offset.Zero) } // the bar's left edge (x) and width (y) on screen, for the picture above it
+    val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    fun fr(k: String) = requesters.getOrPut(k) { FocusRequester() }
 
-    data class Ctl(val icon: ImageVector, val word: String, val open: () -> Unit)
-    val ctls = buildList {
-        if (st.episodes.size > 1) add(Ctl(AppIcons.Episodes, "Episodes") { a.openSheet(Sheet.Episodes) })
-        add(Ctl(AppIcons.Subtitles, "Audio & Subtitles") { a.openSheet(Sheet.Tracks) })
-        if (st.hasNext) add(Ctl(AppIcons.SkipNext, "Next episode", a::next))
+    class Ctl(val key: String, val icon: ImageVector, val word: String, val open: () -> Unit)
+    val tops = buildList {
+        add(Ctl("top/back", ArrowBack, "Back", a::close))
+        add(Ctl("top/over", Icons.StartOver, "Start over", a::startOver))
+        if (st.hasNext) add(Ctl("top/next", NextEp, "Next episode", a::next))
+        if (st.episodes.size > 1) add(Ctl("top/episodes", AppIcons.Episodes, "Episodes") { a.openSheet(Sheet.Episodes) })
     }
-    val frs = remember(ctls.size) { List(ctls.size) { FocusRequester() } }
-    val last = st.lastButton.coerceIn(0, ctls.lastIndex)
+    val pills = buildList {
+        st.combos.forEachIndexed { i, c -> add(Ctl("pill/$i", AppIcons.Check, c.title, c.pick)) }
+        if (st.audio.size > 1 || st.text.isNotEmpty()) add(Ctl("pill/other", AppIcons.Check, "Other…") { st.tracksAt = 0; a.openSheet(Sheet.Tracks) })
+        if (st.text.isNotEmpty()) add(Ctl("pill/look", Icons.Settings, "") { st.tracksAt = 2; a.openSheet(Sheet.Tracks) })
+    }
 
     // also when a panel closes quickly, before these controls have finished fading out
     val panelOpen = st.sheet != null
     LaunchedEffect(full, panelOpen) {
         if (!tv || !full || panelOpen) return@LaunchedEffect
         delay(16)
-        runCatching { (if (st.focusMenu) frs.getOrNull(last) ?: barFr else barFr).requestFocus() }
-        st.focusMenu = false
+        val want = st.focusTo?.takeIf { k -> tops.any { it.key == k } || pills.any { it.key == k } }
+            ?: if (st.focusTo?.startsWith("pill") == true) pills.firstOrNull()?.key else null
+        runCatching { fr(want ?: "play").requestFocus() }
+        st.focusTo = null
     }
 
-    // the title and the buttons step aside while you look for a place
+    // the title, the icons and the pills step aside while you look for a place
     val words by animateFloatAsState(if (full && st.scrub == null) 1f else 0f, Move.fade(Move.Focus), label = "words")
-    val shade by animateFloatAsState(if (full) 1f else 0.62f, Move.fade(Move.Screen), label = "shade")
+    val shade by animateFloatAsState(if (full) 1f else 0.6f, Move.fade(Move.Screen), label = "shade")
 
     Box(Modifier.fillMaxSize()) {
+        // dark at the top and the bottom, so white reads on any picture; the middle stays clear
         Box(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(640.px).graphicsLayer { alpha = shade }
-                .background(Brush.verticalGradient(0f to Color.Transparent, 0.45f to Pal.BaseDeep.copy(alpha = 0.55f), 1f to Pal.BaseDeep.copy(alpha = 0.94f))),
+            Modifier.fillMaxWidth().height(320.px).graphicsLayer { alpha = shade * words }
+                .background(Brush.verticalGradient(0f to Pal.BaseDeep.copy(alpha = 0.82f), 1f to Color.Transparent)),
         )
-        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = EDGE.px, end = EDGE.px, bottom = BOTTOM.px)) {
-            if (full) {
-                Column(Modifier.graphicsLayer { alpha = words }) {
-                    val logo = st.logo
-                    if (logo != null) AsyncImage(logo, st.title, Modifier.height(96.px).widthIn(max = 480.px), contentScale = ContentScale.Fit, alignment = Alignment.BottomStart)
-                    else Text(st.title, style = ts(46, 54, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (st.sub.isNotEmpty()) Text(st.sub, style = ts(27, 34, 600, Pal.InkSoft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.px))
-                    Spacer(Modifier.height(30.px))
-                    Row(Modifier.height(BUTTONS.px), horizontalArrangement = Arrangement.spacedBy(60.px), verticalAlignment = Alignment.CenterVertically) {
-                        ctls.forEachIndexed { i, c ->
-                            WordControl(
-                                c.icon, c.word, frs[i],
-                                Modifier.focusProperties { down = barFr; up = FocusRequester.Cancel },
-                                onFocus = { st.lastButton = i },
-                                onClick = { st.lastButton = i; c.open() },
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(34.px))
+        Box(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(440.px).graphicsLayer { alpha = shade }
+                .background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Pal.BaseDeep.copy(alpha = 0.6f), 1f to Pal.BaseDeep.copy(alpha = 0.9f))),
+        )
+
+        if (full) {
+            Row(
+                Modifier.padding(start = (SIDE - 12).px, top = 96.px).graphicsLayer { alpha = words },
+                horizontalArrangement = Arrangement.spacedBy(36.px),
+            ) {
+                tops.forEachIndexed { i, c ->
+                    TopIcon(
+                        c.icon, c.word, fr(c.key),
+                        Modifier.focusProperties {
+                            down = fr("play"); up = FocusRequester.Cancel
+                            if (i == 0) left = FocusRequester.Cancel
+                            if (i == tops.lastIndex) right = FocusRequester.Cancel
+                        },
+                        onFocus = { st.lastKey = c.key }, onClick = c.open,
+                    )
                 }
             }
-            BarRow(st, a, barFr, frs.getOrNull(last), bar)
+            Column(
+                Modifier.align(Alignment.TopEnd).padding(end = SIDE.px, top = 112.px).widthIn(max = 900.px).graphicsLayer { alpha = words },
+                horizontalAlignment = Alignment.End,
+            ) {
+                Text(st.title, style = ts(32, 40, 700).copy(shadow = WordShadow), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (st.sub.isNotEmpty()) Text(st.sub, style = ts(30, 38, 700).copy(shadow = WordShadow), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+
+        BarRow(st, a, fr("play"), up = tops.firstOrNull()?.let { fr(st.lastKey.takeIf { k -> k.startsWith("top") && tops.any { t -> t.key == k } } ?: it.key) },
+            down = pills.firstOrNull()?.let { fr(it.key) }, bar = bar)
+
+        if (full && pills.isNotEmpty()) {
+            Row(
+                Modifier.align(Alignment.TopStart).fillMaxWidth().offset(y = (ROW_Y + PLAY_D / 2 + 24).px).graphicsLayer { alpha = words },
+                horizontalArrangement = Arrangement.spacedBy(14.px, Alignment.CenterHorizontally),
+            ) {
+                pills.forEachIndexed { i, c ->
+                    val on = c.key.startsWith("pill/") && st.combos.getOrNull(c.key.removePrefix("pill/").toIntOrNull() ?: -1)?.selected == true
+                    Pill(
+                        c.word, if (c.word.isEmpty()) c.icon else null, on, fr(c.key),
+                        Modifier.focusProperties {
+                            up = fr("play"); down = FocusRequester.Cancel
+                            if (i == 0) left = FocusRequester.Cancel
+                            if (i == pills.lastIndex) right = FocusRequester.Cancel
+                        },
+                        onFocus = { st.lastKey = c.key }, onClick = c.open,
+                    )
+                }
+            }
         }
         ScrubPreview(st, bar)
     }
 }
 
-/** Play state, the bar, and the time left at its end. */
+/** A bare icon. Focused, it grows a little and its name appears under it in small capitals. */
 @Composable
-private fun BarRow(st: PlayerState, a: PlayerActions, fr: FocusRequester, upTo: FocusRequester?, bar: androidx.compose.runtime.MutableState<Offset>) {
+private fun TopIcon(icon: ImageVector, word: String, fr: FocusRequester, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val big by animateFloatAsState(if (focused || st.scrub != null || st.mode == Mode.Scrub) 1f else 0f, Move.fade(Move.Focus), label = "bar")
-    Row(Modifier.fillMaxWidth().height(BAR_ROW.px), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (st.playing) AppIcons.Pause else AppIcons.Play, null, tint = Pal.Ink, modifier = Modifier.size(34.px))
-        Spacer(Modifier.width(28.px))
-        val accent = Pal.Accent
-        Canvas(
-            Modifier.weight(1f).fillMaxSize()
-                .onGloballyPositioned { bar.value = Offset(it.positionInRoot().x, it.size.width.toFloat()) }
+    val t = ringOf(focused)
+    Box(modifier.width(108.px), contentAlignment = Alignment.TopCenter) {
+        Box(
+            Modifier.size(84.px).control(fr, { focused = it; if (it) onFocus() }, onClick)
+                .graphicsLayer { val s = 1f + 0.12f * t.value; scaleX = s; scaleY = s; alpha = 0.78f + 0.22f * t.value },
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, word, tint = Pal.Ink, modifier = Modifier.size(54.px)) }
+        // wider than the icon's slot and centred under it: takes no room, so nothing moves when it shows
+        Text(
+            word.uppercase(), style = ts(21, 26, 700, track = 0.06f), maxLines = 1, softWrap = false,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.requiredWidth(300.px).padding(top = 96.px).graphicsLayer { alpha = t.value },
+        )
+    }
+}
+
+/** A grey pill under the bar; the one in use has a tick. Focused, it turns white. */
+@Composable
+private fun Pill(word: String, icon: ImageVector?, selected: Boolean, fr: FocusRequester, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val fill = focusFill(focused, Pal.Ink.copy(alpha = 0.28f), Pal.Ink)
+    val ink = focusFill(focused, Pal.Ink, Pal.OnInk)
+    Row(
+        modifier.height(PILL_H.px).clip(RoundedCornerShape(8.px)).background(fill)
+            .control(fr, { focused = it; if (it) onFocus() }, onClick)
+            .padding(horizontal = if (word.isEmpty()) 14.px else 20.px),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) Icon(icon, null, tint = ink, modifier = Modifier.size(28.px))
+        if (selected) {
+            Icon(AppIcons.Check, null, tint = ink, modifier = Modifier.size(26.px))
+            Spacer(Modifier.width(10.px))
+        }
+        if (word.isNotEmpty()) Text(word, style = ts(25, 30, 700, ink), maxLines = 1)
+    }
+}
+
+/** The round Play/Pause, the time watched, the bar and the time left, on one line. */
+@Composable
+private fun BoxScope.BarRow(
+    st: PlayerState, a: PlayerActions, fr: FocusRequester, up: FocusRequester?, down: FocusRequester?,
+    bar: androidx.compose.runtime.MutableState<Offset>,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val full = st.mode == Mode.Full
+    val looking = st.scrub != null || st.mode == Mode.Scrub
+    val big by animateFloatAsState(if (looking || (focused && full)) 1f else 0f, Move.fade(Move.Focus), label = "bar")
+    val ring = ringOf(focused && full)
+    Row(
+        Modifier.align(Alignment.TopStart).fillMaxWidth().offset(y = (ROW_Y - PLAY_D / 2).px)
+            .padding(start = SIDE.px, end = SIDE.px).height(PLAY_D.px),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // the focus of the whole player: OK plays or pauses (or lands a skip), Left/Right skip, as with nothing on screen
+        Box(
+            Modifier.size(PLAY_D.px)
+                .graphicsLayer { val s = 1f + 0.06f * ring.value; scaleX = s; scaleY = s }
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(if (full) Pal.Ink else Pal.Ink.copy(alpha = 0.0f))
                 .focusRequester(fr)
-                .focusProperties { if (upTo != null) up = upTo; down = FocusRequester.Cancel }
+                .focusProperties {
+                    if (up != null) this.up = up
+                    this.down = down ?: FocusRequester.Cancel
+                    left = FocusRequester.Cancel; right = FocusRequester.Cancel
+                }
                 .onFocusChanged { focused = it.isFocused; st.barFocused = it.isFocused }
                 .onKeyEvent { e ->
                     if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
@@ -398,7 +517,15 @@ private fun BarRow(st: PlayerState, a: PlayerActions, fr: FocusRequester, upTo: 
                     }
                 }
                 .focusable(),
+            contentAlignment = Alignment.Center,
         ) {
+            if (full) Icon(if (st.playing) AppIcons.Pause else AppIcons.Play, if (st.playing) "Pause" else "Play", tint = Pal.OnInk, modifier = Modifier.size(44.px))
+        }
+        Spacer(Modifier.width(36.px))
+        Clock(st, left = false)
+        Spacer(Modifier.width(28.px))
+        val accent = Pal.Accent
+        Canvas(Modifier.weight(1f).height(40.px).onGloballyPositioned { bar.value = Offset(it.positionInRoot().x, it.size.width.toFloat()) }) {
             // read while drawing: the moving playhead redraws the bar and nothing else
             val dur = st.dur.coerceAtLeast(1).toFloat()
             val at = ((st.scrub ?: st.pos) / dur).coerceIn(0f, 1f) * size.width
@@ -406,21 +533,22 @@ private fun BarRow(st: PlayerState, a: PlayerActions, fr: FocusRequester, upTo: 
             val h = (5 + 3 * big) * Px.screen
             val y = (size.height - h) / 2
             val r = CornerRadius(h / 2)
-            drawRoundRect(Pal.Ink.copy(alpha = 0.28f), Offset(0f, y), Size(size.width, h), r)
+            drawRoundRect(Pal.Ink.copy(alpha = 0.3f), Offset(0f, y), Size(size.width, h), r)
             drawRoundRect(Pal.Ink.copy(alpha = 0.22f), Offset(0f, y), Size(buf, h), r)
             drawRoundRect(accent, Offset(0f, y), Size(at.coerceAtLeast(h), h), r)
             if (big > 0f) drawCircle(accent, 13 * Px.screen * big, Offset(at, size.height / 2))
         }
         Spacer(Modifier.width(28.px))
-        TimeLeft(st)
+        Clock(st, left = true)
     }
 }
 
-/** On its own, so the clock redraws only itself. */
+/** The time watched, or the time left; each on its own, so the clock redraws only itself. */
 @Composable
-private fun TimeLeft(st: PlayerState) {
-    val left = (st.dur - (st.scrub ?: st.pos)).coerceAtLeast(0)
-    Text(if (st.dur > 0) clock(left) else "", style = ts(27, 34, 600, tabular = true), maxLines = 1)
+private fun Clock(st: PlayerState, left: Boolean) {
+    val at = st.scrub ?: st.pos
+    val t = if (left) (st.dur - at).coerceAtLeast(0) else at
+    Text(if (st.dur > 0) clock(t) else "", style = ts(31, 38, 700, tabular = true).copy(shadow = WordShadow), maxLines = 1)
 }
 
 /**
@@ -436,14 +564,14 @@ private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime
     val pictures = store != null && store.ready
     val w = if (pictures) THUMB_W else 180
     Column(
-        Modifier.align(Alignment.BottomStart).padding(bottom = (BOTTOM + BAR_ROW + 20).px)
+        Modifier.align(Alignment.BottomStart).padding(bottom = (1080 - ROW_Y + 36).px)
             .offset {
                 val k = Px.screen
                 val dur = st.dur.coerceAtLeast(1).toFloat()
                 val b = bar.value // read here: the picture moves once the bar has been placed
                 val x = b.x + ((st.scrub ?: st.pos) / dur).coerceIn(0f, 1f) * b.y - w * k / 2
                 val screen = 1920 * k
-                IntOffset(x.coerceIn(EDGE * k, screen - EDGE * k - w * k).roundToInt(), 0)
+                IntOffset(x.coerceIn(SIDE * k, screen - SIDE * k - w * k).roundToInt(), 0)
             }
             .graphicsLayer { alpha = shown }
             .width(w.px),
@@ -457,7 +585,7 @@ private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime
             }
             Spacer(Modifier.height(12.px))
         }
-        Text(clock(st.scrub ?: st.pos), style = ts(30, 36, 700, tabular = true), maxLines = 1)
+        Text(clock(st.scrub ?: st.pos), style = ts(30, 36, 700, tabular = true).copy(shadow = WordShadow), maxLines = 1)
     }
 }
 
@@ -467,28 +595,6 @@ private fun ThumbPicture(store: ThumbStore, ms: Long) {
     val last = remember { arrayOfNulls<ImageBitmap>(1) }
     store.at(ms)?.let { last[0] = it }
     last[0]?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-}
-
-/** An icon and a word, no box. Focused, it brightens and grows a little from its left edge. */
-@Composable
-private fun WordControl(icon: ImageVector, word: String, fr: FocusRequester, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val t = ringOf(focused)
-    Row(
-        modifier.control(fr, { focused = it; if (it) onFocus() }, onClick)
-            .graphicsLayer {
-                val s = 1f + 0.08f * t.value
-                scaleX = s; scaleY = s
-                alpha = 0.62f + 0.38f * t.value
-                transformOrigin = TransformOrigin(0f, 0.5f)
-            }
-            .height(BUTTONS.px),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = Pal.Ink, modifier = Modifier.size(36.px))
-        Spacer(Modifier.width(14.px))
-        Text(word, style = ts(27, 34, 700), maxLines = 1)
-    }
 }
 
 // ---------- audio & subtitles ----------
@@ -512,9 +618,10 @@ private fun TracksPanel(st: PlayerState, a: PlayerActions) {
         ) {
             val audio = st.audio.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val text = st.text.map { Choice(it.title, it.detail, it.selected, it.pick) }
-            TrackColumn("Audio", audio, 640, if (audio.isNotEmpty()) fr else null)
-            TrackColumn("Subtitles", text, 520, if (audio.isEmpty()) fr else null, empty = "None in this file")
-            if (text.isNotEmpty()) TrackColumn("Subtitle size", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } }, 300, null)
+            val sizeFirst = st.tracksAt == 2 && text.isNotEmpty()
+            TrackColumn("Audio", audio, 640, if (audio.isNotEmpty() && !sizeFirst) fr else null)
+            TrackColumn("Subtitles", text, 520, if (audio.isEmpty() && !sizeFirst) fr else null, empty = "None in this file")
+            if (text.isNotEmpty()) TrackColumn("Subtitle size", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } }, 300, if (sizeFirst) fr else null)
         }
     }
 }

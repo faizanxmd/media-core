@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -310,6 +311,9 @@ private fun EpisodesBlock(
             eps.forEachIndexed { i, ep ->
                 // only the rows near focus are built: a long season doesn't load every still at once
                 if (i < focusedI - 1 || i > focusedI + 5) return@forEachIndexed
+                // keyed by episode: as the built window slides, each row keeps its own focus and state.
+                // Unkeyed, the focused row's slot was handed to the episode above it, and Up went nowhere.
+                key(ep.id) {
                 // above the top slot: out of the way of the heading
                 val shown by animateFloatAsState(if (i < focusedI) 0f else 1f, Move.fade(Move.Focus), label = "ep")
                 val key = "ep/$s/$i"
@@ -334,6 +338,7 @@ private fun EpisodesBlock(
                         }
                         .focusable(),
                 )
+                }
             }
         }
     }

@@ -267,7 +267,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private fun landHold() {
         stopHold()
         view.subtitleView?.visibility = android.view.View.VISIBLE
-        st.focusMenu = false
+        st.focusTo = null
         st.mode = Mode.Hidden
         commitScrub()
         player.playWhenReady = true
@@ -277,7 +277,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private fun cancelHold() {
         stopHold()
         view.subtitleView?.visibility = android.view.View.VISIBLE
-        st.focusMenu = false
+        st.focusTo = null
         st.mode = holdFrom
         st.scrub = null // the film never moved
         if (holdResume) player.playWhenReady = true
@@ -374,7 +374,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun closeSheet() {
         st.sheet = null
-        st.focusMenu = true
+        st.focusTo = st.lastKey
         if (st.mode != Mode.Full) st.mode = Mode.Full
         poke()
     }
@@ -387,6 +387,13 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
         st.offer = null
         if (st.mode == Mode.Full) poke()
+    }
+
+    /** Start over: back to the first frame, playing. */
+    override fun startOver() {
+        seekSync(0)
+        player.playWhenReady = true
+        st.mode = Mode.Hidden
     }
 
     private val settings by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
@@ -421,7 +428,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     private fun showFull(menu: Boolean = false) {
         ui.removeCallbacks(hideSeek)
-        st.focusMenu = menu
+        st.focusTo = if (menu) "pill/0" else null // Down: straight to the audio and subtitle pills
         st.mode = Mode.Full
         refresh()
         poke()
@@ -603,6 +610,39 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (text.isNotEmpty()) text.add(0, TrackOption("Off", "", !anyText) { pickText(null, 0) })
         st.audio = audio
         st.text = text
+        st.combos = combos(tracks)
+    }
+
+    /**
+     * Netflix's pills under the bar: the likely pairs, picked in one press. Each of the first two audio languages
+     * on its own, then the language playing with its own subtitles and with English ones. Other... has the rest.
+     */
+    private fun combos(tracks: Tracks): List<TrackOption> {
+        class T(val g: Tracks.Group, val i: Int, val lang: String, val selected: Boolean, val forced: Boolean)
+        val audio = mutableListOf<T>()
+        val text = mutableListOf<T>()
+        for (g in tracks.groups) for (i in 0 until g.length) {
+            if (!g.isTrackSupported(i)) continue
+            val f = g.getTrackFormat(i)
+            val lang = f.language?.takeIf { it.isNotEmpty() && it != "und" }?.let { Locale.forLanguageTag(it).language } ?: continue
+            val forced = f.selectionFlags and C.SELECTION_FLAG_FORCED != 0 || f.label?.contains("forced", true) == true
+            when (g.type) {
+                C.TRACK_TYPE_AUDIO -> audio += T(g, i, lang, g.isTrackSelected(i), forced)
+                C.TRACK_TYPE_TEXT -> text += T(g, i, lang, g.isTrackSelected(i), forced)
+            }
+        }
+        val now = audio.firstOrNull { it.selected } ?: audio.firstOrNull() ?: return emptyList()
+        val subOn = text.firstOrNull { it.selected && !it.forced }
+        val name = { l: String -> langName(l, null) }
+        val out = mutableListOf<TrackOption>()
+        val langs = (listOf(now) + audio).distinctBy { it.lang }.take(2)
+        for (a in langs) out += TrackOption(name(a.lang), "", a.lang == now.lang && subOn == null) { pickAudio(a.g, a.i); pickText(null, 0) }
+        val subs = text.filter { !it.forced && (it.lang == now.lang || it.lang == "en") }.distinctBy { it.lang }.sortedBy { if (it.lang == now.lang) 0 else 1 }
+        for (t in subs) {
+            val words = if (t.lang == now.lang) "${name(now.lang)} with Subtitles" else "${name(now.lang)} with ${name(t.lang)} Subtitles"
+            out += TrackOption(words, "", subOn?.lang == t.lang) { pickAudio(now.g, now.i); pickText(t.g, t.i) }
+        }
+        return out.take(4)
     }
 
     private fun pickAudio(g: Tracks.Group, i: Int) {
@@ -776,7 +816,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         override fun onTracksChanged(tracks: Tracks) {
-            if (st.sheet == Sheet.Tracks) buildTrackOptions(tracks)
+            buildTrackOptions(tracks) // the pills under the bar follow what's playing
             // audio-only files never render a frame
             if (!tracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) st.firstFrame = true
         }

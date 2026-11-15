@@ -42,19 +42,20 @@ Built so far as 2026.11.15-0933 (items 1-22). Since build 2026.11.14-2048: every
 
 ## The Netflix-style TV player (branch `redesign`, TV only)
 
-The player's screens are rebuilt after Netflix's TV player (docs/player-netflix.md), in the redesign's look. Speed control and chapters are gone. A tap of Left or Right no longer moves the film straight away: the bar, the picture you'll land on and a turning circular arrow with the seconds move at once, the taps add up, and the film jumps once, to the nearest keyframe, about 0.6 s after the last tap. That removes the freeze on a skip. Not compiled yet: the next build is its first check.
+Built once as 2026.11.15-2129 with a made-up layout; now rebuilt to match a photo of Netflix's standard TV player. Bare icons top left (Back, Start over, Next episode, Episodes; the focused one names itself underneath), the title and episode top right, a round white Play/Pause at the bottom left with the time watched, the bar and the time left, and under the bar the likely audio and subtitle pairs as grey pills ("Hindi", "Hindi with English Subtitles"), then Other… and a gear for subtitle size. Kept from 2129: a tap of Left or Right moves the bar, the picture over the playhead and the turning 10 s mark at once, and the film jumps once, to a keyframe, after the taps stop. Speed and chapters are gone. Not compiled yet.
+
+Also: Chumbak's (any show's) episode list lost its place when moving Up from the up-next episode, so earlier episodes couldn't be reached. Fixed.
 
 ### To test
-1. Starting a title: its art, dimmed, with a turning ring in the accent and the title under it, then the picture.
-2. Tap Right a few times while playing: the bar shows with the picture you'll land on above the playhead and its time, the arrow on the right turns on each tap and counts 10, 20, 30. The film keeps playing, then jumps once with no freeze. Left does the same on the left; Back before it lands cancels.
-3. Hold Right: the film waits, the playhead runs faster the longer you hold, with the pictures above it. OK lands and plays, Back goes back to where you were.
-4. Pause (OK): a dark fade from the bottom with the title (or its logo), the episode line, Episodes, Audio & Subtitles and Next episode as icons with words, and the bar with the time left at its end. Focus starts on the bar; Up goes to the buttons, Down back. A focused button brightens and grows a little; there are no boxes.
-5. Audio & Subtitles opens one panel along the bottom, with Audio, Subtitles and Subtitle size side by side, while the film plays on. OK changes a track at once and the tick moves; Back closes it and focus returns to the button.
-6. Subtitle size Small, Medium and Large change the text at once and stay chosen for every title. Subtitles are in Source Sans now.
-7. Episodes: a row of stills with names, the one playing marked "Now playing".
-8. Skip intro shows lit at the bottom right for the whole intro; OK skips it.
-9. In an episode's credits: "Watch credits" beside "Next episode", which fills with white over 10 s and then plays the next one. OK plays it now, Back lets the credits run.
-10. Subtitles rise above the controls and panels while they show, and come back down after.
+1. Starting a title: dimmed art, a turning ring in the accent and the title, then the picture.
+2. Tap Right a few times while playing: the bar shows with the picture you'll land on above the playhead, the arrow on the right turns and counts 10, 20, 30, then the film jumps once with no freeze. Back before it lands cancels.
+3. Hold Right: the film waits and the playhead runs, faster the longer you hold. OK lands, Back returns.
+4. Pause: icons top left, title top right, Play/Pause focused at the bottom. Up reaches the icons, Down the pills; Left and Right on Play/Pause skip.
+5. A pill switches audio and subtitles in one press and gets the tick. Other… opens Audio, Subtitles and Subtitle size; the gear opens it on size. The film plays on behind it; Back returns to the pill.
+6. Up from the remote with nothing on screen shows the controls on Play/Pause; Down shows them on the pills.
+7. Start over goes back to the beginning; Next episode and Episodes work; Back (the icon) leaves.
+8. Skip intro, and in the credits Watch credits / Next episode (filling white over 10 s), as before.
+9. Chumbak: Down into Episodes, then Up from episode 5 walks back through 4, 3, 2, 1 and then up to the buttons.
 
 ## A new Audio icon (TV and phone)
 
