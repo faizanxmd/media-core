@@ -1,5 +1,6 @@
 package app.mediacore
 
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.Color
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -338,6 +339,11 @@ private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Mo
     Row(modifier.width(EP_W.px).height(180.px), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(320.px, 180.px).lift(ringOf(focused)).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
             ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            // part-watched: how far, along the still's foot, as on Home's cards
+            if (ep.progress > 0f && !ep.watched) Box(
+                Modifier.align(Alignment.BottomStart).padding(start = 12.px, end = 12.px, bottom = 12.px).fillMaxWidth().height(6.px)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.BaseDeep.copy(alpha = 0.55f)),
+            ) { Box(Modifier.fillMaxHeight().fillMaxWidth(ep.progress.coerceAtLeast(0.04f)).background(Pal.Accent)) }
         }
         Column(Modifier.padding(start = 32.px).weight(1f)) {
             // a real name gets "EPISODE 2" over it; a nameless one is just "Episode 2"
@@ -350,6 +356,7 @@ private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Mo
         }
         Column(Modifier.padding(start = 48.px).width(220.px), horizontalAlignment = Alignment.End) {
             if (upNext) Text("Up next", style = ts(23, 28, 700), modifier = Modifier.padding(bottom = 6.px))
+            else if (ep.watched) Text("Watched", style = ts(23, 28, 600, Pal.Muted), modifier = Modifier.padding(bottom = 6.px))
             val started = ep.pos > 0 && !ep.watched && ep.durMs > ep.pos
             val len = if (started) leftWords(ep.durMs - ep.pos) else runtimeOf(ep)?.let(::span)
             if (len != null) Text(len, style = ts(25, 30, 600, Pal.InkSoft, tabular = true))

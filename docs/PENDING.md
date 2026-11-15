@@ -25,7 +25,10 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 14. A title's year line and story (Home and title page) read clearly over bright art: near-white with a soft shadow.
 15. Opening the app: no round icon. The dark screen shows the Media Core wordmark, centred, for a beat (about half a second, longer only while mint answers), then it fades into Home.
 16. Moving between screens (Home, a title, Settings), changing the hero on Home and changing season: the old words fade out first and the new ones fade in, never two sets overlapping. A title's logo fades in rather than popping, and a show's "1 Season" is added once known instead of replacing "8 episodes".
-17. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+17. A short row (fewer cards than fit across) stays put while you move along it; only a long row slides, and never past its last card.
+18. Episodes: a part-watched one has a progress bar along its still's foot; a watched one says "Watched" on the right.
+19. Settings' section headings are a light shade of the accent, easy to read.
+20. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

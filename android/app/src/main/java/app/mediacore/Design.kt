@@ -95,12 +95,12 @@ object Px {
 val Number.px: Dp get() = (toFloat() * Px.k).dp
 val Number.fs: TextUnit get() = (toFloat() * Px.k / Px.font).sp
 
-/** The accent choices. Each has a deep shade for a focused Play, so it never glows. */
-enum class AccentColor(val main: Color, val deep: Color, val light: Boolean = false) {
-    Blue(Color(0xFF1D39F3), Color(0xFF1F2F8C)),
-    White(Color(0xFFF2F3F7), Color(0xFFF2F3F7), light = true),
-    Ember(Color(0xFFD9622B), Color(0xFF8C3415)),
-    Red(Color(0xFFE50914), Color(0xFFA8070F)),
+/** The accent choices. Each has a deep shade for a focused Play, so it never glows, and a light one for words. */
+enum class AccentColor(val main: Color, val deep: Color, val text: Color, val light: Boolean = false) {
+    Blue(Color(0xFF1D39F3), Color(0xFF1F2F8C), Color(0xFF7C95FF)),
+    White(Color(0xFFF2F3F7), Color(0xFFF2F3F7), Color(0xFFF2F3F7), light = true),
+    Ember(Color(0xFFD9622B), Color(0xFF8C3415), Color(0xFFF2945F)),
+    Red(Color(0xFFE50914), Color(0xFFA8070F), Color(0xFFFF6B70)),
 }
 
 object Pal {
@@ -120,6 +120,7 @@ object Pal {
     val Problem = Color(0xFFF08A84)
     val ProblemBg = Color(0xFF2A1416)
     val Glass = Color(0xD124272E) // rgba(36,39,46,.82): every resting control over art
+    val AccentText: Color get() = accent.text // the accent as words on the dark ground: light enough to read
     val Deep: Color get() = accent.deep // Play and Resume while focused: deep enough not to glow
     val OnDeep: Color get() = if (accent.light) OnInk else Ink // their words
     val OnInk = Color(0xFF0B0D11) // text on a focused (white) control

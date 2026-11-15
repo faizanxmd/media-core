@@ -164,8 +164,8 @@ private data class Hero(val item: Item?, val download: Download?, val key: Strin
 
 /**
  * Home is the whole app: the hero (the focused title's art, logo, line and story) over two rows, Continue watching
- * and Recently added. Settings is top-right, the logo mark top-left. The focused card holds the left edge as its row
- * slides, and the focused row holds ROW0 as the page slides.
+ * and Recently added. Settings is top-right, the wordmark top-left. A row longer than the screen slides so the
+ * focused card holds the left edge; a short one stays put. The focused row's title holds ROW_IN as the page slides.
  */
 @Composable
 fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
@@ -460,7 +460,12 @@ private fun CardRow(
 ) {
     val col = (row.cards.indexOfFirst { it.key == focus }.takeIf { it >= 0 } ?: nav.homeCols[row.key] ?: 0).coerceAtMost(row.cards.lastIndex)
     val step = (if (row.wide) WIDE_W else POSTER_W) + GAP
-    val x by animateFloatAsState(-col * step * Px.screen, Move.slide(Move.Focus), label = "row-x")
+    // the row only slides once its cards run past the screen's right edge, and never further than its end needs:
+    // a short row stays put, filling the screen from the left instead of leaving one card alone there
+    val room = 1920 - LEFT - EDGE + GAP
+    val shift = (col * step).coerceAtMost((row.cards.size * step - room).coerceAtLeast(0))
+    val firstShown = (shift + step - 1) / step
+    val x by animateFloatAsState(-shift * Px.screen, Move.slide(Move.Focus), label = "row-x")
     Row(
         Modifier.padding(top = TITLE_TO_CARDS.px).requiredWidth((row.cards.size * step).px).graphicsLayer { translationX = x },
         horizontalArrangement = Arrangement.spacedBy(GAP.px),
@@ -475,7 +480,7 @@ private fun CardRow(
                 }
             val focused = { f: Boolean -> if (f) { onFocus(c.key); nav.homeCols[row.key] = i } }
             // cards that have slid past the left edge go, rather than peek in half-cut at the screen's side
-            val gone by animateFloatAsState(if (i < col) 0f else 1f, Move.fade(Move.Focus), label = "past")
+            val gone by animateFloatAsState(if (i < firstShown) 0f else 1f, Move.fade(Move.Focus), label = "past")
             Box(Modifier.graphicsLayer { alpha = gone }) {
                 if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
                 else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }

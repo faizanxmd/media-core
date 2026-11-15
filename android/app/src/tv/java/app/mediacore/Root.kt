@@ -32,7 +32,7 @@ import kotlinx.coroutines.delay
 
 /**
  * The TV app: Home is the whole app, with title pages and Settings opened from it. Under every screen lies one
- * picture (ArtLayer) that each screen asks for; the screens themselves crossfade over it (250 ms), so a picture two
+ * picture (ArtLayer) that each screen asks for; the screens themselves fade through over it (300 ms), so a picture two
  * screens share stays where it is.
  */
 @OptIn(ExperimentalFoundationApi::class)

@@ -115,7 +115,7 @@ fun SettingsScreen(nav: Nav) {
 
 @Composable
 private fun Section(text: String, top: Int) {
-    Text(text, style = ts(29, 36, 700, Pal.Accent, cond = true, track = 0.01f), modifier = Modifier.padding(top = top.px, bottom = 8.px, start = 24.px))
+    Text(text, style = ts(29, 36, 700, Pal.AccentText, cond = true, track = 0.01f), modifier = Modifier.padding(top = top.px, bottom = 8.px, start = 24.px))
 }
 
 /** A row: its name on the left, its value on the right; focused, it turns white with ‹ value › to change. */
@@ -189,7 +189,7 @@ private fun Connection(nav: Nav, modifier: Modifier) {
     }
     val heaviest = nav.home?.let { h -> (h.cont + h.recent + h.movies).mapNotNull { it.info?.mbps }.maxOrNull() }
     Column(modifier) {
-        Text("Connection to mint", style = ts(29, 36, 700, Pal.Accent, cond = true, track = 0.01f), modifier = Modifier.padding(bottom = 8.px))
+        Text("Connection to mint", style = ts(29, 36, 700, Pal.AccentText, cond = true, track = 0.01f), modifier = Modifier.padding(bottom = 8.px))
         Row(Modifier.padding(top = 10.px), horizontalArrangement = Arrangement.spacedBy(80.px)) {
             Reading(speed?.let { "%.0f".format(it) } ?: "–", "Mb/s", "Speed")
             Reading(delay?.toString() ?: "–", "ms", "Delay")
