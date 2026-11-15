@@ -16,6 +16,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -175,8 +176,8 @@ val SubSizes = listOf("Small", "Medium", "Large")
 
 // Board px, on the 1920 x 1080 board. Everything sits on the bar, which never moves between modes.
 private const val BUTTONS = 64 // offer buttons' height
-private const val THUMB_W = 416
-private const val THUMB_H = 234
+private const val THUMB_W = 352
+private const val THUMB_H = 198
 
 @Composable
 fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Float) -> Unit) {
@@ -319,17 +320,20 @@ private fun BoxScope.SkipMark(st: PlayerState) {
 
 // ---------- the controls: Netflix's TV player ----------
 //
-// Top left, bare icons: Back, Start over, Next episode, Episodes; the focused one names itself underneath.
-// Top right, the title and the episode. Bottom: a round Play/Pause, the time watched, the bar, the time left.
-// Under the bar, the likely audio and subtitle pairs as pills, then Other... and a gear for the rest.
+// Top left, bare icons: Start over, and for a show Next episode and Episodes; the focused one fills a white disc and
+// names itself underneath. No Back: the remote's Back leaves. Top right, the title and the episode.
+// Bottom: a round Play/Pause, the time watched, the bar, the time left. Under the bar, centred, the likely audio and
+// subtitle pairs as small grey buttons, then one icon for the whole Audio & subtitles page.
+// (Mockups agreed 2026-11-15, after advice from a second designer: fewer icons, every one lined up on SIDE.)
 
 private const val SIDE = 112 // the controls sit further in than the rest of the app, as Netflix's do
-private const val PLAY_D = 96 // the round Play/Pause
-private const val ROW_Y = 890 // the centre of Play/Pause and the bar, on the 1080 board
-private const val PILL_H = 52
+private const val PLAY_D = 92 // the round Play/Pause
+private const val ROW_Y = 896 // the centre of Play/Pause and the bar, on the 1080 board
+private const val PILL_H = 48
+private const val ICON_D = 80 // a top icon's disc; its glyph's ink starts on SIDE
 
-private val ArrowBack by lazy { lineIcon("Back", "M20 12H4.5" to 2f, "M10.5 5.5 4 12l6.5 6.5" to 2f) }
-private val NextEp by lazy { lineIcon("NextEp", "M5.5 4.8v14.4L16.5 12z" to 1.8f, "M19.5 4.5v15" to 2f) }
+private val NextEp by lazy { lineIcon("NextEp", "M6 4.5v15L16 12z" to 2f, "M19 4.5v15" to 2f) }
+private val Captions by lazy { lineIcon("Captions", "M5 5.5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z" to 2.2f, "M7 11h4M13 11h4M7 14.5h7M16 14.5h1" to 2.2f) }
 
 private fun lineIcon(name: String, vararg parts: Pair<String, Float>) =
     ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
@@ -347,15 +351,13 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
 
     class Ctl(val key: String, val icon: ImageVector, val word: String, val open: () -> Unit)
     val tops = buildList {
-        add(Ctl("top/back", ArrowBack, "Back", a::close))
         add(Ctl("top/over", Icons.StartOver, "Start over", a::startOver))
         if (st.hasNext) add(Ctl("top/next", NextEp, "Next episode", a::next))
         if (st.episodes.size > 1) add(Ctl("top/episodes", AppIcons.Episodes, "Episodes") { a.openSheet(Sheet.Episodes) })
     }
     val pills = buildList {
         st.combos.forEachIndexed { i, c -> add(Ctl("pill/$i", AppIcons.Check, c.title, c.pick)) }
-        if (st.audio.size > 1 || st.text.isNotEmpty()) add(Ctl("pill/other", AppIcons.Check, "Other…") { st.tracksAt = 0; a.openSheet(Sheet.Tracks) })
-        if (st.text.isNotEmpty()) add(Ctl("pill/look", Icons.Settings, "") { st.tracksAt = 2; a.openSheet(Sheet.Tracks) })
+        if (st.audio.size > 1 || st.text.isNotEmpty()) add(Ctl("pill/page", Captions, "") { st.tracksAt = 0; a.openSheet(Sheet.Tracks) })
     }
 
     // also when a panel closes quickly, before these controls have finished fading out
@@ -376,18 +378,18 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
     Box(Modifier.fillMaxSize()) {
         // dark at the top and the bottom, so white reads on any picture; the middle stays clear
         Box(
-            Modifier.fillMaxWidth().height(320.px).graphicsLayer { alpha = shade * words }
+            Modifier.fillMaxWidth().height(320.px).fadeBy { shade * words }
                 .background(Brush.verticalGradient(0f to Pal.BaseDeep.copy(alpha = 0.82f), 1f to Color.Transparent)),
         )
         Box(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(440.px).graphicsLayer { alpha = shade }
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(440.px).fadeBy { shade }
                 .background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Pal.BaseDeep.copy(alpha = 0.6f), 1f to Pal.BaseDeep.copy(alpha = 0.9f))),
         )
 
         if (full) {
             Row(
-                Modifier.padding(start = (SIDE - 12).px, top = 96.px).graphicsLayer { alpha = words },
-                horizontalArrangement = Arrangement.spacedBy(36.px),
+                Modifier.padding(start = (SIDE - 24).px, top = 72.px).fadeBy { words },
+                horizontalArrangement = Arrangement.spacedBy(24.px),
             ) {
                 tops.forEachIndexed { i, c ->
                     TopIcon(
@@ -402,11 +404,11 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
                 }
             }
             Column(
-                Modifier.align(Alignment.TopEnd).padding(end = SIDE.px, top = 112.px).widthIn(max = 900.px).graphicsLayer { alpha = words },
+                Modifier.align(Alignment.TopEnd).padding(end = SIDE.px, top = 84.px).widthIn(max = 900.px).fadeBy { words },
                 horizontalAlignment = Alignment.End,
             ) {
-                Text(st.title, style = ts(32, 40, 700).copy(shadow = WordShadow), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (st.sub.isNotEmpty()) Text(st.sub, style = ts(30, 38, 700).copy(shadow = WordShadow), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(st.title, style = ts(44, 52, 800, track = -0.01f).copy(shadow = ChromeShadow), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (st.sub.isNotEmpty()) Text(st.sub, style = ts(30, 40, 500, Pal.InkSoft).copy(shadow = ChromeShadow), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.px))
             }
         }
 
@@ -415,7 +417,7 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
 
         if (full && pills.isNotEmpty()) {
             Row(
-                Modifier.align(Alignment.TopStart).fillMaxWidth().offset(y = (ROW_Y + PLAY_D / 2 + 24).px).graphicsLayer { alpha = words },
+                Modifier.align(Alignment.TopStart).fillMaxWidth().offset(y = (ROW_Y + 70).px).fadeBy { words },
                 horizontalArrangement = Arrangement.spacedBy(14.px, Alignment.CenterHorizontally),
             ) {
                 pills.forEachIndexed { i, c ->
@@ -436,44 +438,50 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
     }
 }
 
-/** A bare icon. Focused, it grows a little and its name appears under it in small capitals. */
+/** A bare icon. Focused, it fills a white disc and its name appears under it. */
 @Composable
 private fun TopIcon(icon: ImageVector, word: String, fr: FocusRequester, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val t = ringOf(focused)
-    Box(modifier.width(108.px), contentAlignment = Alignment.TopCenter) {
+    val fill = focusFill(focused, Pal.Ink.copy(alpha = 0f), Pal.Ink)
+    val tint = focusFill(focused, Pal.Ink, Pal.OnInk)
+    Box(modifier.width(ICON_D.px), contentAlignment = Alignment.TopCenter) {
         Box(
-            Modifier.size(84.px).control(fr, { focused = it; if (it) onFocus() }, onClick)
-                .graphicsLayer { val s = 1f + 0.12f * t.value; scaleX = s; scaleY = s; alpha = 0.78f + 0.22f * t.value },
+            Modifier.size(ICON_D.px).clip(androidx.compose.foundation.shape.CircleShape).background(fill)
+                .control(fr, { focused = it; if (it) onFocus() }, onClick),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, word, tint = Pal.Ink, modifier = Modifier.size(54.px)) }
+        ) { Icon(icon, word, tint = tint, modifier = Modifier.size(48.px)) }
         // wider than the icon's slot and centred under it: takes no room, so nothing moves when it shows
         Text(
-            word.uppercase(), style = ts(21, 26, 700, track = 0.06f), maxLines = 1, softWrap = false,
+            word, style = ts(24, 30, 700).copy(shadow = ChromeShadow), maxLines = 1, softWrap = false,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.requiredWidth(300.px).padding(top = 96.px).graphicsLayer { alpha = t.value },
+            modifier = Modifier.requiredWidth(300.px).padding(top = (ICON_D + 14).px).graphicsLayer { alpha = t.value },
         )
     }
 }
+
+/** A light shadow under the controls' words: the shades top and bottom do the real work. */
+private val ChromeShadow get() = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.5f), Offset(0f, 1 * Px.screen), 3 * Px.screen)
 
 /** A grey pill under the bar; the one in use has a tick. Focused, it turns white. */
 @Composable
 private fun Pill(word: String, icon: ImageVector?, selected: Boolean, fr: FocusRequester, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val fill = focusFill(focused, Pal.Ink.copy(alpha = 0.28f), Pal.Ink)
+    // a solid grey, not a see-through one: over a bright picture a thin grey turns muddy
+    val fill = focusFill(focused, Color(0xEB484A50), Pal.Ink)
     val ink = focusFill(focused, Pal.Ink, Pal.OnInk)
     Row(
-        modifier.height(PILL_H.px).clip(RoundedCornerShape(8.px)).background(fill)
+        modifier.height(PILL_H.px).clip(RoundedCornerShape(6.px)).background(fill)
             .control(fr, { focused = it; if (it) onFocus() }, onClick)
-            .padding(horizontal = if (word.isEmpty()) 14.px else 20.px),
+            .padding(horizontal = if (word.isEmpty()) 11.px else 18.px),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) Icon(icon, null, tint = ink, modifier = Modifier.size(28.px))
+        if (icon != null) Icon(icon, "Audio & subtitles", tint = ink, modifier = Modifier.size(26.px))
         if (selected) {
-            Icon(AppIcons.Check, null, tint = ink, modifier = Modifier.size(26.px))
+            Icon(AppIcons.Check, null, tint = ink, modifier = Modifier.size(24.px))
             Spacer(Modifier.width(10.px))
         }
-        if (word.isNotEmpty()) Text(word, style = ts(25, 30, 700, ink), maxLines = 1)
+        if (word.isNotEmpty()) Text(word, style = ts(24, 30, 700, ink), maxLines = 1)
     }
 }
 
@@ -486,8 +494,10 @@ private fun BoxScope.BarRow(
     var focused by remember { mutableStateOf(false) }
     val full = st.mode == Mode.Full
     val looking = st.scrub != null || st.mode == Mode.Scrub
-    val big by animateFloatAsState(if (looking || (focused && full)) 1f else 0f, Move.fade(Move.Focus), label = "bar")
-    val ring = ringOf(focused && full)
+    val knob by animateFloatAsState(if (looking || full) 1f else 0f, Move.fade(Move.Focus), label = "knob")
+    // the one white disc on screen is where focus is: Play at rest is just its glyph
+    val playFill = focusFill(focused, Pal.Ink.copy(alpha = 0f), Pal.Ink)
+    val playTint = focusFill(focused, Pal.Ink, Pal.OnInk)
     Row(
         Modifier.align(Alignment.TopStart).fillMaxWidth().offset(y = (ROW_Y - PLAY_D / 2).px)
             .padding(start = SIDE.px, end = SIDE.px).height(PLAY_D.px),
@@ -496,9 +506,8 @@ private fun BoxScope.BarRow(
         // the focus of the whole player: OK plays or pauses (or lands a skip), Left/Right skip, as with nothing on screen
         Box(
             Modifier.size(PLAY_D.px)
-                .graphicsLayer { val s = 1f + 0.06f * ring.value; scaleX = s; scaleY = s }
                 .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(if (full) Pal.Ink else Pal.Ink.copy(alpha = 0.0f))
+                .background(if (full) playFill else Color.Transparent)
                 .focusRequester(fr)
                 .focusProperties {
                     if (up != null) this.up = up
@@ -519,7 +528,7 @@ private fun BoxScope.BarRow(
                 .focusable(),
             contentAlignment = Alignment.Center,
         ) {
-            if (full) Icon(if (st.playing) AppIcons.Pause else AppIcons.Play, if (st.playing) "Pause" else "Play", tint = Pal.OnInk, modifier = Modifier.size(44.px))
+            if (full) Icon(if (st.playing) AppIcons.Pause else AppIcons.Play, if (st.playing) "Pause" else "Play", tint = playTint, modifier = Modifier.size(42.px))
         }
         Spacer(Modifier.width(36.px))
         Clock(st, left = false)
@@ -529,14 +538,13 @@ private fun BoxScope.BarRow(
             // read while drawing: the moving playhead redraws the bar and nothing else
             val dur = st.dur.coerceAtLeast(1).toFloat()
             val at = ((st.scrub ?: st.pos) / dur).coerceIn(0f, 1f) * size.width
-            val buf = (st.buffered / dur).coerceIn(0f, 1f) * size.width
-            val h = (5 + 3 * big) * Px.screen
+            // thicker than Netflix's: it reads from the sofa. No buffered stretch: past the knob it looked like a glitch
+            val h = 8 * Px.screen
             val y = (size.height - h) / 2
             val r = CornerRadius(h / 2)
-            drawRoundRect(Pal.Ink.copy(alpha = 0.3f), Offset(0f, y), Size(size.width, h), r)
-            drawRoundRect(Pal.Ink.copy(alpha = 0.22f), Offset(0f, y), Size(buf, h), r)
+            drawRoundRect(Pal.Ink.copy(alpha = 0.28f), Offset(0f, y), Size(size.width, h), r)
             drawRoundRect(accent, Offset(0f, y), Size(at.coerceAtLeast(h), h), r)
-            if (big > 0f) drawCircle(accent, 13 * Px.screen * big, Offset(at, size.height / 2))
+            if (knob > 0f) drawCircle(Pal.Ink.copy(alpha = knob), 13 * Px.screen, Offset(at, size.height / 2))
         }
         Spacer(Modifier.width(28.px))
         Clock(st, left = true)
@@ -548,12 +556,12 @@ private fun BoxScope.BarRow(
 private fun Clock(st: PlayerState, left: Boolean) {
     val at = st.scrub ?: st.pos
     val t = if (left) (st.dur - at).coerceAtLeast(0) else at
-    Text(if (st.dur > 0) clock(t) else "", style = ts(31, 38, 700, tabular = true).copy(shadow = WordShadow), maxLines = 1)
+    Text(if (st.dur > 0) clock(t) else "", style = ts(34, 40, 600, tabular = true).copy(shadow = ChromeShadow), maxLines = 1)
 }
 
 /**
- * While you look for a place: the picture you'd land on, over the playhead, with its time under it.
- * Before the pictures arrive, just the time.
+ * While you look for a place: the picture you'd land on, over the playhead; its time is the clock left of the bar.
+ * Before the pictures arrive, the time alone.
  */
 @Composable
 private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime.State<Offset>) {
@@ -564,7 +572,7 @@ private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime
     val pictures = store != null && store.ready
     val w = if (pictures) THUMB_W else 180
     Column(
-        Modifier.align(Alignment.BottomStart).padding(bottom = (1080 - ROW_Y + 36).px)
+        Modifier.align(Alignment.BottomStart).padding(bottom = (1080 - ROW_Y + 32).px)
             .offset {
                 val k = Px.screen
                 val dur = st.dur.coerceAtLeast(1).toFloat()
@@ -580,12 +588,11 @@ private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime
         if (pictures) {
             // new pictures only when the position crosses a 10 s step, however fast the time runs
             val step by remember { derivedStateOf { (st.scrub ?: st.pos) / 10_000 } }
-            Box(Modifier.size(THUMB_W.px, THUMB_H.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
-                ThumbPicture(store!!, step * 10_000)
-            }
-            Spacer(Modifier.height(12.px))
-        }
-        Text(clock(st.scrub ?: st.pos), style = ts(30, 36, 700, tabular = true).copy(shadow = WordShadow), maxLines = 1)
+            Box(
+                Modifier.size(THUMB_W.px, THUMB_H.px).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)
+                    .border(2.px, Pal.Ink, Corner),
+            ) { ThumbPicture(store!!, step * 10_000) }
+        } else Text(clock(st.scrub ?: st.pos), style = ts(34, 40, 700, tabular = true).copy(shadow = ChromeShadow), maxLines = 1)
     }
 }
 
@@ -601,27 +608,22 @@ private fun ThumbPicture(store: ThumbStore, ms: Long) {
 
 private class Choice(val title: String, val detail: String, val selected: Boolean, val pick: () -> Unit)
 
-/** One panel along the bottom: audio, subtitles and their size side by side. The film plays on behind it. */
+/** Audio, subtitles and their size in three plain columns over the darkened film, which plays on behind. */
 @Composable
 private fun TracksPanel(st: PlayerState, a: PlayerActions) {
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) { delay(32); runCatching { fr.requestFocus() } }
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(640.px)
-                .background(Brush.verticalGradient(0f to Color.Transparent, 0.3f to Pal.BaseDeep.copy(alpha = 0.86f), 1f to Pal.BaseDeep.copy(alpha = 0.97f)))
-                .pointerInput(Unit) { detectTapGestures { } },
-        )
+    Box(Modifier.fillMaxSize().background(Pal.BaseDeep.copy(alpha = 0.86f)).pointerInput(Unit) { detectTapGestures { } }) {
         Row(
-            Modifier.align(Alignment.BottomStart).padding(start = (EDGE - 24).px, end = EDGE.px, bottom = 64.px),
-            horizontalArrangement = Arrangement.spacedBy(56.px),
+            Modifier.padding(start = 160.px, end = 160.px, top = 200.px),
+            horizontalArrangement = Arrangement.spacedBy(72.px),
         ) {
             val audio = st.audio.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val text = st.text.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val sizeFirst = st.tracksAt == 2 && text.isNotEmpty()
-            TrackColumn("Audio", audio, 640, if (audio.isNotEmpty() && !sizeFirst) fr else null)
-            TrackColumn("Subtitles", text, 520, if (audio.isEmpty() && !sizeFirst) fr else null, empty = "None in this file")
-            if (text.isNotEmpty()) TrackColumn("Subtitle size", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } }, 300, if (sizeFirst) fr else null)
+            TrackColumn("Audio", audio, 560, if (audio.isNotEmpty() && !sizeFirst) fr else null)
+            TrackColumn("Subtitles", text, 560, if (audio.isEmpty() && !sizeFirst) fr else null, empty = "None in this file")
+            if (text.isNotEmpty()) TrackColumn("Subtitle size", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } }, 440, if (sizeFirst) fr else null)
         }
     }
 }
@@ -629,14 +631,16 @@ private fun TracksPanel(st: PlayerState, a: PlayerActions) {
 @Composable
 private fun TrackColumn(title: String, options: List<Choice>, width: Int, fr: FocusRequester?, empty: String = "") {
     val sel = options.indexOfFirst { it.selected }.coerceAtLeast(0)
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = (sel - 2).coerceAtLeast(0))
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = (sel - 3).coerceAtLeast(0))
+    // the detail ("5.1 surround") only when it tells the rows apart; the same words on every row are noise
+    val details = options.map { it.detail }.distinct().size > 1
     Column(Modifier.width(width.px)) {
-        Text(title, style = ts(30, 36, 700), modifier = Modifier.padding(start = 24.px, bottom = 18.px))
-        if (options.isEmpty()) Text(empty, style = ts(26, 32, 600, Pal.Muted), modifier = Modifier.padding(start = 24.px))
-        LazyColumn(Modifier.heightIn(max = (5 * 64 + 4 * 6).px), state = state, verticalArrangement = Arrangement.spacedBy(6.px)) {
+        Text(title, style = ts(30, 36, 700, Pal.Muted, track = 0.02f), modifier = Modifier.padding(start = 28.px, bottom = 22.px))
+        if (options.isEmpty()) Text(empty, style = ts(30, 36, 600, Pal.Muted), modifier = Modifier.padding(start = 28.px))
+        LazyColumn(Modifier.heightIn(max = (8 * ROW_H).px), state = state) {
             itemsIndexed(options) { i, o ->
                 TrackRow(
-                    o, if (i == sel) fr else null,
+                    o, details, if (i == sel) fr else null,
                     Modifier.onPreviewKeyEvent { e -> // Up and Down stay inside the list
                         e.type == KeyEventType.KeyDown && ((e.key == Key.DirectionUp && i == 0) || (e.key == Key.DirectionDown && i == options.lastIndex))
                     },
@@ -646,21 +650,23 @@ private fun TrackColumn(title: String, options: List<Choice>, width: Int, fr: Fo
     }
 }
 
-/** A row: a check if it's what plays now, the name, and what tells it apart. Focused, it turns white. */
+private const val ROW_H = 72
+
+/** A row: a tick if it's what plays now, the name, and what tells it apart. Focused, it turns white. */
 @Composable
-private fun TrackRow(o: Choice, fr: FocusRequester?, modifier: Modifier) {
+private fun TrackRow(o: Choice, details: Boolean, fr: FocusRequester?, modifier: Modifier) {
     var focused by remember { mutableStateOf(false) }
     val fill = focusFill(focused, Pal.Ink.copy(alpha = 0f), Pal.Ink)
     val ink = focusFill(focused, if (o.selected) Pal.Ink else Pal.InkSoft, Pal.OnInk)
     val soft = focusFill(focused, Pal.Muted, Pal.OnInkSoft)
     Row(
-        modifier.fillMaxWidth().height(64.px).clip(Corner).background(fill)
-            .control(fr, { focused = it }, o.pick).padding(start = 16.px, end = 20.px),
+        modifier.fillMaxWidth().height(ROW_H.px).clip(Corner).background(fill)
+            .control(fr, { focused = it }, o.pick).padding(start = 28.px, end = 24.px),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(44.px)) { if (o.selected) Icon(AppIcons.Check, null, tint = ink, modifier = Modifier.size(28.px)) }
-        Text(o.title, style = ts(28, 34, if (o.selected) 700 else 600, ink), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-        if (o.detail.isNotEmpty()) Text(o.detail, style = ts(23, 28, 600, soft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.px))
+        Box(Modifier.width(52.px)) { if (o.selected) Icon(AppIcons.Check, null, tint = ink, modifier = Modifier.size(32.px)) }
+        Text(o.title, style = ts(36, 42, if (o.selected) 700 else 600, ink), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        if (details && o.detail.isNotEmpty()) Text(o.detail, style = ts(24, 30, 600, soft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.px))
     }
 }
 

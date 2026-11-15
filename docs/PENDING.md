@@ -46,6 +46,8 @@ Built once as 2026.11.15-2129 with a made-up layout; now rebuilt to match a phot
 
 Also: Chumbak's (any show's) episode list lost its place when moving Up from the up-next episode, so earlier episodes couldn't be reached. Fixed.
 
+**Redrawn again (2026-11-15), from mockups agreed with the user and a second designer's advice.** No Back icon (the remote's Back leaves), so the top left holds only Start over, plus Next episode and Episodes for a show; they line up with Play's left edge, and the focused one fills a white disc and names itself. The title top right is larger. Play is a 92 px disc that's white only while focused (at rest just its glyph), the bar is a steady 8 px with a white knob and no buffered stretch, the times are larger. Under the bar, centred: small solid grey buttons for the likely audio and subtitle pairs, then one icon for the Audio & subtitles page ("Other…" and the gear are gone). Scrubbing shows a smaller picture with a white edge; its time is the clock left of the bar. The Audio & subtitles page is three plain columns over the darkened film, with larger rows, and "5.1 surround" only when it tells tracks apart.
+
 ### To test
 1. Starting a title: dimmed art, a turning ring in the accent and the title, then the picture.
 2. Tap Right a few times while playing: the film jumps 10 s each time and keeps playing, with only the turning arrow on the right counting 10, 20, 30. No bar, no pictures, no freeze. Left does the same backwards.
