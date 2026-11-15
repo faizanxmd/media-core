@@ -4,7 +4,6 @@ import androidx.compose.foundation.focusGroup
 import androidx.activity.compose.BackHandler
 import android.app.Activity
 import android.content.Context
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -251,21 +250,30 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         // the wordmark belongs to the top row: it leaves with the buttons when focus goes down into the rows
         val mark by animateFloatAsState(if (inRows) 0f else 1f, Move.fade(Move.Focus), label = "mark")
-        Wordmark(Modifier.offset(LEFT.px, (TOP + 30 - MARK_H / 2).px).graphicsLayer { alpha = mark }, height = MARK_H.px)
+        Wordmark(Modifier.offset(LEFT.px, (TOP + 30 - MARK_H / 2).px).fadeBy { mark }, height = MARK_H.px)
         TopRight(nav, onUpdate, fr("settings"), fr("update"), down = fr(if (hero?.download != null) firstCardKey(rows, nav) else "play")) { onFocus(it) }
 
         // the hero's words: logo, meta line, story. They fade out and in on their own, apart from the art
-        AnimatedContent(
-            hero,
-            transitionSpec = { Move.through(Move.Screen) },
-            contentKey = { it?.key },
-            label = "hero",
-        ) { h -> if (h != null) HeroWords(h, heroDetail?.takeIf { it.first.id == h.item?.id }?.first) }
+        // (out, then in, as Move.through; drawn fainter part by part, since a fading full-screen layer cost the TV a frame)
+        var words by remember { mutableStateOf(hero) }
+        val wordsAlpha = remember { androidx.compose.animation.core.Animatable(1f) }
+        LaunchedEffect(hero?.key) {
+            if (hero?.key == words?.key) { words = hero; return@LaunchedEffect }
+            val out = if (Move.reduced) 100 else Move.Screen * 35 / 100
+            wordsAlpha.animateTo(0f, tween(out, easing = Move.Ease))
+            words = hero
+            wordsAlpha.animateTo(1f, tween(if (Move.reduced) 100 else Move.Screen - out, easing = Move.Ease))
+        }
+        words?.let { h ->
+            Box(Modifier.fillMaxSize().fadeBy { wordsAlpha.value }) {
+                HeroWords(h, heroDetail?.takeIf { it.first.id == h.item?.id }?.first)
+            }
+        }
 
         // Play and More info: gone while focus is down in the rows
         val buttons by animateFloatAsState(if (inRows || hero?.download != null) 0f else 1f, Move.fade(Move.Focus), label = "buttons")
         if (hero?.item != null) Row(
-            Modifier.offset(LEFT.px, BUTTONS_Y.px).graphicsLayer { alpha = buttons },
+            Modifier.offset(LEFT.px, BUTTONS_Y.px).fadeBy { buttons },
             horizontalArrangement = Arrangement.spacedBy(16.px), verticalAlignment = Alignment.CenterVertically,
         ) {
             val downKey = firstCardKey(rows, nav)
@@ -296,7 +304,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                     label = "row",
                 )
                 val titleColor by animateColorAsState(if (inRows) Pal.RowTitle else Pal.Ink, Move.fade(Move.Focus), label = "rowtitle")
-                Column(Modifier.offset(LEFT.px, rowTops[r].px).graphicsLayer { alpha = gone }) {
+                Column(Modifier.offset(LEFT.px, rowTops[r].px).fadeBy { gone }) {
                     Text(row.title, style = ts(34, ROW_TITLE, 700, titleColor, cond = true, track = -0.005f))
                     CardRow(
                         row, nav, focus, inRows, ::fr, ::onFocus,
@@ -336,7 +344,7 @@ private fun QuitAsk(shown: Boolean, onStay: () -> Unit, onLeave: () -> Unit) {
     val stay = remember { FocusRequester() }
     LaunchedEffect(shown) { if (shown) { withFrameNanos { }; runCatching { stay.requestFocus() } } }
     BackHandler(enabled = shown, onBack = onStay)
-    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a }.background(Pal.BaseDeep.copy(alpha = 0.88f)).focusGroup()) {
+    Box(Modifier.fillMaxSize().fadeBy { a }.background(Pal.BaseDeep.copy(alpha = 0.88f)).focusGroup()) {
         Column(Modifier.offset(LEFT.px, 420.px)) {
             Text("Leave Media Core?", style = ts(60, 68, 700, track = -0.015f))
             Row(Modifier.padding(top = 48.px), horizontalArrangement = Arrangement.spacedBy(16.px)) {
@@ -506,7 +514,7 @@ private fun CardRow(
             val focused = { f: Boolean -> if (f) { onFocus(c.key); nav.homeCols[row.key] = i } }
             // cards that have slid past the left edge go, rather than peek in half-cut at the screen's side
             val gone by animateFloatAsState(if (i < firstShown) 0f else 1f, Move.fade(Move.Focus), label = "past")
-            Box(Modifier.graphicsLayer { alpha = gone }) {
+            Box(Modifier.fadeBy { gone }) {
                 if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
                 else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }
             }

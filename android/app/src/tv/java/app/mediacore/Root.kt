@@ -25,7 +25,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
@@ -43,7 +42,8 @@ fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
     val art = remember { ArtState(ctx.applicationContext, scope) }
     CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec(), LocalArt provides art) {
         Box(
-            Modifier.fillMaxSize().background(Pal.Base).onSizeChanged { art.w = it.width; art.h = it.height },
+            // no fill here: ArtLayer paints the base colour itself when it has no picture, so a frame paints the screen once
+            Modifier.fillMaxSize().onSizeChanged { art.w = it.width; art.h = it.height },
         ) {
             HomeData(nav)
             ArtLayer(art)
@@ -84,7 +84,7 @@ private fun Intro(nav: Nav) {
         a.animateTo(0f, Move.fade(Move.Through))
         nav.introDone = true
     }
-    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a.value }.background(Pal.Base), contentAlignment = androidx.compose.ui.Alignment.Center) {
+    Box(Modifier.fillMaxSize().fadeBy { a.value }.background(Pal.Base), contentAlignment = androidx.compose.ui.Alignment.Center) {
         Wordmark(height = 120.px)
     }
 }
@@ -92,7 +92,7 @@ private fun Intro(nav: Nav) {
 /** The black into and out of the player. Its own small composable, so its fade doesn't recompose all of Root. */
 @Composable
 private fun Black(nav: Nav) {
-    if (nav.black.value > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = nav.black.value }.background(Color.Black))
+    if (nav.black.value > 0f) Box(Modifier.fillMaxSize().fadeBy { nav.black.value }.background(Color.Black))
 }
 
 /** "mint is offline", over everything, until mint answers again; then it fades back to the app. */
@@ -109,7 +109,7 @@ private fun Offline(nav: Nav) {
             runCatching { nav.refresh++ }
         }
     }
-    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a }.background(Pal.Base).focusRequester(fr).focusable()) {
+    Box(Modifier.fillMaxSize().fadeBy { a }.background(Pal.Base).focusRequester(fr).focusable()) {
         GrainPlain()
         Text("mint is offline", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 460.px))
     }

@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -306,6 +307,16 @@ fun Modifier.lift(ring: State<Float>): Modifier = graphicsLayer {
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(CORNER * Px.screen + w / 2), style = Stroke(w),
         )
     }
+}
+
+/**
+ * Fades something by drawing each of its parts fainter, not by drawing it whole into a hidden picture first.
+ * On the TV's GPU a hidden picture the size of a row or the screen costs a whole frame; this costs nothing.
+ * Parts that overlap show through each other a little while it fades, which over 150 ms nobody sees.
+ */
+fun Modifier.fadeBy(alpha: () -> Float): Modifier = graphicsLayer {
+    this.alpha = alpha()
+    compositingStrategy = CompositingStrategy.ModulateAlpha
 }
 
 /** How far along focus is: 0 to 1 over 150 ms. */

@@ -95,6 +95,8 @@ class MainActivity : ComponentActivity() {
                 AppTheme { Root(nav, tv, ::installUpdate) } // TV or phone app, per build flavor
             }
         }
+        // the TV's Root paints the whole screen itself; the window's own fill under it was one more full-screen pass a frame
+        if (tv) window.setBackgroundDrawable(null)
     }
 
     // while the app sits open, pick up what's being watched on other devices

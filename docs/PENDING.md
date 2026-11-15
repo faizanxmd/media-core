@@ -57,6 +57,15 @@ Also: Chumbak's (any show's) episode list lost its place when moving Up from the
 8. Skip intro, and in the credits Watch credits / Next episode (filling white over 10 s), as before.
 9. Chumbak: Down into Episodes, then Up from episode 5 walks back through 4, 3, 2, 1 and then up to the buttons.
 
+## Home smoothness and the card line (branch `redesign`, TV only)
+
+Measured on the TV: a frame on Home took 20 ms of GPU time, and 33 ms while the hero changed, so Home ran near 40 frames a second. Two causes. Fading things (the hero's words, rows going up, the cards slid past the edge) were drawn whole into hidden full-size pictures first, some wider than the screen; they now fade part by part. And every frame painted the whole screen three times before the art (the window, Root's fill, then the picture); now once. The Continue watching card for a next episode not started read "S1 E8 ·" with nothing after it; it now shows the episode's length. Not compiled yet.
+
+### To test
+- Move around Home quickly: the hero change and going down into the rows should feel smooth.
+- The words, rows and buttons still fade as before, with no flash of black at app start or behind the art.
+- A next-up episode in Continue watching reads "S1 E8 · 24 m".
+
 ## A new Audio icon (TV and phone)
 
 The headphones are replaced by a sound wave in a disc, the same icon the web player now has. Only the icon's path changed in each app's `AppIcons.kt`. Not compiled yet.

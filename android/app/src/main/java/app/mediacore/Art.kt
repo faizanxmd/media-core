@@ -262,6 +262,8 @@ val LocalArt = staticCompositionLocalOf<ArtState> { error("no art") }
 @Composable
 fun ArtLayer(art: ArtState, modifier: Modifier = Modifier) {
     ComposeCanvas(modifier.fillMaxSize()) {
+        // the base colour only while no finished picture covers the screen: under one it was a whole wasted fill each frame
+        if (art.back == null && (art.front == null || art.fade.value < 1f)) drawRect(Pal.Base)
         art.back?.let { drawImage(it) }
         art.front?.let { drawImage(it, alpha = art.fade.value) }
     }
