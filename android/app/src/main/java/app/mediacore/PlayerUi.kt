@@ -370,7 +370,7 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
     }
 
     // the title, the icons and the pills step aside while you look for a place
-    val words by animateFloatAsState(if (full && st.scrub == null) 1f else 0f, Move.fade(Move.Focus), label = "words")
+    val words by animateFloatAsState(if (full && st.mode != Mode.Scrub) 1f else 0f, Move.fade(Move.Focus), label = "words")
     val shade by animateFloatAsState(if (full) 1f else 0.6f, Move.fade(Move.Screen), label = "shade")
 
     Box(Modifier.fillMaxSize()) {
@@ -510,7 +510,7 @@ private fun BoxScope.BarRow(
                     if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
                     when (e.key) {
                         Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                            if (e.nativeKeyEvent.repeatCount == 0) { if (st.scrub != null) a.commitScrub() else a.togglePlay() }
+                            if (e.nativeKeyEvent.repeatCount == 0) a.togglePlay() // a tap's jump has already landed
                             true
                         }
                         else -> false
@@ -557,7 +557,7 @@ private fun Clock(st: PlayerState, left: Boolean) {
  */
 @Composable
 private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime.State<Offset>) {
-    val looking = st.scrub != null || st.mode == Mode.Scrub
+    val looking = st.mode == Mode.Scrub // only while holding: a tap just jumps, as on Netflix
     val shown by animateFloatAsState(if (looking) 1f else 0f, Move.fade(Move.Focus), label = "preview")
     if (shown == 0f) return
     val store = st.thumbs

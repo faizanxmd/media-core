@@ -207,10 +207,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     /**
-     * A press of Left/Right: the bar, the picture you'll land on and the turning mark move at once, 10 s a tap,
-     * and the taps add up. The film itself jumps only once, when the presses stop.
+     * A press of Left/Right, as Netflix does it: the film jumps 10 s at once and plays on. Nothing else appears,
+     * only the turning mark with the seconds; taps add up. Each jump goes to the nearest keyframe, so it's instant.
      */
     private fun tapSkip(dir: Int) {
+        ui.removeCallbacks(settle)
         ui.removeCallbacks(commit)
         ui.removeCallbacks(hideSeek)
         ui.removeCallbacks(autoHide)
@@ -222,10 +223,17 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (st.skipped != 0 && (st.skipped > 0) != (dir > 0)) st.skipped = 0 // turned back: count afresh
         st.skipped += ((to - from) / 1000).toInt() // what the film really moves, near its start or end
         st.taps++
-        if (st.mode == Mode.Hidden) st.mode = Mode.Seek
-        st.thumbs?.ensure()
+        seekSync(to)
+        st.thumbs?.ensure() // ready in case the next press is a hold
         ui.postDelayed(clearSkipped, 900)
-        ui.postDelayed(commit, 600)
+        ui.postDelayed(settle, 600)
+    }
+
+    /** The taps have stopped: the film is already there, so only forget the target the taps were adding to. */
+    private val settle = Runnable {
+        st.scrub = null
+        refresh()
+        if (st.mode == Mode.Full) poke()
     }
 
     /**
@@ -236,6 +244,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         ui.removeCallbacks(clearSkipped)
         st.skipped = 0
         ui.removeCallbacks(commit)
+        ui.removeCallbacks(settle)
         ui.removeCallbacks(autoHide)
         holdFrom = st.mode
         holdResume = player.playWhenReady
@@ -279,10 +288,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         view.subtitleView?.visibility = android.view.View.VISIBLE
         st.focusTo = null
         st.mode = holdFrom
-        st.scrub = null // the film never moved
+        st.scrub = null
+        // the press that began the hold already jumped 10 s: go back to where you were
+        if (abs(player.currentPosition - holdOrigin) > 1500) seekSync(holdOrigin)
         if (holdResume) player.playWhenReady = true
         poke()
-        if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1200) // a hold that began as a tap: the bar goes
+        if (st.mode == Mode.Seek) ui.postDelayed(hideSeek, 1200)
     }
 
     override fun scrub(deltaMs: Long) {
@@ -514,7 +525,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 when {
                     st.error != null -> finish()
                     st.sheet != null -> closeSheet()
-                    st.scrub != null -> { ui.removeCallbacks(commit); st.scrub = null; st.mode = Mode.Hidden } // cancel the seek
+                    st.scrub != null && st.mode == Mode.Seek -> { ui.removeCallbacks(commit); st.scrub = null; st.mode = Mode.Hidden } // cancel the seek
+                    st.scrub != null -> { ui.removeCallbacks(settle); settle.run(); if (st.mode == Mode.Full && player.playWhenReady) st.mode = Mode.Hidden } // taps already landed
                     st.mode == Mode.Full && tv -> if (player.playWhenReady) st.mode = Mode.Hidden else finish() // paused: leave
                     st.mode == Mode.Seek -> st.mode = Mode.Hidden
                     st.offer?.kind == "next" || st.offer?.kind == "slow" -> dismissOffer() // keep watching as it is
@@ -915,7 +927,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                     if (first) when {
-                        st.scrub != null -> commitScrub()
+                        st.scrub != null && st.mode == Mode.Seek -> commitScrub()
                         st.offer != null -> takeOffer()
                         else -> togglePlay()
                     }

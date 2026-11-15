@@ -42,13 +42,13 @@ Built so far as 2026.11.15-0933 (items 1-22). Since build 2026.11.14-2048: every
 
 ## The Netflix-style TV player (branch `redesign`, TV only)
 
-Built once as 2026.11.15-2129 with a made-up layout; now rebuilt to match a photo of Netflix's standard TV player. Bare icons top left (Back, Start over, Next episode, Episodes; the focused one names itself underneath), the title and episode top right, a round white Play/Pause at the bottom left with the time watched, the bar and the time left, and under the bar the likely audio and subtitle pairs as grey pills ("Hindi", "Hindi with English Subtitles"), then Other… and a gear for subtitle size. Kept from 2129: a tap of Left or Right moves the bar, the picture over the playhead and the turning 10 s mark at once, and the film jumps once, to a keyframe, after the taps stop. Speed and chapters are gone. Not compiled yet.
+Built once as 2026.11.15-2129 with a made-up layout; now rebuilt to match a photo of Netflix's standard TV player. Bare icons top left (Back, Start over, Next episode, Episodes; the focused one names itself underneath), the title and episode top right, a round white Play/Pause at the bottom left with the time watched, the bar and the time left, and under the bar the likely audio and subtitle pairs as grey pills ("Hindi", "Hindi with English Subtitles"), then Other… and a gear for subtitle size. A tap of Left or Right now just jumps the film 10 s at once, as Netflix does: no bar, no pictures, only the turning 10 s mark (taps add up to 20, 30). Each jump goes to the nearest keyframe, so it doesn't freeze. Holding still brings up the bar with pictures. Speed and chapters are gone. Not compiled yet.
 
 Also: Chumbak's (any show's) episode list lost its place when moving Up from the up-next episode, so earlier episodes couldn't be reached. Fixed.
 
 ### To test
 1. Starting a title: dimmed art, a turning ring in the accent and the title, then the picture.
-2. Tap Right a few times while playing: the bar shows with the picture you'll land on above the playhead, the arrow on the right turns and counts 10, 20, 30, then the film jumps once with no freeze. Back before it lands cancels.
+2. Tap Right a few times while playing: the film jumps 10 s each time and keeps playing, with only the turning arrow on the right counting 10, 20, 30. No bar, no pictures, no freeze. Left does the same backwards.
 3. Hold Right: the film waits and the playhead runs, faster the longer you hold. OK lands, Back returns.
 4. Pause: icons top left, title top right, Play/Pause focused at the bottom. Up reaches the icons, Down the pills; Left and Right on Play/Pause skip.
 5. A pill switches audio and subtitles in one press and gets the tick. Other… opens Audio, Subtitles and Subtitle size; the gear opens it on size. The film plays on behind it; Back returns to the pill.
