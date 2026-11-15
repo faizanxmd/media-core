@@ -45,7 +45,7 @@ type TMeta struct {
 }
 
 // Bump when what fetchMovie/fetchShow store changes, so cached entries are re-read.
-const tmetaVersion = 3
+const tmetaVersion = 4
 
 type Person struct {
 	Name  string `json:"name"`
@@ -517,14 +517,18 @@ type tmdbImages struct {
 }
 
 // logo picks an English (or language-less) logo, preferring PNG.
-func (im tmdbImages) logo() string {
+// logo picks the title's logo: English first, then one without words, then one in the title's own language
+// (TMDB often tags an Indian film's Latin-letter logo with its language, not English).
+func (im tmdbImages) logo(orig string) string {
 	best, bestScore := "", -1.0
 	for _, l := range im.Logos {
 		score := l.Vote
 		switch {
 		case l.Lang != nil && *l.Lang == "en":
-			score += 20
+			score += 30
 		case l.Lang == nil:
+			score += 20
+		case orig != "" && orig != "en" && l.Lang != nil && *l.Lang == orig:
 			score += 10
 		default:
 			continue
@@ -537,6 +541,18 @@ func (im tmdbImages) logo() string {
 		}
 	}
 	return best
+}
+
+// ownLogo asks again for a logo in the title's own language, when there's none in English or without words.
+func (t *TMDB) ownLogo(ctx context.Context, path, orig string) string {
+	if orig == "" || orig == "en" {
+		return ""
+	}
+	var im tmdbImages
+	if t.get(ctx, path+"/images", url.Values{"include_image_language": {orig}}, &im) != nil {
+		return ""
+	}
+	return im.logo(orig)
 }
 
 type tmdbCredits struct {
@@ -607,6 +623,7 @@ func (t *TMDB) fetchMovie(ctx context.Context, id int) error {
 		Studios  namedList `json:"production_companies"`
 		Credits  tmdbCredits
 		Images   tmdbImages
+		Orig     string `json:"original_language"`
 		Release  struct {
 			Results []struct {
 				Country string `json:"iso_3166_1"`
@@ -621,9 +638,12 @@ func (t *TMDB) fetchMovie(ctx context.Context, id int) error {
 		return err
 	}
 	m := &TMeta{TMDB: r.ID, Title: r.Title, Overview: r.Overview, Tagline: r.Tagline, Poster: r.Poster,
-		Backdrop: r.Backdrop, Logo: r.Images.logo(), Rating: round1(r.Vote), Genres: r.Genres.names(),
+		Backdrop: r.Backdrop, Logo: r.Images.logo(r.Orig), Rating: round1(r.Vote), Genres: r.Genres.names(),
 		Cast: r.Credits.people(12), Director: r.Credits.crew("Director"), Music: r.Credits.crew(musicJobs...),
 		Runtime: r.Runtime, Date: r.Date, Year: yearOf(r.Date), V: tmetaVersion}
+	if m.Logo == "" {
+		m.Logo = t.ownLogo(ctx, "/movie/"+strconv.Itoa(id), r.Orig)
+	}
 	if s := r.Studios.names(); len(s) > 0 {
 		m.Studio = s[0]
 	}
@@ -664,6 +684,7 @@ func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 		Created  namedList `json:"created_by"`
 		Credits  tmdbCredits
 		Images   tmdbImages
+		Orig     string `json:"original_language"`
 		Ratings  struct {
 			Results []struct {
 				Country string `json:"iso_3166_1"`
@@ -676,9 +697,12 @@ func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 		return err
 	}
 	m := &TMeta{TMDB: r.ID, Title: r.Name, Overview: r.Overview, Tagline: r.Tagline, Poster: r.Poster,
-		Backdrop: r.Backdrop, Logo: r.Images.logo(), Rating: round1(r.Vote), Genres: r.Genres.names(),
+		Backdrop: r.Backdrop, Logo: r.Images.logo(r.Orig), Rating: round1(r.Vote), Genres: r.Genres.names(),
 		Cast: r.Credits.people(12), Music: r.Credits.crew(musicJobs...), Date: r.Date, Year: yearOf(r.Date),
 		Status: r.Status, V: tmetaVersion}
+	if m.Logo == "" {
+		m.Logo = t.ownLogo(ctx, "/tv/"+strconv.Itoa(id), r.Orig)
+	}
 	if c := r.Created.names(); len(c) > 0 {
 		m.Creator = c[:min(2, len(c))]
 	}
