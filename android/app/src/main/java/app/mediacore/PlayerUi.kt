@@ -528,7 +528,8 @@ private fun BoxScope.BarRow(
                 .focusable(),
             contentAlignment = Alignment.Center,
         ) {
-            if (full) Icon(if (st.playing) AppIcons.Pause else AppIcons.Play, if (st.playing) "Pause" else "Play", tint = playTint, modifier = Modifier.size(42.px))
+            // shows the state it's in, as the user asked: paused shows the two bars, playing shows the triangle
+            if (full) Icon(if (st.playing) AppIcons.Play else AppIcons.Pause, if (st.playing) "Pause" else "Play", tint = playTint, modifier = Modifier.size(42.px))
         }
         Spacer(Modifier.width(36.px))
         Clock(st, left = false)
