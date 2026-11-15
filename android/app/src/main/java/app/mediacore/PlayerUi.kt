@@ -327,8 +327,10 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
     val frs = remember(ctls.size) { List(ctls.size) { FocusRequester() } }
     val last = st.lastButton.coerceIn(0, ctls.lastIndex)
 
-    LaunchedEffect(full) {
-        if (!tv || !full) return@LaunchedEffect
+    // also when a panel closes quickly, before these controls have finished fading out
+    val panelOpen = st.sheet != null
+    LaunchedEffect(full, panelOpen) {
+        if (!tv || !full || panelOpen) return@LaunchedEffect
         delay(16)
         runCatching { (if (st.focusMenu) frs.getOrNull(last) ?: barFr else barFr).requestFocus() }
         st.focusMenu = false
@@ -376,7 +378,7 @@ private fun BarRow(st: PlayerState, a: PlayerActions, fr: FocusRequester, upTo: 
     var focused by remember { mutableStateOf(false) }
     val big by animateFloatAsState(if (focused || st.scrub != null || st.mode == Mode.Scrub) 1f else 0f, Move.fade(Move.Focus), label = "bar")
     Row(Modifier.fillMaxWidth().height(BAR_ROW.px), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (st.playing || st.mode == Mode.Scrub) AppIcons.Pause else AppIcons.Play, null, tint = Pal.Ink, modifier = Modifier.size(34.px))
+        Icon(if (st.playing) AppIcons.Pause else AppIcons.Play, null, tint = Pal.Ink, modifier = Modifier.size(34.px))
         Spacer(Modifier.width(28.px))
         val accent = Pal.Accent
         Canvas(

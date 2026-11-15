@@ -151,7 +151,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.pos = player.currentPosition
         st.buffered = player.bufferedPosition
         st.dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
-        st.playing = player.isPlaying
+        st.playing = player.playWhenReady // what you asked for: a moment's loading doesn't flip Pause to Play
         st.buffering = player.playbackState == Player.STATE_BUFFERING
         st.hasNext = player.hasNextMediaItem()
         stall.state(st.buffering, player.playbackState == Player.STATE_READY, player.playWhenReady)
@@ -760,7 +760,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            st.playing = isPlaying
+            st.playing = player.playWhenReady
             if (!isPlaying && player.playbackState == Player.STATE_READY) report(false) // paused
             if (isPlaying && st.mode == Mode.Full) poke()
         }
