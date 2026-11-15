@@ -204,12 +204,20 @@ private fun FirstScreen(
     main.meta?.overview?.ifEmpty { null }?.let {
         Text(it, style = ts(29, 40, 400, Pal.InkSoft), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.offset(LEFT.px, y[2].px).width(940.px))
     }
-    // Director, Music (or Created by) need crew from TMDB, which mint doesn't fetch yet: only Starring for now
-    val stars = main.meta?.cast.orEmpty().take(3).map { it.name }
-    if (stars.isNotEmpty()) Row(Modifier.offset(LEFT.px, y[3].px), horizontalArrangement = Arrangement.spacedBy(56.px)) {
-        Column {
-            Text("STARRING", style = CapsLabel)
-            DotLine(stars, ts(29, 36, 600), modifier = Modifier.padding(top = 10.px))
+    // The credits: who made it, who scored it, and three of the cast. Each column only when TMDB has it.
+    val meta = main.meta
+    val credits = listOfNotNull(
+        (if (show) meta?.creator else meta?.director).orEmpty().take(2).ifEmpty { null }
+            ?.let { (if (show) "CREATED BY" else if (it.size > 1) "DIRECTORS" else "DIRECTOR") to it },
+        meta?.music.orEmpty().take(1).ifEmpty { null }?.let { "MUSIC" to it },
+        meta?.cast.orEmpty().take(3).map { it.name }.ifEmpty { null }?.let { "STARRING" to it },
+    )
+    if (credits.isNotEmpty()) Row(Modifier.offset(LEFT.px, y[3].px), horizontalArrangement = Arrangement.spacedBy(56.px)) {
+        credits.forEach { (label, names) ->
+            Column {
+                Text(label, style = CapsLabel)
+                DotLine(names, ts(29, 36, 600), modifier = Modifier.padding(top = 10.px))
+            }
         }
     }
     val started = target != null && target.word == "Resume"

@@ -14,6 +14,7 @@ data class Meta(
     val poster: String, val backdrop: String, val logo: String, val still: String,
     val rating: Double, val genres: List<String>, val cast: List<Person>, val runtime: Int,
     val cert: String, val date: String, val studio: String,
+    val director: List<String> = emptyList(), val music: List<String> = emptyList(), val creator: List<String> = emptyList(),
 )
 
 data class Watch(val pos: Long, val dur: Long, val watched: Boolean)
@@ -67,6 +68,7 @@ data class Item(
                     m.optDouble("rating", 0.0), m.optJSONArray("genres").strings(),
                     m.optJSONArray("cast").objects().map { Person(it.optString("name"), it.optString("role"), it.optString("photo")) },
                     m.optInt("runtime"), m.optString("cert"), m.optString("date"), m.optString("studio"),
+                    m.optJSONArray("director").strings(), m.optJSONArray("music").strings(), m.optJSONArray("creator").strings(),
                 )
             },
             watch = j.optJSONObject("watch")?.let { Watch(it.optLong("pos"), it.optLong("dur"), it.optBoolean("watched")) },
