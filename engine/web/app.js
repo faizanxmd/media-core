@@ -43,6 +43,9 @@ const durMs = it => it.watch?.dur > 0 ? it.watch.dur : (it.info?.dur || 0) * 100
 const pos = it => it.watch?.pos || 0;
 const progress = it => { const d = durMs(it); return pos(it) > 0 && d > 0 ? Math.min(1, pos(it) / d) : 0; };
 const resumable = it => it && pos(it) > 0 && !it.watch?.watched && durMs(it) > pos(it);
+// worth saying "Resume" for: a few minutes in is still just "Play" (it still picks up where it stopped)
+const begun = it => resumable(it) && progress(it) >= .05;
+const leftNote = it => begun(it) ? `<span class="left fig">${esc(leftText(durMs(it) - pos(it)))}</span>` : "";
 const showTitle = it => it.show || displayTitle(it);
 const displayTitle = it => (it.type !== "episode" && it.meta?.title) || it.title;
 const displayYear = it => it.year > 0 ? it.year : it.meta?.year || 0;
@@ -140,6 +143,8 @@ function formatMarks(i) {
   else if (a.startsWith("TrueHD")) out.push(logoMark("truehd", .4));
   return out.join("");
 }
+// the format marks after the facts, set off by the same middle dot
+const marksAfter = i => { const m = formatMarks(i); return m ? `<span class="marks">${m}</span>` : ""; };
 const page = () => $("#page");
 // a panel over the page closes when the page under it changes (the browser's Back, a link). Returns how to stop listening.
 function onLeave(fn) { addEventListener("hashchange", fn, { once: true }); return () => removeEventListener("hashchange", fn); }
@@ -179,7 +184,10 @@ async function home(refresh) {
   const going = (h.continue || []).filter(x => x.id !== f?.id);
   const recent = h.recent || [], all = [...shows, ...movies];
   const fresh = all.every(t => recent.some(r => r.id === t.id)) ? [] : recent;
-  const html = tabs("Home") + `<div class="home">${f ? stage(f, shows) : ""}${row("Continue Watching", going, wideCard)}${row("Recently Added", fresh, posterCard)}${row("Shows", shows, posterCard)}${row("Films", movies, posterCard)}${none}</div>`;
+  const small = all.length < 8;
+  const kinds = small ? row("Library", [...recent, ...all.filter(t => !recent.some(r => r.id === t.id))], posterCard)
+    : row("Recently Added", fresh, posterCard) + row("Shows", shows, posterCard) + row("Films", movies, posterCard);
+  const html = tabs("Home") + `<div class="home">${f ? stage(f, shows) : ""}${row("Continue Watching", going, wideCard)}${kinds}${none}</div>`;
   if (refresh) { page().innerHTML = html; wireRows(page()); $$(".cards", page()).forEach((c, i) => c.scrollLeft = keep[i] || 0); }
   else show(html);
 }
@@ -192,11 +200,11 @@ function stage(it, shows) {
   const ep = it.type === "episode";
   return `<div class="stage">${art(pic)}<section class="hero ${pic ? "" : "bare"}"><div class="words">
       ${titleMark(it.meta?.logo || show?.meta?.logo, showTitle(it))}
-      <div class="facts">${facts.length ? `<span class="dots fig">${facts.map(x => `<span>${esc(x)}</span>`).join("")}</span>` : ""}${formatMarks(it.info)}</div>
+      <div class="facts">${facts.length ? `<span class="dots fig">${facts.map(x => `<span>${esc(x)}</span>`).join("")}</span>` : ""}${marksAfter(it.info)}</div>
       ${ep ? `<div class="label one epl">${esc(epWords(it))}</div>` : ""}
       ${story ? `<p class="story">${esc(story)}</p>` : ""}
-      <div class="btns"><button class="play" data-open="${it.id}" data-resume="1">${icon("Play")}<span class="fig">${resumable(it) ? `Resume · ${hm(durMs(it) - pos(it))} left` : "Play"}</span></button>
-        <a class="word ic" href="#/title/${it.show_id || it.id}">${icon("Info")}More info</a></div>
+      <div class="btns"><button class="play" data-open="${it.id}" data-resume="1">${icon("Play")}<span>${begun(it) ? "Resume" : "Play"}</span></button>
+        <a class="word ic" href="#/title/${it.show_id || it.id}">${icon("Info")}More info</a>${leftNote(it)}</div>
     </div></section></div>`;
 }
 
@@ -221,7 +229,7 @@ async function library(shows) {
   if (r.error) { errorPage(() => library(shows)); return; }
   const items = r.items || [];
   show(tabs(shows ? "Shows" : "Films") + (items.length
-    ? `<div class="plain"><div class="grid">${items.map(x => posterCard(x, true)).join("")}</div></div>` : `<p class="mut plain" style="padding-left:var(--side)">Nothing here yet.</p>`));
+    ? `<div class="plain"><h1 class="ptitle">${shows ? "Shows" : "Films"}<span class="count fig">${items.length}</span></h1><div class="grid">${items.map(x => posterCard(x, true)).join("")}</div></div>` : `<p class="mut plain" style="padding-left:var(--side)">Nothing here yet.</p>`));
 }
 
 // ---------- Search ----------
@@ -276,17 +284,16 @@ async function title(id) {
   };
   const allWatched = () => isShow ? !main.unseen : main.watch?.watched;
   const buttons = () => {
-    const can = target && ready[target.id], res = resumable(target);
-    // Play says what it does: how long is left when it resumes. The rest are words, not riddles.
+    const can = target && ready[target.id], res = begun(target);
+    // Play in one word; how long is left follows the buttons as plain words. The rest are words, not riddles.
     const seen = allWatched();
-    return `<button class="play" id="pPlay" ${can ? "" : "disabled"}>${icon("Play")}<span class="fig">${!can ? "Can't play here" : res ? `Resume · ${hm(durMs(target) - pos(target))} left` : "Play"}</span></button>
+    return `<button class="play" id="pPlay" ${can ? "" : "disabled"}>${icon("Play")}<span>${!can ? "Can't play here" : res ? "Resume" : "Play"}</span></button>
       ${res && can ? `<button class="word ic" id="pOver">${icon("Replay")}Start over</button>` : ""}
-      <button class="word ic" id="pSeen" title="${seen ? "Mark unwatched" : "Mark watched"}">${icon(seen ? "Ok" : "Check")}${seen ? "Watched" : "Mark watched"}</button>
-      <button class="word ic" id="pInfo">${icon("Info")}Details</button>`;
+      <button class="word bare ic" id="pSeen" title="${seen ? "Mark unwatched" : "Mark watched"}">${icon("Check")}${seen ? "Watched" : "Mark watched"}</button>
+      <button class="word bare ic" id="pInfo">${icon("Info")}Details</button>${can ? leftNote(target) : ""}`;
   };
   // episodes: a list down the page. Each: its still, "EPISODE 2" over a real name (a nameless one is just "Episode 2"),
-  // two lines of story, and beside them whether it's next, watched or part-way, its length and its date.
-  const day = d => d && !isNaN(new Date(d)) ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  // two lines of story, and beside them one line: its length, what's left of it, or Watched.
   const episodes = () => {
     const s = seasons[season]; if (!s) return "";
     const head = seasons.length > 1
@@ -295,11 +302,11 @@ async function title(id) {
     return `<section class="sect"><div class="srow">${head}</div><div class="elist">${(s.episodes || []).map(e => {
         const len = durMs(e) || (e.meta?.runtime || 0) * 60000, part = !e.watch?.watched && resumable(e), next = up && e.id === up.id;
         const named = e.episode > 0 && e.title && e.title.toLowerCase() !== `episode ${e.episode}`;
-        const state = next ? `<span class="st">Up next</span>` : e.watch?.watched ? `<span class="st mut">Watched</span>` : "";
+
         return `<button class="erow ${next ? "next" : ""}" data-ep="${e.id}">
           <span class="card wide">${e.meta?.still || e.meta?.backdrop ? `<img src="${img(e.meta.still || e.meta.backdrop, "w500")}" alt="" loading="lazy" decoding="async">` : ""}${part ? track(progress(e)) : ""}</span>
           <span class="txt">${named ? `<span class="caps fig">Episode ${e.episode}</span>` : ""}<span class="label one">${esc(e.title || `Episode ${e.episode}`)}</span>${e.meta?.overview ? `<p>${esc(e.meta.overview)}</p>` : ""}</span>
-          <span class="end fig">${state}${part ? `<span class="len">${esc(leftText(durMs(e) - pos(e)))}</span>` : len ? `<span class="len">${esc(mins(len))}</span>` : ""}${day(e.meta?.date) ? `<span class="day">${esc(day(e.meta.date))}</span>` : ""}</span></button>`;
+          <span class="end fig">${e.watch?.watched ? `<span class="seen">${icon("Check")}Watched</span>` : part ? `<span class="len now">${esc(leftText(durMs(e) - pos(e)))}</span>` : len ? `<span class="len">${esc(mins(len))}</span>` : ""}</span></button>`;
       }).join("")}</div></section>`;
   };
   // who made it, who scored it, and three of the cast, as words in columns under the story (the TV's credits). No photos.
@@ -328,10 +335,10 @@ async function title(id) {
   const draw = () => {
     show(tabs("") + `<div class="tpage ${isShow ? "tshow" : "tfilm"}"><div class="stage">${art(main.meta?.backdrop)}<section class="hero ${main.meta?.backdrop ? "" : "bare"}"><div class="words">
         ${titleMark(main.meta?.logo, displayTitle(main))}
-        <div class="facts">${head ? `<span class="dots fig">${head}</span>` : ""}${formatMarks((target || main).info)}</div>
+        <div class="facts">${head ? `<span class="dots fig">${head}</span>` : ""}${marksAfter((target || main).info)}</div>
         <div id="words">${words()}</div>${credits()}<div class="btns" id="btns">${buttons()}</div>
         ${target && !ready[target.id] ? `<p class="meta whynot">${icon("No")}<span>This browser can't show ${esc(blocked[target.id] || "this picture")}. A Light copy, added in Manager, would play here. Details lists where it does play.</span></p>` : ""}</div></section></div>
-      <div id="below">${isShow ? episodes() : ""}${about()}</div></div>`);
+      <div id="below">${isShow ? episodes() + about() : ""}</div></div>`);
     wire();
   };
   const wire = () => {
@@ -366,11 +373,13 @@ async function details(it, main) {
   const how = d => !d.ok ? `No. It can't show ${d.why}` : d.how === "repack" ? "Yes, repackaged as it plays" : d.how === "light" ? "Yes, by its Light copy" : "Yes";
   const pic = img(main.meta?.backdrop, "w780");
   const fig = (v, n) => `<div><div class="title fig one">${esc(v)}</div><div class="caption one">${esc(n)}</div></div>`;
-  const group = (h, rows) => rows.length ? `<div class="group"><div class="caption">${h}</div>${rows.map(([a, b]) => `<div class="spec"><span class="body">${esc(a)}</span><span class="label fig one" title="${esc(b)}">${esc(b)}</span></div>`).join("")}</div>` : "";
+  const group = (h, rows) => rows.length ? `<div class="group"><div class="caps">${h}</div>${rows.map(([a, b]) => `<div class="spec"><span class="body">${esc(a)}</span><span class="label fig one" title="${esc(b)}">${esc(b)}</span></div>`).join("")}</div>` : "";
   const tracks = (i.tracks?.length ? i.tracks : i.audio ? [i.audio] : []).map(audioLine).sort((a, b) => (b[0] === "English") - (a[0] === "English"));
   const subs = [...(i.subs || []), ...(it.subs || []).map(s => s.label)].filter(Boolean);
   const langs = subs.length ? [...tracks, ["Subtitles", subs.some(s => /english/i.test(s)) ? "English" : "No English"]] : tracks;
   const picture = [i.w > 0 && i.h > 0 ? ["Resolution", `${i.w} × ${i.h}`] : null, i.vcodec ? ["Video", codecName(i.vcodec)] : null, i.hdr ? ["HDR", i.hdr] : null].filter(Boolean);
+  const m = main.meta || {}, released = m.date && !isNaN(new Date(m.date)) ? new Date(m.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "";
+  const film = main.type === "movie" ? [released ? ["Released", released] : null, m.studio ? ["Studio", m.studio] : null].filter(Boolean) : [];
   const file = [it.size > 0 ? ["Size", gb(it.size)] : null, i.dur > 0 ? ["Length", lengthName(i.dur)] : null].filter(Boolean);
   const scrim = document.createElement("div"); scrim.className = "scrim";
   const sheetBg = document.createElement("div"); sheetBg.className = "scrim";
@@ -381,7 +390,7 @@ async function details(it, main) {
   s.innerHTML = `<div class="head"><div style="min-width:0"><h2 class="title">Details</h2>${it.type === "episode" ? `<div class="meta mut one" style="margin-top:.4rem">${esc(epWords(it))}</div>` : ""}</div>
       <button class="tool" aria-label="Close" title="Close">${icon("Close")}</button></div>
     <div class="figures">${i.res ? fig(i.res, QUALITY[i.res] || i.res) : ""}${i.mbps > 0 ? fig(i.mbps.toFixed(1), "Mb/s") : ""}${i.fps > 0 ? fig(i.fps.toFixed(3).replace(".000", ""), "fps") : ""}</div>
-    <div id="dPlays"></div>${group("Picture", picture)}${group("Languages", langs)}${group("File", file)}`;
+    <div id="dPlays"></div>${group("Picture", picture)}${group("Languages", langs)}${group("Film", film)}${group("File", file)}`;
   document.body.append(sheetBg, scrim, s);
   s.focus();
   const close = () => { off(); sheetBg.remove(); scrim.remove(); s.remove(); removeEventListener("keydown", onKey, true); $("#pInfo")?.focus(); };
