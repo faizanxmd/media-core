@@ -144,14 +144,13 @@ private const val ROW0 = 600 // the first row's title while focus is up on the b
 private const val ROW_IN = 492 // where the focused row's title lands once focus is in the rows: up into the buttons' place
 private const val ROW_TITLE = 40 // its line
 private const val TITLE_TO_CARDS = 16 // room for a focused card's lift (6 px) and border (3)
-private const val BAR_GAP = 12 // under it, before its progress bar: close enough to belong to the card
 private const val ROW_GAP = 30 // under a row's last line, before the next row's title, which shows whole at the bottom
 private const val WIDE_W = 400
 private const val WIDE_H = 225
 private const val POSTER_W = 200
 private const val POSTER_H = 300
 private const val GAP = 16 // between cards: a focused wide card grows 10 px into it and its border 3 more
-private const val WIDE_BLOCK = WIDE_H + BAR_GAP + 6 + 12 + 32 + 2 + 28 // picture, bar, title, line under it
+private const val WIDE_BLOCK = WIDE_H + 12 + 32 + 2 + 28 // picture (its progress inside it), title, line under it
 private const val POSTER_BLOCK = POSTER_H
 
 private class HomeRow(val key: String, val title: String, val wide: Boolean, val cards: List<Card>)
@@ -292,8 +291,9 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                     Text(row.title, style = ts(34, ROW_TITLE, 700, titleColor, cond = true, track = -0.005f))
                     CardRow(
                         row, nav, focus, inRows, ::fr, ::onFocus,
-                        up = if (r == 0) (if (hero?.download != null) "settings" else "play") else rows[r - 1].let { u -> u.cards[(nav.homeCols[u.key] ?: 0).coerceAtMost(u.cards.lastIndex)].key },
-                        down = rows.getOrNull(r + 1)?.let { d -> d.cards[(nav.homeCols[d.key] ?: 0).coerceAtMost(d.cards.lastIndex)].key },
+                        // up and down land on the card nearest on screen, straight above or below the focused one
+                        up = { i -> if (r == 0) (if (hero?.download != null) "settings" else "play") else nearestCard(row, i, rows[r - 1], nav) },
+                        down = { i -> rows.getOrNull(r + 1)?.let { d -> nearestCard(row, i, d, nav) } },
                     ) { c ->
                         when {
                             c.download != null -> nav.open(Screen.Pending(c.download.title))
@@ -356,9 +356,26 @@ private fun rowTops(rows: List<HomeRow>): List<Int> {
     var y = ROW0
     return rows.map { r ->
         val top = y
-        y += ROW_TITLE + TITLE_TO_CARDS + (if (r.wide) WIDE_BLOCK else POSTER_BLOCK + BAR_GAP + 6) + ROW_GAP
+        y += ROW_TITLE + TITLE_TO_CARDS + (if (r.wide) WIDE_BLOCK else POSTER_BLOCK) + ROW_GAP
         top
     }
+}
+
+private fun stepOf(row: HomeRow) = (if (row.wide) WIDE_W else POSTER_W) + GAP
+
+/** How far a row has slid with card [col] focused: only once its cards run past the screen, never past its end. */
+private fun rowShift(row: HomeRow, col: Int): Int {
+    val step = stepOf(row)
+    val room = 1920 - LEFT - EDGE + GAP
+    return (col * step).coerceAtMost((row.cards.size * step - room).coerceAtLeast(0))
+}
+
+/** The card in [to] whose middle is nearest on screen to card [i] of [from] (focused), as [to] sits now. */
+private fun nearestCard(from: HomeRow, i: Int, to: HomeRow, nav: Nav): String {
+    val x = i * stepOf(from) + (if (from.wide) WIDE_W else POSTER_W) / 2 - rowShift(from, i)
+    val toShift = rowShift(to, (nav.homeCols[to.key] ?: 0).coerceAtMost(to.cards.lastIndex))
+    val w = if (to.wide) WIDE_W else POSTER_W
+    return to.cards.indices.minBy { j -> kotlin.math.abs(j * stepOf(to) + w / 2 - toShift - x) }.let { to.cards[it].key }
 }
 
 /** Settings top-right in the shared control surface, and Update beside it when mint has a newer build. */
@@ -456,14 +473,13 @@ fun TitleArt(logo: String?, name: String, w: Int, h: Int, align: Alignment, type
 @Composable
 private fun CardRow(
     row: HomeRow, nav: Nav, focus: String, inRows: Boolean,
-    fr: (String) -> FocusRequester, onFocus: (String) -> Unit, up: String, down: String?, onClick: (Card) -> Unit,
+    fr: (String) -> FocusRequester, onFocus: (String) -> Unit, up: (Int) -> String, down: (Int) -> String?, onClick: (Card) -> Unit,
 ) {
     val col = (row.cards.indexOfFirst { it.key == focus }.takeIf { it >= 0 } ?: nav.homeCols[row.key] ?: 0).coerceAtMost(row.cards.lastIndex)
-    val step = (if (row.wide) WIDE_W else POSTER_W) + GAP
+    val step = stepOf(row)
     // the row only slides once its cards run past the screen's right edge, and never further than its end needs:
     // a short row stays put, filling the screen from the left instead of leaving one card alone there
-    val room = 1920 - LEFT - EDGE + GAP
-    val shift = (col * step).coerceAtMost((row.cards.size * step - room).coerceAtLeast(0))
+    val shift = rowShift(row, col)
     val firstShown = (shift + step - 1) / step
     val x by animateFloatAsState(-shift * Px.screen, Move.slide(Move.Focus), label = "row-x")
     Row(
@@ -473,8 +489,8 @@ private fun CardRow(
         row.cards.forEachIndexed { i, c ->
             val keys = Modifier
                 .focusProperties {
-                    this.up = fr(up)
-                    if (down != null) this.down = fr(down)
+                    this.up = fr(up(i))
+                    down(i)?.let { k -> this.down = fr(k) }
                     left = if (i > 0) fr(row.cards[i - 1].key) else FocusRequester.Cancel
                     right = if (i < row.cards.lastIndex) fr(row.cards[i + 1].key) else FocusRequester.Cancel
                 }
@@ -500,10 +516,8 @@ private fun WideCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Bool
                 .control(fr, { f -> focused = f; onFocus(f) }, onClick),
         ) {
             it.wideSmall?.let { u -> AsyncImage(u, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-        }
-        val shown by animateFloatAsState(it.progress, Move.slide(Move.Art), label = "progress")
-        Box(Modifier.padding(top = BAR_GAP.px).fillMaxWidth().height(6.px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Ink.copy(alpha = 0.12f))) {
-            Box(Modifier.fillMaxHeight().width(maxOf(12f, WIDE_W * shown).px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Accent))
+            val shown by animateFloatAsState(it.progress, Move.slide(Move.Art), label = "progress")
+            CardProgress(shown)
         }
         Text(it.showTitle, style = ts(26, 32, 700, track = -0.01f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.px))
         val left = (it.durMs - it.pos).takeIf { l -> it.pos > 0 && l > 0 }?.let { l -> leftWords(l) }
@@ -529,13 +543,11 @@ private fun PosterCard(c: Card, keys: Modifier, fr: FocusRequester, onFocus: (Bo
             if (poster != null) AsyncImage(poster, c.item.displayTitle, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(
                 c.item?.displayTitle ?: c.download!!.title, style = ts(26, 32, 700), maxLines = 4, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(18.px),
+                modifier = Modifier.padding(start = 18.px, end = 18.px, top = 18.px, bottom = 40.px),
             )
-        }
-        c.download?.let { d ->
-            val shown by animateFloatAsState(d.progress / 100f, tween(if (Move.reduced) 0 else 4800), label = "download")
-            Box(Modifier.padding(top = BAR_GAP.px).fillMaxWidth().height(6.px).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.Ink.copy(alpha = 0.12f))) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0.04f, 1f)).background(Pal.Accent))
+            c.download?.let { d ->
+                val shown by animateFloatAsState(d.progress / 100f, tween(if (Move.reduced) 0 else 4800), label = "download")
+                CardProgress(shown)
             }
         }
     }

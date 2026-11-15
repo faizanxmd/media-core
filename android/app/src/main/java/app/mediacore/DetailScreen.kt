@@ -339,11 +339,8 @@ private fun EpisodeRow(ep: Item, upNext: Boolean, focused: Boolean, modifier: Mo
     Row(modifier.width(EP_W.px).height(180.px), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(320.px, 180.px).lift(ringOf(focused)).softShadow(ShadowKind.Small).clip(Corner).background(Pal.Raised)) {
             ep.wideSmall?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-            // part-watched: how far, along the still's foot, as on Home's cards
-            if (ep.progress > 0f && !ep.watched) Box(
-                Modifier.align(Alignment.BottomStart).padding(start = 12.px, end = 12.px, bottom = 12.px).fillMaxWidth().height(6.px)
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(3.px)).background(Pal.BaseDeep.copy(alpha = 0.55f)),
-            ) { Box(Modifier.fillMaxHeight().fillMaxWidth(ep.progress.coerceAtLeast(0.04f)).background(Pal.Accent)) }
+            // part-watched: how far, inside the still's foot, as on Home's cards
+            if (ep.progress > 0f && !ep.watched) CardProgress(ep.progress)
         }
         Column(Modifier.padding(start = 32.px).weight(1f)) {
             // a real name gets "EPISODE 2" over it; a nameless one is just "Episode 2"

@@ -28,7 +28,10 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 17. A short row (fewer cards than fit across) stays put while you move along it; only a long row slides, and never past its last card.
 18. Episodes: a part-watched one has a progress bar along its still's foot; a watched one says "Watched" on the right.
 19. Settings' section headings are a light shade of the accent, easy to read.
-20. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+20. The type is Source Sans 3 everywhere (one width, a little larger and never lighter than medium). Nothing is cut off or overlapping on Home, a title, Episodes, Settings or the quit question.
+21. Continue watching: the progress is a thin bar inside the picture's foot, over a soft dark fade, and it lifts with the card; the same on episode stills and downloading posters.
+22. Up and Down between rows land on the card straight above or below on screen, not where that row was last.
+23. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 
