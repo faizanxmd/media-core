@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,16 +33,19 @@ type TMeta struct {
 	Rating   float64  `json:"rating,omitempty"`
 	Genres   []string `json:"genres,omitempty"`
 	Cast     []Person `json:"cast,omitempty"`
-	Runtime  int      `json:"runtime,omitempty"` // minutes
-	Cert     string   `json:"cert,omitempty"`    // U/A 16+, R, TV-MA…
-	Date     string   `json:"date,omitempty"`    // release / first air date
+	Director []string `json:"director,omitempty"` // films: who directed it
+	Music    []string `json:"music,omitempty"`    // films and shows: the composer
+	Creator  []string `json:"creator,omitempty"`  // shows: who created it
+	Runtime  int      `json:"runtime,omitempty"`  // minutes
+	Cert     string   `json:"cert,omitempty"`     // U/A 16+, R, TV-MA…
+	Date     string   `json:"date,omitempty"`     // release / first air date
 	Studio   string   `json:"studio,omitempty"`
 	Status   string   `json:"status,omitempty"` // shows: Returning Series, Ended
 	V        int      `json:"v,omitempty"`      // tmetaVersion it was fetched with
 }
 
 // Bump when what fetchMovie/fetchShow store changes, so cached entries are re-read.
-const tmetaVersion = 2
+const tmetaVersion = 3
 
 type Person struct {
 	Name  string `json:"name"`
@@ -541,7 +545,28 @@ type tmdbCredits struct {
 		Character string `json:"character"`
 		Profile   string `json:"profile_path"`
 	}
+	Crew []struct {
+		Name string `json:"name"`
+		Job  string `json:"job"`
+	}
 }
+
+// crew is up to two names credited with any of jobs, in TMDB's order, each once.
+func (c tmdbCredits) crew(jobs ...string) []string {
+	var out []string
+	for _, p := range c.Crew {
+		if len(out) == 2 {
+			break
+		}
+		if slices.Contains(jobs, p.Job) && !slices.Contains(out, p.Name) {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+// The jobs TMDB uses for a film's or show's composer.
+var musicJobs = []string{"Original Music Composer", "Music", "Music Director", "Composer"}
 
 func (c tmdbCredits) people(n int) []Person {
 	var out []Person
@@ -597,7 +622,8 @@ func (t *TMDB) fetchMovie(ctx context.Context, id int) error {
 	}
 	m := &TMeta{TMDB: r.ID, Title: r.Title, Overview: r.Overview, Tagline: r.Tagline, Poster: r.Poster,
 		Backdrop: r.Backdrop, Logo: r.Images.logo(), Rating: round1(r.Vote), Genres: r.Genres.names(),
-		Cast: r.Credits.people(12), Runtime: r.Runtime, Date: r.Date, Year: yearOf(r.Date), V: tmetaVersion}
+		Cast: r.Credits.people(12), Director: r.Credits.crew("Director"), Music: r.Credits.crew(musicJobs...),
+		Runtime: r.Runtime, Date: r.Date, Year: yearOf(r.Date), V: tmetaVersion}
 	if s := r.Studios.names(); len(s) > 0 {
 		m.Studio = s[0]
 	}
@@ -635,6 +661,7 @@ func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 		Runtime  []int     `json:"episode_run_time"`
 		Genres   namedList `json:"genres"`
 		Networks namedList `json:"networks"`
+		Created  namedList `json:"created_by"`
 		Credits  tmdbCredits
 		Images   tmdbImages
 		Ratings  struct {
@@ -650,7 +677,11 @@ func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 	}
 	m := &TMeta{TMDB: r.ID, Title: r.Name, Overview: r.Overview, Tagline: r.Tagline, Poster: r.Poster,
 		Backdrop: r.Backdrop, Logo: r.Images.logo(), Rating: round1(r.Vote), Genres: r.Genres.names(),
-		Cast: r.Credits.people(12), Date: r.Date, Year: yearOf(r.Date), Status: r.Status, V: tmetaVersion}
+		Cast: r.Credits.people(12), Music: r.Credits.crew(musicJobs...), Date: r.Date, Year: yearOf(r.Date),
+		Status: r.Status, V: tmetaVersion}
+	if c := r.Created.names(); len(c) > 0 {
+		m.Creator = c[:min(2, len(c))]
+	}
 	if len(r.Runtime) > 0 {
 		m.Runtime = r.Runtime[0]
 	}
