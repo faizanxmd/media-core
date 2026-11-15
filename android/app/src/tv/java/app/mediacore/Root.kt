@@ -49,7 +49,7 @@ fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
             BackHandler(enabled = nav.stack.size > 1) { nav.back() }
             AnimatedContent(
                 nav.stack.last(),
-                transitionSpec = { fadeIn(Move.fade(Move.Screen)) togetherWith fadeOut(Move.fade(Move.Screen)) },
+                transitionSpec = { Move.through() },
                 label = "screen",
             ) { s ->
                 when (s) {
@@ -60,10 +60,32 @@ fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
                 }
             }
             Offline(nav)
+            Intro(nav)
             // into and out of the player: the whole screen goes to black and comes back from it
             val black = nav.black.value
             if (black > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = black }.background(Color.Black))
         }
+    }
+}
+
+/**
+ * Opening the app: the wordmark, centred on the dark ground Android's splash already showed, until Home has its
+ * titles (at least 600 ms, so it reads as a beat and not a flash; at most 2.5 s), then it fades away into Home.
+ */
+@Composable
+private fun Intro(nav: Nav) {
+    if (nav.introDone) return
+    val a = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(Unit) {
+        val start = System.nanoTime()
+        while (nav.home == null && !nav.offline && System.nanoTime() - start < 2_500_000_000L) delay(50)
+        val waited = (System.nanoTime() - start) / 1_000_000
+        if (waited < 600) delay(600 - waited)
+        a.animateTo(0f, Move.fade(Move.Through))
+        nav.introDone = true
+    }
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a.value }.background(Pal.Base), contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Wordmark(height = 120.px)
     }
 }
 

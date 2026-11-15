@@ -249,7 +249,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         // the hero's words: logo, meta line, story. They fade out and in on their own, apart from the art
         AnimatedContent(
             hero,
-            transitionSpec = { fadeIn(Move.fade(Move.Focus), initialAlpha = 0f) togetherWith fadeOut(Move.fade(Move.Focus)) },
+            transitionSpec = { Move.through(Move.Screen) },
             contentKey = { it?.key },
             label = "hero",
         ) { h -> if (h != null) HeroWords(h, heroDetail?.takeIf { it.first.id == h.item?.id }?.first) }
@@ -391,7 +391,7 @@ private fun HeroWords(h: Hero, detail: Item?) {
                 val seasons = (detail ?: it).seasons.size.takeIf { n -> n > 0 }
                 listOfNotNull(
                     it.displayYear.takeIf { y -> y > 0 }?.toString(), it.meta?.genres?.firstOrNull(),
-                    seasons?.let { n -> if (n == 1) "1 Season" else "$n Seasons" } ?: it.count.takeIf { n -> n > 0 }?.let { n -> "$n episodes" },
+                    seasons?.let { n -> if (n == 1) "1 Season" else "$n Seasons" }, // added at the end once known, never swapped
                 )
             } else listOfNotNull(
                 it.displayYear.takeIf { y -> y > 0 }?.toString(), it.meta?.genres?.firstOrNull(),
@@ -428,13 +428,15 @@ fun TitleArt(logo: String?, name: String, w: Int, h: Int, align: Alignment, type
             val img by androidx.compose.runtime.produceState<LogoArt?>(Logos.cached(logo!!, w, h), logo) {
                 value = Logos.get(ctx, logo, w, h).also { if (it == null) failed = true }
             }
+            // a logo already in memory is there at once; one that has to load fades in, never pops
+            val shown by animateFloatAsState(if (img != null) 1f else 0f, Move.fade(Move.Focus), label = "logo")
             img?.let { l ->
                 // the picture is the logo plus its shadow's margin all round: placed by hand, so the logo's own
                 // edges land on the box's left and its top or bottom, and the margin hangs outside
                 val bottom = align == Alignment.BottomStart
                 androidx.compose.foundation.Image(
                     l.bitmap.asImageBitmap(), name,
-                    Modifier.layout { m, c ->
+                    Modifier.graphicsLayer { alpha = shown }.layout { m, c ->
                         val p = m.measure(androidx.compose.ui.unit.Constraints.fixed(l.bitmap.width, l.bitmap.height))
                         layout(c.maxWidth, c.maxHeight) {
                             p.place(-l.pad, if (bottom) c.maxHeight - l.bitmap.height + l.pad else -l.pad)

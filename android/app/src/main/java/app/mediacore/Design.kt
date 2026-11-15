@@ -2,6 +2,10 @@
 
 package app.mediacore
 
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.ContentTransform
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import android.provider.Settings
@@ -168,6 +172,18 @@ object Move {
 
     /** A slide: jumps straight there with animations off. */
     fun <T> slide(ms: Int): FiniteAnimationSpec<T> = if (reduced) snap() else tween(ms, easing = Ease)
+
+    const val Through = 300
+
+    /**
+     * One thing giving way to another (a screen, the hero's words, a season's episodes): the old fades out quickly,
+     * then the new fades in, so the two are never seen on top of each other half-faded.
+     */
+    fun through(ms: Int = Through): ContentTransform {
+        val out = if (reduced) 100 else ms * 35 / 100
+        val enter = if (reduced) 100 else ms - out
+        return fadeIn(tween(enter, delayMillis = if (reduced) 0 else out, easing = Ease)) togetherWith fadeOut(tween(out, easing = Ease))
+    }
 }
 
 // ---------- icons, drawn from the boards' own SVG ----------

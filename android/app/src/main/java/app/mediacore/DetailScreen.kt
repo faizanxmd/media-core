@@ -295,7 +295,7 @@ private fun EpisodesBlock(
     }
     // the season's episodes: another season crossfades in
     AnimatedContent(
-        season, transitionSpec = { fadeIn(Move.fade(Move.Screen)) togetherWith fadeOut(Move.fade(Move.Screen)) }, label = "season",
+        season, transitionSpec = { Move.through(Move.Screen) }, label = "season",
         modifier = Modifier.offset(EP_X.px, (EPISODES_Y + 56).px),
     ) { s ->
         val eps = main.seasons.getOrNull(s)?.episodes.orEmpty()

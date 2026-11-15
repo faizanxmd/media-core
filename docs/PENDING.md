@@ -23,7 +23,9 @@ Since build 2026.11.14-2048: everything is sized for a TV across the room (body 
 12. Settings, Look: Accent colour steps through Blue, White, Ember and Red. The focused Play, progress bars and Settings' headings change at once and stay changed after a restart; the wordmark's core stays blue. With White, a focused Play has dark words.
 13. Home's rows sit tighter: 16 px between cards, the progress bar close under its card, and a card that has slid past the left edge fades away instead of peeking in half-cut. A focused card's border still clears its neighbours.
 14. A title's year line and story (Home and title page) read clearly over bright art: near-white with a soft shadow.
-15. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
+15. Opening the app: no round icon. The dark screen shows the Media Core wordmark, centred, for a beat (about half a second, longer only while mint answers), then it fades into Home.
+16. Moving between screens (Home, a title, Settings), changing the hero on Home and changing season: the old words fade out first and the new ones fade in, never two sets overlapping. A title's logo fades in rather than popping, and a show's "1 Season" is added once known instead of replacing "8 episodes".
+17. From the sofa, every screen reads comfortably, nothing is cut off at the edges or bottom, and the focused thing is clear from its border alone.
 
 ## A new Audio icon (TV and phone)
 

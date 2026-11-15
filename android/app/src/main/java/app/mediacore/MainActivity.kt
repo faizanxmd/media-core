@@ -67,6 +67,7 @@ class Nav {
     val black = Animatable(0f)
     var inPlayer = false
     var titleFocus: String? = null
+    var introDone by mutableStateOf(false) // the wordmark at start has made way for Home
     var heroKey: String? = null // the title Home's hero last showed // the title page's button to land on when it comes back
 
     fun open(s: Screen) { stack.add(s) }
