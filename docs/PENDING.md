@@ -68,6 +68,15 @@ Measured on the TV: a frame on Home took 20 ms of GPU time, and 33 ms while the 
 - The words, rows and buttons still fade as before, with no flash of black at app start or behind the art.
 - A next-up episode in Continue watching reads "S1 E8 · 24 m".
 
+## Picture details and a show's Episodes heading (branch `redesign`, TV only)
+
+Picture details no longer has a big "Picture details" heading; just the title's name, then the numbers. Units sit on their number's baseline ("27.3 Mb/s", "2.35 : 1"); they sat low before. Subtitle tracks with no language aren't listed. On a show's page, "Episodes" is just the word, without the arrow beside it, and "Season 1" lines up under it on the same left edge. Not compiled yet.
+
+### To test
+- Picture details on a film: no heading, units level with the big numbers, no "Unknown" subtitle line.
+- A show's page: "Episodes" at the foot with no arrow; Down slides up and the seasons line up under the heading.
+- Home: from Recently added, Up to Continue watching: the first card's left side should come back whole (it was cut while fading in; the fades no longer draw into a clipped hidden picture).
+
 ## A new Audio icon (TV and phone)
 
 The headphones are replaced by a sound wave in a disc, the same icon the web player now has. Only the icon's path changed in each app's `AppIcons.kt`. Not compiled yet.

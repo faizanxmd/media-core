@@ -255,7 +255,7 @@ private const val SEASON_PITCH = 88 // a 76 px row and 12 under it
 private const val SEASON_W = 340
 
 /**
- * "Episodes ⌄", then the seasons down the left and the season's episodes on the right. Laid out under the first
+ * "Episodes", then the seasons down the left and the season's episodes on the right. Laid out under the first
  * screen; Down slides it up into view. The focused episode holds the top slot and its still lifts.
  */
 @Composable
@@ -263,14 +263,13 @@ private fun EpisodesBlock(
     main: Item, upNext: Item?, season: Int, epOf: (Int) -> Int, active: Boolean, fr: (String) -> FocusRequester,
     onSeason: (Int) -> Unit, onEpisode: (Int, Int) -> Unit, onUp: () -> Unit, onPlay: (Item) -> Unit,
 ) {
-    Row(Modifier.offset(LEFT.px, EPISODES_Y.px), verticalAlignment = Alignment.CenterVertically) {
-        Text("Episodes", style = ts(34, 40, 700, cond = true))
-        Icon(Icons.Down, null, tint = Pal.Ink, modifier = Modifier.padding(start = 12.px).size(30.px))
-    }
+    // just the word, as Home's row titles: the arrow beside it looked like a stray button
+    Text("Episodes", style = ts(34, 40, 700, cond = true), modifier = Modifier.offset(LEFT.px, EPISODES_Y.px))
     var focusedSeason by remember { mutableStateOf(-1) }
     var focusedEpisode by remember { mutableStateOf<String?>(null) }
-    // seasons, as words only: the one in view is named in ink, the others muted; the focused one fills white
-    Box(Modifier.offset(LEFT.px, (EPISODES_Y + 56).px)) {
+    // seasons, as words only: the one in view is named in ink, the others muted; the focused one fills white.
+    // The fill reaches 24 px left of the margin, so "Season 1" lines up under "Episodes" and the page's left edge.
+    Box(Modifier.offset((LEFT - 24).px, (EPISODES_Y + 56).px)) {
         main.seasons.forEachIndexed { s, it ->
             val name by androidx.compose.animation.animateColorAsState(if (s == season) Pal.Ink else Pal.Muted, Move.fade(Move.Focus), label = "season")
             Row(
@@ -436,10 +435,10 @@ private fun PictureDetails(title: Item, it: Item, spec: ArtSpec, onClose: () -> 
         val info = it.info
         val raw = it.raw.optJSONObject("info")
         val name = if (it.isEpisode) "${title.displayTitle} · S${it.season} E${it.episode}" else title.displayTitle
-        Text(name, style = ts(29, 36, 600, Pal.Muted, cond = true), modifier = Modifier.offset(LEFT.px, 140.px))
-        Text("Picture details", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(LEFT.px, 180.px))
+        // just which title this is: the numbers speak for themselves, no "Picture details" heading over them
+        Text(name, style = ts(34, 42, 700), modifier = Modifier.offset(LEFT.px, 150.px))
         // the four that matter most, big
-        Row(Modifier.offset(LEFT.px, 310.px), horizontalArrangement = Arrangement.spacedBy(110.px)) {
+        Row(Modifier.offset(LEFT.px, 260.px), horizontalArrangement = Arrangement.spacedBy(110.px)) {
             info?.res?.ifEmpty { null }?.let { Figure("Resolution", it, null) }
             Figure("Dynamic range", dynamicRange(info?.hdr), null)
             info?.mbps?.takeIf { m -> m > 0 }?.let { m -> Figure("Bitrate", "%.1f".format(m), "Mb/s") }
@@ -447,7 +446,7 @@ private fun PictureDetails(title: Item, it: Item, spec: ArtSpec, onClose: () -> 
             val h = raw?.optInt("h") ?: 0
             if (w > 0 && h > 0) Figure("Aspect ratio", "%.2f".format(w.toFloat() / h), ": 1")
         }
-        Row(Modifier.offset(LEFT.px, 520.px), horizontalArrangement = Arrangement.spacedBy(80.px)) {
+        Row(Modifier.offset(LEFT.px, 470.px), horizontalArrangement = Arrangement.spacedBy(80.px)) {
             Column(Modifier.width(400.px)) {
                 Text("PICTURE", style = CapsLabel)
                 info?.vcodec?.ifEmpty { null }?.let { v -> Spec("Codec", v.substringBefore(" Main").substringBefore(" High")) }
@@ -501,9 +500,10 @@ private fun PictureDetails(title: Item, it: Item, spec: ArtSpec, onClose: () -> 
 private fun Figure(label: String, value: String, unit: String?) {
     Column {
         Text(label.uppercase(), style = CapsLabel)
-        Row(Modifier.padding(top = 12.px), verticalAlignment = Alignment.Bottom) {
-            Text(value, style = ts(76, 80, 650, tabular = true, track = -0.02f), maxLines = 1)
-            if (unit != null) Text(unit, style = ts(34, 56, 500, Pal.Muted), modifier = Modifier.padding(start = 10.px))
+        // the unit sits on the number's baseline ("27.3 Mb/s", "2.35 : 1"), not on the bottom of its line box
+        Row(Modifier.padding(top = 12.px)) {
+            Text(value, style = ts(76, 80, 650, tabular = true, track = -0.02f), maxLines = 1, modifier = Modifier.alignByBaseline())
+            if (unit != null) Text(unit, style = ts(34, 40, 500, Pal.Muted), modifier = Modifier.alignByBaseline().padding(start = 10.px))
         }
     }
 }
@@ -556,7 +556,9 @@ fun bestTrack(tracks: List<String>): SoundTrack? =
 private fun subtitleCounts(labels: List<String>): List<Pair<String, Int>> {
     val out = LinkedHashMap<String, Int>()
     labels.filter { it.isNotBlank() }.forEach { l ->
-        val lang = l.substringBefore(" (").substringBefore(" | ").trim().let { if (it.equals("Unknown", true) || it.equals("und", true)) "Unlabelled" else it }
+        val lang = l.substringBefore(" (").substringBefore(" | ").trim()
+        // a track with no language says nothing worth a line
+        if (lang.equals("Unknown", true) || lang.equals("und", true) || lang.equals("Unknown language", true)) return@forEach
         out[lang] = (out[lang] ?: 0) + 1
     }
     return out.toList()
