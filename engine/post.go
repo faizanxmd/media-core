@@ -292,15 +292,46 @@ func isSample(p string) bool {
 }
 
 func move(src, dst string) error {
-	os.MkdirAll(filepath.Dir(dst), 0o2775)
-	if err := os.Rename(src, dst); err == nil {
-		return nil
+	return moveCtx(context.Background(), src, dst)
+}
+
+func moveCtx(ctx context.Context, src, dst string) error {
+	if _, err := os.Lstat(dst); err == nil {
+		return fmt.Errorf("%s already exists", filepath.Base(dst))
 	}
-	cmd := exec.Command("mv", "-f", src, dst) // across filesystems
+	if err := os.MkdirAll(filepath.Dir(dst), 0o2775); err != nil {
+		return err
+	}
+	if err := os.Link(src, dst); err == nil {
+		return os.Remove(src)
+	} else if errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("%s already exists", filepath.Base(dst))
+	}
+	if _, err := os.Lstat(dst); err == nil {
+		return fmt.Errorf("%s already exists", filepath.Base(dst))
+	}
+	cmd := exec.CommandContext(ctx, "mv", "-n", "--", src, dst) // across filesystems
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("move %s: %s", filepath.Base(src), out)
 	}
+	if _, err := os.Lstat(src); err == nil {
+		return fmt.Errorf("%s already exists", filepath.Base(dst))
+	}
 	return nil
+}
+
+func uniqueSubPath(dst string) string {
+	if _, err := os.Lstat(dst); err != nil {
+		return dst
+	}
+	e := filepath.Ext(dst)
+	stem := strings.TrimSuffix(dst, e)
+	for i := 2; ; i++ {
+		cand := fmt.Sprintf("%s.%d%s", stem, i, e)
+		if _, err := os.Lstat(cand); err != nil {
+			return cand
+		}
+	}
 }
 
 // place moves unpacked/downloaded files to their library names; returns video paths.
@@ -343,11 +374,17 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 		placed = append(placed, dst)
 		for _, sub := range filesWith(src, SubExt) {
 			_, tail, _ := strings.Cut(filepath.Base(sub), ".")
-			move(sub, filepath.Join(final, base+"."+tail))
+			subDst := uniqueSubPath(filepath.Join(final, base+"."+tail))
+			if err := move(sub, subDst); err != nil {
+				return nil, err
+			}
 		}
 	case "tv":
 		show := clean(p.Title)
 		def, _ := atoi(p.Season, 1)
+		type movePair struct{ src, dst string }
+		var videoMoves []movePair
+		seen := map[string]bool{}
 		for _, v := range videos {
 			s, e, named := epParts(filepath.Base(v))
 			if !named {
@@ -358,13 +395,21 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 			if e > 0 {
 				name = fmt.Sprintf("%s - S%02dE%02d.%s", show, s, e, ext(v))
 			}
-			if err := move(v, filepath.Join(sdir, name)); err != nil {
+			dst := filepath.Join(sdir, name)
+			if _, err := os.Lstat(dst); err == nil || seen[dst] {
+				return nil, fmt.Errorf("%s already exists", name)
+			}
+			seen[dst] = true
+			videoMoves = append(videoMoves, movePair{v, dst})
+		}
+		if len(videoMoves) == 0 {
+			return nil, errors.New("no video files found")
+		}
+		for _, m := range videoMoves {
+			if err := move(m.src, m.dst); err != nil {
 				return nil, err
 			}
-			placed = append(placed, filepath.Join(sdir, name))
-		}
-		if len(placed) == 0 {
-			return nil, errors.New("no video files found")
+			placed = append(placed, m.dst)
 		}
 		// subtitles that name an episode: "Show - S01E02.en.srt"
 		for _, sub := range filesWith(src, SubExt) {
@@ -379,8 +424,11 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 			if lang := reSubLang.FindStringSubmatch(filepath.Base(sub)); lang != nil {
 				suffix = "." + strings.ToLower(lang[1]) + suffix
 			}
-			move(sub, filepath.Join(Media, "TV Shows", show, fmt.Sprintf("Season %02d", s),
+			subDst := uniqueSubPath(filepath.Join(Media, "TV Shows", show, fmt.Sprintf("Season %02d", s),
 				fmt.Sprintf("%s - S%02dE%02d%s", show, s, e, suffix)))
+			if err := move(sub, subDst); err != nil {
+				return nil, err
+			}
 		}
 		c.log(fmt.Sprintf("Placed %d episode%s", len(placed), plural(len(placed))))
 	case "music":
@@ -402,13 +450,22 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 			album := clean(firstOf(tags["album"], fallbackAlbum))
 			dst := filepath.Join(Media, "Music", artist, album)
 			ents, _ := os.ReadDir(dir)
+			type movePair struct{ src, dst string }
+			var musicMoves []movePair
 			for _, f := range ents {
 				low := strings.ToLower(f.Name())
 				if f.IsDir() || strings.HasSuffix(low, ".url") || strings.HasSuffix(low, ".lnk") ||
 					strings.HasSuffix(low, ".exe") || strings.HasSuffix(low, ".html") || strings.HasSuffix(low, ".htm") {
 					continue
 				}
-				if err := move(filepath.Join(dir, f.Name()), filepath.Join(dst, f.Name())); err != nil {
+				to := filepath.Join(dst, f.Name())
+				if _, err := os.Lstat(to); err == nil {
+					return nil, fmt.Errorf("%s already exists", f.Name())
+				}
+				musicMoves = append(musicMoves, movePair{filepath.Join(dir, f.Name()), to})
+			}
+			for _, m := range musicMoves {
+				if err := move(m.src, m.dst); err != nil {
 					return nil, err
 				}
 			}
@@ -539,6 +596,9 @@ func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
 		return "", fmt.Errorf("verify failed: converted file reports DV profile %d", p)
 	}
 	final := strings.TrimSuffix(path, filepath.Ext(path)) + ".mkv"
+	if final != path && exists(final) {
+		return "", fmt.Errorf("%s already exists", filepath.Base(final))
+	}
 	if err := os.Rename(out, final); err != nil {
 		return "", err
 	}
