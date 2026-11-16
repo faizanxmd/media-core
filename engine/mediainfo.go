@@ -21,9 +21,10 @@ type MInfo struct {
 	HDR      string    `json:"hdr,omitempty"`    // Dolby Vision 8.1, HDR10, HLG
 	Mbps     float64   `json:"mbps,omitempty"`   // overall bitrate
 	Audio    string    `json:"audio,omitempty"`  // default audio track: TrueHD Atmos 7.1
-	VCodec   string    `json:"vcodec,omitempty"` // HEVC Main 10
-	Tracks   []string  `json:"tracks,omitempty"` // every audio track, with language
-	Subs     []string  `json:"subs,omitempty"`   // embedded subtitle languages
+	VCodec      string    `json:"vcodec,omitempty"` // HEVC Main 10
+	Tracks      []string  `json:"tracks,omitempty"` // every audio track, with language
+	TrackTitles []string  `json:"track_titles,omitempty"`
+	Subs        []string  `json:"subs,omitempty"`   // embedded subtitle languages
 	Bits     int       `json:"bits,omitempty"`   // music: bit depth
 	Rate     int       `json:"rate,omitempty"`   // music: sample rate (Hz)
 	Dur      float64   `json:"dur,omitempty"`    // seconds
@@ -41,7 +42,7 @@ type MInfo struct {
 	PGS       bool     `json:"pgs,omitempty"`
 }
 
-const miVersion = 6 // bump when MInfo gains fields, so cached entries are re-read
+const miVersion = 7 // bump when MInfo gains fields, so cached entries are re-read
 
 // ffprobe reads only the file's header, but on the HDD that's still a seek
 // per file, so results are cached by size+mtime in mediainfo.json.
@@ -136,7 +137,7 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 	out, err := exec.CommandContext(ctx, "ffprobe", append(pre, "-show_entries",
 		"format=bit_rate,duration,format_name:stream=codec_type,codec_name,profile,width,height,color_transfer,channels,avg_frame_rate,r_frame_rate,"+
 			"bits_per_raw_sample,bits_per_sample,sample_rate:stream_tags=language,title:"+
-			"stream_side_data=dv_profile,dv_bl_signal_compatibility_id:stream_disposition=default,forced,attached_pic",
+			"stream_side_data=side_data_type,dv_profile,dv_bl_signal_compatibility_id:stream_disposition=default,forced,attached_pic",
 		"-show_chapters", "-of", "json", path)...).Output()
 	if err != nil {
 		return nil
@@ -165,10 +166,12 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 			RawBits  string `json:"bits_per_raw_sample"`
 			Bits     int    `json:"bits_per_sample"`
 			Rate     string `json:"sample_rate"`
-			Tags     struct{ Language string }
+			Tags     struct{ Language, Title string }
 			Side     []struct {
-				DV     int `json:"dv_profile"`
-				Compat int `json:"dv_bl_signal_compatibility_id"`
+				Type           string          `json:"side_data_type"`
+				DV             int             `json:"dv_profile"`
+				Compat         int             `json:"dv_bl_signal_compatibility_id"`
+				DynamicHDRPlus json.RawMessage `json:"dynamic_hdr_plus"`
 			} `json:"side_data_list"`
 			Disp struct {
 				Default, Forced int
@@ -193,6 +196,8 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 		m.Chapters = append(m.Chapters, ch)
 	}
 	video, audio := -1, -1
+	var trackTitles []string
+	hasTrackTitles := false
 	for i, s := range r.Streams {
 		if s.Type == "video" && video < 0 && s.Disp.Pic == 0 && s.Codec != "mjpeg" && s.Codec != "png" { // skip cover art
 			video = i
@@ -211,6 +216,11 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 				t += " · " + l
 			}
 			m.Tracks = append(m.Tracks, t)
+			title := strings.TrimSpace(s.Tags.Title)
+			if title != "" {
+				hasTrackTitles = true
+			}
+			trackTitles = append(trackTitles, title)
 		case "subtitle":
 			if s.Codec == "hdmv_pgs_subtitle" || s.Codec == "dvd_subtitle" {
 				m.PGS = true
@@ -226,6 +236,9 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 				m.Subs = append(m.Subs, l)
 			}
 		}
+	}
+	if hasTrackTitles {
+		m.TrackTitles = trackTitles
 	}
 	if video >= 0 {
 		v := r.Streams[video]
@@ -244,12 +257,16 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 		case h > 0:
 			m.Res = fmt.Sprintf("%dp", h)
 		}
+		hdr10Plus := false
 		for _, sd := range v.Side {
 			if sd.DV > 0 {
 				m.HDR = fmt.Sprintf("Dolby Vision %d", sd.DV)
 				if sd.Compat > 0 {
 					m.HDR += fmt.Sprintf(".%d", sd.Compat)
 				}
+			}
+			if sd.Type == "HDR Dynamic Metadata SMPTE2094-40" || strings.EqualFold(sd.Type, "dynamic_hdr_plus") || len(sd.DynamicHDRPlus) > 0 {
+				hdr10Plus = true
 			}
 		}
 		m.VCodec = map[string]string{"hevc": "HEVC", "h264": "H.264", "av1": "AV1", "vp9": "VP9", "mpeg4": "MPEG-4", "mpeg2video": "MPEG-2"}[v.Codec]
@@ -267,10 +284,12 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 			m.VCodec += " Main 10"
 		}
 		if m.HDR == "" {
-			switch v.Transfer {
-			case "smpte2084":
+			switch {
+			case hdr10Plus:
+				m.HDR = "HDR10+"
+			case v.Transfer == "smpte2084":
 				m.HDR = "HDR10"
-			case "arib-std-b67":
+			case v.Transfer == "arib-std-b67":
 				m.HDR = "HLG"
 			}
 		}
@@ -280,6 +299,7 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 		m.Audio = audioLabel(a.Codec, a.Profile, a.Channels)
 		if video < 0 { // music: quality instead of a track list
 			m.Tracks = nil
+			m.TrackTitles = nil
 			m.Bits, _ = strconv.Atoi(a.RawBits)
 			if m.Bits == 0 {
 				m.Bits = a.Bits
