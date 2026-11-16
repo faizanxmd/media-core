@@ -177,7 +177,7 @@ func (e *Engine) syncLocked() bool {
 				e.store.Update(j.ID, true, func(j *Job) { j.GID = gid })
 				s = all[gid]
 			} else {
-				e.submit(ctx, j)
+				e.submit(ctx, j, true)
 				active = true
 				continue
 			}
@@ -253,7 +253,7 @@ func (e *Engine) syncLocked() bool {
 	return active
 }
 
-func (e *Engine) submit(ctx context.Context, j Job) {
+func (e *Engine) submit(ctx context.Context, j Job, resubmit bool) {
 	dir, fn, _, err := jobPaths(j.Plan, j.ID)
 	if err != nil {
 		e.fail(j.ID, err.Error())
@@ -275,16 +275,25 @@ func (e *Engine) submit(ctx context.Context, j Job) {
 		}
 	}
 	n := itoa(max(j.Connections, 1))
-	gid, err := e.aria.Add(ctx, j.URL, map[string]string{
+	opts := map[string]string{
 		"dir": dir, "out": fn, "split": n, "max-connection-per-server": n,
-	})
+	}
+	path := filepath.Join(dir, fn)
+	if resubmit || exists(path+".aria2") {
+		opts["continue"] = "true"
+		opts["auto-file-renaming"] = "false"
+		if resubmit && !exists(path+".aria2") && exists(path) && (j.GID != "" || j.Started > 0 || j.DoneBytes > 0) {
+			opts["allow-overwrite"] = "true"
+		}
+	}
+	gid, err := e.aria.Add(ctx, j.URL, opts)
 	if err != nil {
 		e.fail(j.ID, "aria2 refused the download: "+err.Error())
 		return
 	}
 	e.store.Update(j.ID, true, func(j *Job) {
 		j.GID = gid
-		logLine(j, fmt.Sprintf("Queued in aria2 → %s (%s connection%s)", rel(filepath.Join(dir, fn)), n, plural(max(j.Connections, 1))))
+		logLine(j, fmt.Sprintf("Queued in aria2 → %s (%s connection%s)", rel(path), n, plural(max(j.Connections, 1))))
 	})
 }
 
@@ -328,7 +337,7 @@ func (e *Engine) NewJob(p Probe, plan Plan) (Job, error) {
 	defer cancel()
 	e.op.Lock()
 	e.store.Add(j)
-	e.submit(ctx, *j)
+	e.submit(ctx, *j, false)
 	e.op.Unlock()
 	e.Kick()
 	cp, _ := e.store.Get(j.ID)
@@ -436,7 +445,7 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 			j.State, j.GID, j.Downloaded = Queued, "", false
 			logLine(j, "Queued again (resumes where it stopped)")
 		})
-		e.submit(ctx, j)
+		e.submit(ctx, j, true)
 	case "remove":
 		if j.busy() {
 			return j, errBusy
