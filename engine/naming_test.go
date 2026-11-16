@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -83,5 +84,48 @@ func TestDispositionName(t *testing.T) {
 	}
 	if got := dispositionName(""); got != "" {
 		t.Errorf("empty: %q", got)
+	}
+}
+
+func TestExtIsSanitised(t *testing.T) {
+	cases := []struct {
+		ext  string
+		want string
+	}{
+		{"MKV", "Film (2020).mkv"},
+		{"mkv/../../x", "Film (2020).mkvx"},
+		{"../", "Film (2020)"},
+	}
+	for _, tc := range cases {
+		_, file, final, err := planPaths(Plan{
+			Kind:  "movie",
+			Title: "Film",
+			Year:  "2020",
+			Ext:   tc.ext,
+		})
+		if err != nil {
+			t.Fatalf("ext %q: unexpected error: %v", tc.ext, err)
+		}
+		if file != tc.want {
+			t.Errorf("ext %q: file = %q, want %q", tc.ext, file, tc.want)
+		}
+		wantFinal := filepath.Join(Media, "Movies", "Film (2020)", tc.want)
+		if final != wantFinal {
+			t.Errorf("ext %q: final = %q, want %q", tc.ext, final, wantFinal)
+		}
+	}
+}
+
+func TestPlanPathsRejectsEmptyCleanPath(t *testing.T) {
+	badPaths := []string{".", "..", "/", "a/.."}
+	for _, p := range badPaths {
+		_, _, _, err := planPaths(Plan{Kind: "convert", Path: p})
+		if err == nil || err.Error() != "no file to convert" {
+			t.Errorf("convert Path %q: err = %v, want %q", p, err, "no file to convert")
+		}
+		_, _, _, err = planPaths(Plan{Kind: "movie", Light: true, Into: p, Ext: "mp4"})
+		if err == nil || err.Error() != "a Light copy needs its title" {
+			t.Errorf("Light Into %q: err = %v, want %q", p, err, "a Light copy needs its title")
+		}
 	}
 }

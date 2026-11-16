@@ -133,27 +133,38 @@ func planPaths(p Plan) (dir, file, final string, err error) {
 	if title == "" {
 		title = "Unknown"
 	}
+	cleanExt := strings.Map(func(r rune) rune {
+		if r >= 'A' && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return -1
+	}, p.Ext)
 	withExt := func(base string) string {
-		if p.Ext == "" {
+		if cleanExt == "" {
 			return base
 		}
-		return base + "." + p.Ext
+		return base + "." + cleanExt
 	}
 	if p.Kind == "convert" {
-		if p.Path == "" {
+		relPath := filepath.Clean("/" + p.Path)[1:]
+		if relPath == "" {
 			return "", "", "", errors.New("no file to convert")
 		}
-		f := filepath.Join(Media, filepath.Clean("/" + p.Path)[1:])
+		f := filepath.Join(Media, relPath)
 		return filepath.Dir(f), filepath.Base(f), f, nil
 	}
 	if p.Light {
-		if p.Into == "" {
+		relInto := filepath.Clean("/" + p.Into)[1:]
+		if relInto == "" {
 			return "", "", "", errors.New("a Light copy needs its title")
 		}
 		if p.Archive {
 			return "", "", "", errors.New("a Light copy has to be a link to one video file")
 		}
-		into := filepath.Join(Media, filepath.Clean("/" + p.Into)[1:])
+		into := filepath.Join(Media, relInto)
 		dir, base := filepath.Join(filepath.Dir(into), ".light"), baseName(into)
 		if VideoExt[ext(into)] == false { // a film's folder
 			dir, base = filepath.Join(into, ".light"), filepath.Base(into)
