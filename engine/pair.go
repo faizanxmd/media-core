@@ -382,11 +382,11 @@ func (p *pairing) mount(mux *http.ServeMux, admin bool) {
 	mux.HandleFunc("POST /api/v1/pair/start", p.start)
 	mux.HandleFunc("POST /api/v1/pair/poll", p.poll)
 	mux.HandleFunc("GET /api/v1/prove", p.dev.prove)
-	// me: which device this is, and what it may do (a home device let in by MEDIA_CORE_OPEN_HOME counts as admin)
+	// me: which device this is, and what it may do
 	mux.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) {
 		d := deviceFrom(r)
-		if d == nil {
-			writeJSON(w, 200, map[string]any{"name": "This device", "role": roleAdmin, "kind": "", "open": true})
+		if d == nil { // only reachable through the auth gate, which always sets one
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "pair"})
 			return
 		}
 		writeJSON(w, 200, map[string]any{"id": d.ID, "name": d.Name, "role": d.Role, "kind": d.Kind})

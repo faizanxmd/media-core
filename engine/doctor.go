@@ -113,9 +113,6 @@ func runDoctor(online bool) doctorReport {
 	} else {
 		add("tmdb", "ok", "TMDB key saved", "")
 	}
-	if envOr("MEDIA_CORE_OPEN_HOME", "") == "1" {
-		add("open-home", "warn", "MEDIA_CORE_OPEN_HOME=1 lets home devices in without a key (development only)", "remove it from "+filepath.Join(ConfDir, "engine.env"))
-	}
 
 	// the service
 	exe, _ := selfExe()

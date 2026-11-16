@@ -12,12 +12,12 @@ import (
 
 func TestSetEnvLineKeepsTheRest(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "engine.env")
-	os.WriteFile(p, []byte("# mine\nMEDIA_CORE_NAME=old\nMEDIA_CORE_OPEN_HOME=1\n"), 0o600)
+	os.WriteFile(p, []byte("# mine\nMEDIA_CORE_NAME=old\nMEDIA_CORE_OLD=1\n"), 0o600)
 	if err := setEnvLine(p, "MEDIA_CORE_NAME", "Den"); err != nil {
 		t.Fatal(err)
 	}
 	setEnvLine(p, "MEDIA_CORE_LIBRARY", "/srv/media")
-	setEnvLine(p, "MEDIA_CORE_OPEN_HOME", "")
+	setEnvLine(p, "MEDIA_CORE_OLD", "")
 	b, _ := os.ReadFile(p)
 	if got := string(b); got != "# mine\nMEDIA_CORE_NAME=Den\nMEDIA_CORE_LIBRARY=/srv/media\n" {
 		t.Fatalf("engine.env =\n%s", got)

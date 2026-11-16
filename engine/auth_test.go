@@ -110,12 +110,13 @@ func TestUnclaimedServerSaysSetup(t *testing.T) {
 	}
 }
 
-func TestOpenHomeIsHomeOnly(t *testing.T) {
+// No way in without a key, not even from the home network.
+func TestUnpairedHomeDeviceIsRefused(t *testing.T) {
 	dev, ag, _ := newTestAuth(t)
 	dev.add("Owner", "web", roleAdmin)
-	ag.openHome = true
+	t.Setenv("MEDIA_CORE_OPEN_HOME", "1") // the old development switch does nothing now
 	h := ag.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
-	for addr, want := range map[string]int{"192.168.1.20:1": 204, "203.0.113.9:1": 401} {
+	for addr, want := range map[string]int{"10.0.0.20:1": 401, "127.0.0.1:1": 401, "203.0.113.9:1": 401} {
 		r := httptest.NewRequest("GET", "/api/v1/home", nil)
 		r.RemoteAddr = addr
 		rec := httptest.NewRecorder()
@@ -427,7 +428,7 @@ func TestPairKeyMadeOnCollect(t *testing.T) {
 // A setting with a line break would add lines of its own to engine.env.
 func TestSetEnvLineRefusesLineBreaks(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "engine.env")
-	if err := setEnvLine(p, "MEDIA_CORE_LIBRARY", "/x\nMEDIA_CORE_OPEN_HOME=1"); err == nil {
+	if err := setEnvLine(p, "MEDIA_CORE_LIBRARY", "/x\nMEDIA_CORE_OTHER=1"); err == nil {
 		t.Fatal("a value with a line break was written")
 	}
 }

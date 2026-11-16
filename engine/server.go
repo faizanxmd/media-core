@@ -493,12 +493,9 @@ func serve(o serveOpts) {
 		log.Fatal(err)
 	}
 	dev.cliToken(cliTokenPath())
-	ag := &authGate{dev: dev, openHome: envOr("MEDIA_CORE_OPEN_HOME", "") == "1"}
+	ag := &authGate{dev: dev}
 	activeAuth = ag
 	pr := newPairing(dev, ag)
-	if ag.openHome {
-		log.Print("MEDIA_CORE_OPEN_HOME=1: home-network devices get in without a key (development only)")
-	}
 	if !dev.claimed() {
 		if code, err := newSetupCode(pr.setupPath); err == nil {
 			log.Printf("Not set up yet. Open http://<this server>:%s/#/setup and enter the setup code %s (it lasts 24 hours; media-core-engine setup-code makes a new one)", sitePort(), code)

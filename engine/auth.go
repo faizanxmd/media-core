@@ -322,11 +322,8 @@ func playerRoute(p string) bool {
 }
 
 type authGate struct {
-	dev *devStore
-	// openHome: during development, home-network devices without a key are let in (the apps installed
-	// before pairing existed). MEDIA_CORE_OPEN_HOME=1; removed before the first public release.
-	openHome bool
-	names    sync.Map // client IP -> device name, for "Playing now"
+	dev   *devStore
+	names sync.Map // client IP -> device name, for "Playing now"
 
 	liveMu sync.Mutex
 	live   map[string]map[*int]context.CancelFunc // device ID -> its requests still running (streams, events)
@@ -373,10 +370,6 @@ func (a *authGate) wrap(h http.Handler) http.Handler {
 		}
 		d := a.dev.lookup(requestToken(r))
 		if d == nil {
-			if a.openHome && homeAddr(clientIP(r)) {
-				h.ServeHTTP(w, r)
-				return
-			}
 			if !a.dev.claimed() {
 				writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "setup",
 					"message": "This server isn't set up yet. Open its website: http://<server>:" + sitePort() + "/#/setup"})
