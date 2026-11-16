@@ -25,7 +25,7 @@ type webManifest struct {
 	State       string              `json:"state"`
 	Src         string              `json:"src,omitempty"`       // played directly: the library file or its Light copy
 	HLS         string              `json:"hls,omitempty"`       // repackaged while it plays (stream.go): the stream's master playlist
-	Wait        string              `json:"wait,omitempty"`      // not yet: what mint is doing first
+	Wait        string              `json:"wait,omitempty"`      // not yet: what the server is doing first
 	Light       bool                `json:"light,omitempty"`     // it's the title's Light copy that plays
 	On          map[string]OnDevice `json:"on,omitempty"`        // this browser, the TV and the phone: plays or not, and why (play.go)
 	SubsWait    bool                `json:"subs_wait,omitempty"` // the file's own subtitles are still being read out (subs.go)
@@ -118,7 +118,7 @@ func directManifest(it *Item, c Caps, want ...string) *webManifest {
 		}
 	case "repack":
 		if _, err := keyframes(file); err == errKeysPending {
-			return &webManifest{State: "wait", Wait: "mint is reading this file for the first time. It takes a few minutes."}
+			return &webManifest{State: "wait", Wait: "The server is reading this file for the first time. It takes a few minutes."}
 		} else if err != nil {
 			return nil
 		}

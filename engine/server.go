@@ -13,7 +13,6 @@ import (
 	"log"
 	"mime"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -147,7 +146,7 @@ func (s *Server) routes() http.Handler {
 		http.NotFound(w, r)
 	})
 	// what the web player saw in the browser (player.js, wlog): errors, refused plays, what it can decode.
-	// Lands in the engine's journal, so a problem in Safari can be read here on mint.
+	// Lands in the engine's journal, so a problem in Safari can be read here on the server.
 	mux.HandleFunc("POST /api/weblog", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			UA     string   `json:"ua"`
@@ -458,11 +457,9 @@ func serve() {
 	go pl.watchRelay()
 	gate := newOwnerGate()
 	ps := servePlayer(pl, gate)
+	dc := serveDiscover(":" + portOf(playerAddr(), "8790"))
 	srv := &Server{e: e, p: pl, assets: loadAssets()}
-	addr := Listen
-	if v := os.Getenv("MEDIA_CORE_LISTEN"); v != "" {
-		addr = v
-	}
+	addr := listenAddr()
 	hs := &http.Server{Addr: addr, Handler: gate.wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-shutdownSignal()
@@ -472,6 +469,9 @@ func serve() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		ps.Shutdown(ctx)
+		if dc != nil {
+			dc.Close()
+		}
 		hs.Shutdown(ctx)
 	}()
 	log.Printf("media-core-engine listening on %s", addr)

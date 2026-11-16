@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,7 +25,9 @@ func shutdownSignal() <-chan os.Signal {
 	return ch
 }
 
-const local = "http://127.0.0.1:8780"
+func adminURL() string {
+	return "http://" + net.JoinHostPort("127.0.0.1", portOf(listenAddr(), "8780"))
+}
 
 func main() {
 	cmd := "serve"
@@ -55,7 +58,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "ls":
-		st, err := fetchStatus(local)
+		st, err := fetchStatus(adminURL())
 		if err != nil {
 			fail(err.Error())
 		}
@@ -106,7 +109,7 @@ func postJSON(base, path string, body, out any) error {
 }
 
 func post(path string, body, out any) {
-	if err := postJSON(local, path, body, out); err != nil {
+	if err := postJSON(adminURL(), path, body, out); err != nil {
 		fail(err.Error())
 	}
 }

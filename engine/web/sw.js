@@ -1,5 +1,5 @@
 // Keeps the app shell available so the installed app opens instantly (and
-// says "offline" instead of a browser error when mint is unreachable).
+// says "offline" instead of a browser error when the server is unreachable).
 // API calls always go to the network.
 const CACHE = "media-core-v10";
 const SHELL = ["/", "/app.js", "/app.css", "/icon.svg", "/manifest.webmanifest", "/fonts/inter.woff2", "/player.js", "/pgs.js", "/manager.js", "/vendor/hls.min.js"];

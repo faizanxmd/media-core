@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"html/template"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,8 +139,6 @@ func slimCast(it *Item) *Item {
 	return it
 }
 
-const defaultMagicDNS = "mint.tail25d09d.ts.net"
-
 var (
 	magicDNSMu   sync.Mutex
 	magicDNSAt   time.Time
@@ -145,6 +146,9 @@ var (
 )
 
 func magicDNS() string {
+	if v := strings.TrimSuffix(strings.TrimSpace(envOr("MEDIA_CORE_PUBLIC_HOST", "")), "."); v != "" {
+		return v
+	}
 	magicDNSMu.Lock()
 	defer magicDNSMu.Unlock()
 	if magicDNSName != "" && time.Since(magicDNSAt) < 5*time.Minute {
@@ -169,12 +173,12 @@ func magicDNS() string {
 	if magicDNSName != "" {
 		return magicDNSName
 	}
-	return defaultMagicDNS
+	return ""
 }
 
-// hello lets the app find every address this server answers on, so it can
-// switch between home Wi-Fi and Tailscale without asking.
-func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
+// helloInfo builds the discovery payload for /api/v1/hello and LAN UDP replies.
+func helloInfo() map[string]any {
+	port := portOf(playerAddr(), "8790")
 	var lan, ts []string
 	ifs, _ := net.Interfaces()
 	for _, i := range ifs {
@@ -187,7 +191,7 @@ func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
 			if !ok || ipn.IP.To4() == nil {
 				continue
 			}
-			u := "http://" + ipn.IP.String() + PlayerListen
+			u := "http://" + net.JoinHostPort(ipn.IP.String(), port)
 			if i.Name == "tailscale0" {
 				ts = append(ts, u)
 			} else if ipn.IP.IsPrivate() {
@@ -195,9 +199,22 @@ func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	host, _ := os.Hostname()
-	writeJSON(w, 200, map[string]any{"name": host, "lan": lan, "tailscale": ts,
-		"magicdns": "http://" + magicDNS() + PlayerListen, "app": readAppInfo("media-core")})
+	info := map[string]any{
+		"name":      serverName(),
+		"lan":       lan,
+		"tailscale": ts,
+		"app":       readAppInfo("media-core"),
+	}
+	if mdns := magicDNS(); mdns != "" {
+		info["magicdns"] = "http://" + net.JoinHostPort(mdns, port)
+	}
+	return info
+}
+
+// hello lets the app find every address this server answers on, so it can
+// switch between home Wi-Fi and Tailscale without asking.
+func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, helloInfo())
 }
 
 type dlRow struct {
@@ -457,6 +474,77 @@ func appInfo(name string) http.HandlerFunc {
 	}
 }
 
+func connectDeepLink(info map[string]any) string {
+	var addrs []string
+	if lan, ok := info["lan"].([]string); ok {
+		addrs = append(addrs, lan...)
+	}
+	if ts, ok := info["tailscale"].([]string); ok {
+		addrs = append(addrs, ts...)
+	}
+	if mdns, ok := info["magicdns"].(string); ok && mdns != "" {
+		addrs = append(addrs, mdns)
+	}
+	params := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		params = append(params, "u="+url.QueryEscape(a))
+	}
+	return "mediacore://connect?" + strings.Join(params, "&")
+}
+
+var connectPageTmpl = template.Must(template.New("connect").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Media Core</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box;margin:0}
+body{min-height:100vh;background:#0e1014;color:#f4f5f8;font:450 16px/1.5 system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}
+main{width:100%;max-width:400px}
+h1{font-size:28px;line-height:1.2;font-weight:700}
+.sub{color:#a4a8b0;margin-top:4px;font-size:15px}
+.links{display:flex;flex-direction:column;gap:12px;margin-top:28px}
+a.btn,a.link{display:block;text-align:center;text-decoration:none;border-radius:8px;padding:13px 16px;font-weight:600;font-size:15px}
+a.btn{background:#1b36a8;color:#f4f5f8;margin-top:20px}
+a.btn:hover,a.btn:focus-visible{background:#2443c4}
+a.link{background:#181b21;color:#f4f5f8;border:1px solid #262a32}
+a.link:hover,a.link:focus-visible{background:#262a32}
+.hint{color:#a4a8b0;font-size:14px;margin-top:12px;text-align:center}
+</style>
+</head>
+<body>
+<main>
+<h1>Media Core</h1>
+<p class="sub">{{.Name}}</p>
+<div class="links">
+<a class="link" href="/api/v1/app.apk">Download the TV app</a>
+<a class="link" href="/api/v1/phone-app.apk">Download the phone app</a>
+</div>
+<a class="btn" href="{{.DeepLink}}">Open in Media Core</a>
+<p class="hint">Install the app first, then tap this to connect it to {{.Name}}.</p>
+</main>
+</body>
+</html>
+`))
+
+func renderConnectPage(info map[string]any) []byte {
+	name, _ := info["name"].(string)
+	if name == "" {
+		name = "Media Core"
+	}
+	var buf bytes.Buffer
+	_ = connectPageTmpl.Execute(&buf, struct {
+		Name     string
+		DeepLink template.URL
+	}{
+		Name:     name,
+		DeepLink: template.URL(connectDeepLink(info)),
+	})
+	return buf.Bytes()
+}
+
 // servePlayer runs the player API on its own port. Firewall: home Wi-Fi +
 // tailscale0 only, and of Tailscale only the owner's own devices (owner.go).
 func servePlayer(p *Player, gate *ownerGate) *http.Server {
@@ -464,13 +552,10 @@ func servePlayer(p *Player, gate *ownerGate) *http.Server {
 	p.mount(mux)
 	mountDAV(mux)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write([]byte("Media Core Engine player API. Get the TV/phone app: /api/v1/app.apk\n"))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(renderConnectPage(helloInfo()))
 	})
-	addr := PlayerListen
-	if v := os.Getenv("MEDIA_CORE_PLAYER_LISTEN"); v != "" {
-		addr = v
-	}
+	addr := playerAddr()
 	hs := &http.Server{Addr: addr, Handler: gate.wrap(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("player API listening on %s", addr)

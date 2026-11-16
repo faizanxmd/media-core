@@ -2,8 +2,8 @@
 // The player: the TV's (docs/design-system.md), with a mouse added. hls.js does what Media3 does in the apps.
 // Nothing on screen while playing. A tap of Left/Right skips with a small mark, holding brings the picture strip,
 // pausing or moving the mouse shows the title, bar and controls.
-// wlog: a short line in mint's journal (POST /api/weblog), so what a browser
-// did, Safari's refusals and errors included, can be read on mint.
+// wlog: a short line in the server's journal (POST /api/weblog), so what a browser
+// did, Safari's refusals and errors included, can be read on the server.
 const wlog = (() => {
   let q = [], t = 0;
   const flush = () => {
@@ -17,7 +17,7 @@ const wlog = (() => {
 addEventListener("error", e => wlog(`script error: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno})`));
 addEventListener("unhandledrejection", e => wlog(`unhandled: ${e.reason?.name || ""} ${e.reason?.message || e.reason}`));
 
-// What this browser can play, asked of the browser itself. Sent to mint with
+// What this browser can play, asked of the browser itself. Sent to the server with
 // every "can it play here" question, so Safari gets 4K, HDR, Dolby Vision and
 // Dolby audio as they are, and other browsers what they can take (engine/browser.go).
 const browserCan = (async () => {
@@ -42,7 +42,7 @@ const browserCan = (async () => {
 // a /api/v1/web URL with what this browser can play
 async function webAPI(path) { return api(`${path}${path.includes("?") ? "&" : "?"}can=${await browserCan}`); }
 
-// How fast mint reaches this browser, measured a few seconds after the page loads and again when
+// How fast the server reaches this browser, measured a few seconds after the page loads and again when
 // it's ten minutes old. A title with a Light copy plays that when the link can't carry the film.
 const Link = (() => {
   let mbps = 0, at = 0, busy = false;
@@ -61,7 +61,7 @@ const Link = (() => {
       if (s < 1) [v] = await pull(12 << 20); // a quick link needs a longer pull to read true
       mbps = Math.round(v * 10) / 10; at = Date.now();
       try { sessionStorage.setItem("link", JSON.stringify({ mbps, at })); } catch {}
-      wlog(`link to mint: ${mbps} Mb/s`);
+      wlog(`link to ${serverName}: ${mbps} Mb/s`);
     } catch {}
     busy = false;
   }
@@ -126,7 +126,7 @@ const Player = (() => {
   let ac = null, startAc = null; // listeners of this opening, and of this title's start
 
   // One video element for the whole visit. Safari lets a video start with sound
-  // only from a click, and opening a title waits on mint first, so the click is
+  // only from a click, and opening a title waits on the server first, so the click is
   // long gone by then. A play() during any click unlocks the element for good
   // (prime), so it can start on its own later.
   const video = document.createElement("video");
@@ -190,12 +190,12 @@ const Player = (() => {
     if (slow && manifest.light && mine === opened) pnote(`Slow connection (${Math.round(have)} Mb/s): playing the Light copy`);
     wlog(`open ${it.id} "${it.show ? it.show + " " : ""}${it.title || ""}": ${manifest.state}, ${manifest.src || (manifest.hls ? "stream" : manifest.state === "ready" ? "HLS copy" : "nothing to play")}, sound ${(manifest.audio || []).map(a => `${a.lang || "?"}/${a.codec}${a.plays === false ? "(no)" : ""}`).join(" ")}`);
     if (mine !== opened) return;
-    if (manifest.state === "wait") { showError("Getting this ready", manifest.wait || "mint is preparing this title. Try again in a few minutes.", ""); return; }
+    if (manifest.state === "wait") { showError("Getting this ready", manifest.wait || `${serverLabel()} is preparing this title. Try again in a few minutes.`, ""); return; }
     if (manifest.state !== "ready") { showError("Can't play here", "This browser can't decode this title's picture. A Light copy, added in Manager, would play.", ""); return; }
     const resume = at > 0 ? at : !fromStart && !it.watch?.watched && it.watch?.pos > 0 ? it.watch.pos / 1000 : 0;
     lastGood = resume; cleanSince = 0;
     nowPlaying();
-    // a stream mint makes while it plays (the file's picture untouched), or an old copy made ahead
+    // a stream the server makes while it plays (the file's picture untouched), or an old copy made ahead
     const src = manifest.hls || `/api/v1/web/${it.id}/master.m3u8`;
     if (manifest.src) { // the library file or its Light copy, played as it is
       v.src = manifest.src;
@@ -242,7 +242,7 @@ const Player = (() => {
     if (!item || !el || errorShown) return;
     const at = Math.max(0, (v.currentTime > 1 ? v.currentTime : lastGood) - 1);
     wlog(`broke at ${Math.round(at)} s: ${why}; try ${recoveries + 1}`);
-    if (recoveries++ >= 3) { showError("Can't play this", "It stopped and didn't come back. Check the connection to mint.", String(why || "")); return; }
+    if (recoveries++ >= 3) { showError("Can't play this", `It stopped and didn't come back. Check the connection to ${serverName}.`, String(why || "")); return; }
     busy(true);
     const it = item;
     setTimeout(() => { if (item === it && el) start(it, false, null, at); }, 800 * recoveries);
@@ -561,7 +561,7 @@ const Player = (() => {
   }
   function subOptions() {
     const list = manifest?.subs || [];
-    if (!list.length) return manifest?.subs_wait ? [{ title: "Being read from the file", detail: "A few minutes", selected: false, pick: () => pnote("mint is reading this file's subtitles. Open the menu again in a few minutes.") }] : [];
+    if (!list.length) return manifest?.subs_wait ? [{ title: "Being read from the file", detail: "A few minutes", selected: false, pick: () => pnote(`${serverLabel()} is reading this file's subtitles. Open the menu again in a few minutes.`) }] : [];
     return [{ title: "Off", detail: "", selected: subIndex < 0, pick: () => pickSub(-1) },
       ...list.map((s, i) => {
         const t = s.title || "";
@@ -612,7 +612,7 @@ const Player = (() => {
       if (item?.id === mine && subIndex === i) textCues = parseVTT(t);
     }
   }
-  // the file's own subtitles turn up a few minutes after it's first opened: ask mint again
+  // the file's own subtitles turn up a few minutes after it's first opened: ask the server again
   async function refreshSubs(btn) {
     const mine = item?.id, m = await webAPI(`/api/v1/web/${mine}`);
     if (item?.id !== mine || !manifest || m.state !== "ready") return;

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// The :8780 site (web player and Manager) and the apps' API on :8790 are for the owner only. mint is
+// The :8780 site (web player and Manager) and the apps' API on :8790 are for the owner only. The server is
 // reachable over Tailscale, and if it's ever shared with another account, that
 // account's devices would otherwise get everything, Manager's delete included.
 // Tailscale tells us whose device a connection comes from; anything on
@@ -32,7 +32,7 @@ func mustCIDR(s string) *net.IPNet {
 
 type ownerGate struct {
 	mu     sync.Mutex
-	owner  string // the Tailscale login mint itself belongs to
+	owner  string // the Tailscale login the server itself belongs to
 	logins map[string]seen
 }
 
@@ -110,7 +110,7 @@ func (g *ownerGate) allowed(r *http.Request) bool {
 func (g *ownerGate) wrap(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !g.allowed(r) {
-			http.Error(w, "mint isn't shared", http.StatusForbidden)
+			http.Error(w, "This server is only open to its owner's devices", http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)

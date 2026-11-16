@@ -21,7 +21,7 @@ import (
 // draws itself. The TV and phone read them from the file as before.
 //
 // They're scattered through the whole file, so the read takes minutes on
-// mint's disk. It happens in the background after a file turns up, and at once
+// the server's disk. It happens in the background after a file turns up, and at once
 // when someone opens the title in a browser before that.
 
 type embSub struct {

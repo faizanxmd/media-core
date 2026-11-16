@@ -1,6 +1,6 @@
 "use strict";
 // Manager: paste a link and see what it is before it downloads, the downloads themselves, the library's files with
-// where each one plays, and how mint is doing. Words and sizes follow docs/design-system.md.
+// where each one plays, and how the server is doing. Words and sizes follow docs/design-system.md.
 const Manager = (() => {
   const ACTIVE = ["downloading", "processing", "converting", "paused", "queued"];
   const LIVE = ["downloading", "processing", "converting"];
@@ -162,7 +162,7 @@ const Manager = (() => {
     $("#n-downloads").textContent = act.length ? ` ${act.length}` : "";
     const ban = $("#banner"), low = S?.disk_total && S.disk_free < 20e9;
     ban.hidden = !S || S.aria2_ok && !low;
-    ban.textContent = !S ? "" : !S.aria2_ok ? "The downloader (aria2) isn't answering. mint is restarting it, and downloads carry on by themselves."
+    ban.textContent = !S ? "" : !S.aria2_ok ? `The downloader (aria2) isn't answering. ${serverLabel()} is restarting it, and downloads carry on by themselves.`
       : low ? `Only ${bytes(S.disk_free)} left on the library disk. Library, biggest first, shows what's taking the space.` : "";
     if (tab === "downloads") drawJobs(body, act);
     else if (tab === "library") drawLibrary();
@@ -617,7 +617,7 @@ const Manager = (() => {
     note("Queued the Light copy"); loadTitles();
   }
   async function remove({ path, name, size }) {
-    const r = await ask({ title: `Delete “${name}”?`, text: `This permanently removes ${bytes(+size)} from mint's disk. There's no undo.`,
+    const r = await ask({ title: `Delete “${name}”?`, text: `This permanently removes ${bytes(+size)} from ${serverName}'s disk. There's no undo.`,
       buttons: [{ label: "Keep it", value: "" }, { label: `Delete ${bytes(+size)}`, value: "del", cls: "danger" }] });
     if (r.value !== "del") return false;
     const res = await api("/api/library/delete", { path });
