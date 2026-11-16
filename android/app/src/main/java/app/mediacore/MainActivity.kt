@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
         val tv = isTv(this)
         setContent {
             CompositionLocalProvider(LocalTv provides tv) {
-                AppTheme { Root(nav, ::installUpdate) }
+                AppTheme { if (Api.needsPair) PairScreen { nav.refresh++ } else Root(nav, ::installUpdate) }
             }
         }
         // the TV's Root paints the whole screen itself; the window's own fill under it was one more full-screen pass a frame

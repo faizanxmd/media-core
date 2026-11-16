@@ -2,6 +2,9 @@ package app.mediacore.core
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
@@ -11,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,7 +31,14 @@ import java.util.concurrent.TimeUnit
  * Reaching the server away from home isn't supported yet.
  */
 object Api {
+    /** Every request the app makes. It carries this device's key to the server, and only to the server. */
     val http: OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val req = chain.request()
+            val tok = token
+            if (tok.isEmpty() || !isServer(req.url.scheme + "://" + req.url.host + ":" + req.url.port)) chain.proceed(req)
+            else chain.proceed(req.newBuilder().header("Authorization", "Bearer $tok").build())
+        }
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -46,6 +57,11 @@ object Api {
     /** What the server calls itself (its host name unless set otherwise), for "… is offline" and the like. */
     @Volatile var name: String = "the server"
         private set
+    /** This device's key ("mc_…"), from pairing. Empty until the server has approved this device. */
+    @Volatile private var token: String = ""
+    /** The server wants a key this app hasn't got: the app shows its pairing screen until this turns false. */
+    var needsPair by mutableStateOf(false)
+        private set
     private lateinit var prefs: SharedPreferences
     private lateinit var app: Context
     private val discoverLock = Mutex()
@@ -54,6 +70,7 @@ object Api {
         app = ctx.applicationContext
         prefs = ctx.getSharedPreferences("media-core", Context.MODE_PRIVATE)
         base = prefs.getString("base", "") ?: ""
+        token = prefs.getString("token", "") ?: ""
         prefs.getString("name", null)?.let { name = it }
         // installs from before the server sent its name: ask once, quietly
         if (base.isNotEmpty() && !prefs.contains("name")) {
@@ -77,6 +94,22 @@ object Api {
 
     /** The server is reached by an address outside the home network (a typed name, say): treat it as a thin link. */
     val away: Boolean get() = !isLan(base)
+
+    /** Whether an address (scheme://host:port) is the server's: its current address or one it listed. */
+    private fun isServer(u: String): Boolean {
+        val b = base
+        if (b.isNotEmpty() && same(b, u)) return true
+        return (prefs.getStringSet("known", emptySet()) ?: emptySet()).any { same(it, u) }
+    }
+
+    private fun same(a: String, b: String): Boolean {
+        val x = a.toHttpUrlOrNull() ?: return false
+        val y = b.toHttpUrlOrNull() ?: return false
+        return x.scheme == y.scheme && x.host == y.host && x.port == y.port
+    }
+
+    /** The key, for a download the system makes on the app's behalf (it can't go through [http]). */
+    fun authHeader(): String? = token.takeIf { it.isNotEmpty() }?.let { "Bearer $it" }
 
     /** The host of an address like "http://192.168.1.5:8790"; empty if it carries a user part ("a@b"). */
     private fun hostOf(u: String): String {
@@ -227,11 +260,16 @@ object Api {
         return java.net.InetAddress.getByAddress(byteArrayOf((bc ushr 24).toByte(), (bc ushr 16).toByte(), (bc ushr 8).toByte(), bc.toByte()))
     }
 
-    /** Every address a /hello answer lists (its home-network addresses). */
+    /**
+     * Every address a /hello answer lists: its home-network ones, then any a remote-access add-on on the server
+     * offers ("remote"; none yet). The race prefers a home-network address whenever one answers.
+     */
     private fun addresses(j: JSONObject): Set<String> {
         val all = linkedSetOf<String>()
-        val a = j.optJSONArray("lan") ?: return all
-        for (i in 0 until a.length()) all += a.getString(i)
+        for (key in listOf("lan", "remote")) {
+            val a = j.optJSONArray(key) ?: continue
+            for (i in 0 until a.length()) a.optString(i).trimEnd('/').takeIf { it.startsWith("http") }?.let { all += it }
+        }
         return all
     }
 
@@ -284,12 +322,64 @@ object Api {
         http.newCall(req).execute().use { r ->
             val s = r.body?.string() ?: ""
             if (!r.isSuccessful) {
-                val msg = runCatching { JSONObject(s).optString("error") }.getOrNull()
-                throw ServerError(if (msg.isNullOrEmpty()) "HTTP ${r.code}" else msg)
+                val j = runCatching { JSONObject(s) }.getOrNull()
+                val code = j?.optString("error").orEmpty()
+                // no key, a revoked one, or a server nobody has set up yet: this device has to pair
+                if ((r.code == 401 && code == "pair") || (r.code == 403 && code == "setup")) unpaired()
+                val msg = j?.optString("message").orEmpty().ifEmpty { code }
+                throw ServerError(msg.ifEmpty { "HTTP ${r.code}" })
             }
             JSONObject(s)
         }
     }
+
+    private fun unpaired() {
+        token = ""
+        prefs.edit().remove("token").apply()
+        needsPair = true
+    }
+
+    // ---------- pairing: the app shows a code, someone approves it on the server's website ----------
+
+    /** A code waiting for approval. [url] opens the approval page for it on the server's website. */
+    class PairCode(val code: String, val poll: String, val url: String, val expiresIn: Int, val interval: Int)
+
+    /** Asks the server for a code; [kind] is "tv" or "phone", [device] what the device calls itself. */
+    suspend fun pairStart(kind: String, device: String): PairCode {
+        val j = post("/api/v1/pair/start", JSONObject().put("kind", kind).put("name", device))
+        return PairCode(j.getString("code"), j.getString("poll"), j.optString("url"),
+            j.optInt("expires_in", 600), j.optInt("interval", 2).coerceIn(1, 10))
+    }
+
+    /**
+     * Whether the code has been answered: "pending", "approved", "denied" or "expired". On "approved" the key is
+     * kept and [needsPair] turns false.
+     */
+    suspend fun pairPoll(poll: String): String = withContext(Dispatchers.IO) {
+        if (base.isEmpty()) return@withContext "pending"
+        val req = Request.Builder().url("$base/api/v1/pair/poll")
+            .post(JSONObject().put("poll", poll).toString().toRequestBody("application/json".toMediaType())).build()
+        try {
+            http.newCall(req).execute().use { r ->
+                val j = runCatching { JSONObject(r.body?.string() ?: "") }.getOrNull() ?: return@use "pending"
+                val state = j.optString("state", if (r.code == 404) "expired" else "pending")
+                val tok = j.optString("token")
+                if (state == "approved" && tok.startsWith("mc_")) {
+                    token = tok
+                    prefs.edit().putString("token", tok).apply()
+                    needsPair = false
+                }
+                state
+            }
+        } catch (e: IOException) {
+            "pending" // a dropped poll: the next one asks again
+        }
+    }
+
+    /** What this device calls itself, for the server's device list: the name set in Android, or its model. */
+    fun deviceName(ctx: Context): String =
+        runCatching { android.provider.Settings.Global.getString(ctx.contentResolver, "device_name") }.getOrNull()
+            ?.takeIf { it.isNotBlank() } ?: android.os.Build.MODEL
 
     class ServerError(msg: String) : Exception(msg)
 

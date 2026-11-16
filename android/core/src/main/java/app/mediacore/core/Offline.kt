@@ -79,6 +79,7 @@ object Offline {
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationUri(Uri.fromFile(videoFile(item.id)))
             .setAllowedOverMetered(allowMetered)
+            .apply { Api.authHeader()?.let { addRequestHeader("Authorization", it) } }
         videoFile(item.id).delete()
         val dl = dm.enqueue(req)
         raw.put("_dl", dl).put("_at", System.currentTimeMillis())

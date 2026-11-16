@@ -91,7 +91,7 @@ class MainActivity : ComponentActivity() {
         // always light icons: the app is dark whatever the phone's own theme is
         val bars = SystemBarStyle.dark(Color.TRANSPARENT)
         enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
-        setContent { AppTheme { Root(nav, ::installUpdate) } }
+        setContent { AppTheme { if (Api.needsPair) PairScreen { nav.refresh++ } else Root(nav, ::installUpdate) } }
     }
 
     // while the app sits open, pick up what's being watched on other devices
