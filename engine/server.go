@@ -202,7 +202,7 @@ func (s *Server) routes() http.Handler {
 		var lp Plan
 		if b.Light != nil {
 			_, fn, final, err := planPaths(b.Plan)
-			if err != nil || b.Light.Plan == nil || b.Plan.Kind == "tv" && fn == "" || b.Plan.Kind == "music" {
+			if err != nil || b.Light.Plan == nil || b.Plan.Kind == "convert" || b.Plan.Light || (b.Plan.Kind == "tv" && fn == "") || b.Plan.Kind == "music" {
 				errJSON(w, 400, "a Light copy goes with one film or one episode")
 				return
 			}
@@ -212,6 +212,26 @@ func (s *Server) routes() http.Handler {
 			}
 			lp = lightPlan(b.Plan.Kind, b.Plan.Title, rel(final), *b.Light)
 			lp.Year, lp.Season, lp.Episode = b.Plan.Year, b.Plan.Season, b.Plan.Episode
+			if pv := preview(lp); pv.Error != "" {
+				errJSON(w, 400, "bad plan: "+pv.Error)
+				return
+			}
+			if b.Light.URL == "" {
+				errJSON(w, 400, "missing link")
+				return
+			}
+			var combined int64
+			hasSize := b.Probe.Size != nil || b.Light.Size != nil
+			if b.Probe.Size != nil {
+				combined += *b.Probe.Size
+			}
+			if b.Light.Size != nil {
+				combined += *b.Light.Size
+			}
+			if err := s.e.checkDisk(hasSize, combined); err != nil {
+				errJSON(w, 400, err.Error())
+				return
+			}
 		}
 		j, err := s.e.NewJob(b.Probe, b.Plan)
 		if err != nil {
@@ -269,7 +289,8 @@ func (s *Server) routes() http.Handler {
 			writeJSON(w, 200, map[string]any{"ok": false, "error": err.Error(), "message": "✗ " + err.Error()})
 			return
 		}
-		msg := "Queued " + preview(plan).Dest
+		j.Dest = preview(j.Plan).Dest
+		msg := "Queued " + j.Dest
 		if p.Size != nil {
 			msg += " · " + human(*p.Size)
 		}
