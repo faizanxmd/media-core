@@ -132,7 +132,8 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	videos := j.Files
+	videos := append([]string(nil), j.Files...)
+	placedNow := false
 	if fn != "" {
 		if len(videos) == 0 {
 			videos = []string{filepath.Join(dlDir, fn)}
@@ -161,12 +162,18 @@ func (e *Engine) post(ctx context.Context, id string) error {
 			return ctx.Err()
 		}
 		c.phase(Processing, "Placing files")
-		if videos, err = place(c, j.Plan, final, src); err != nil {
+		if videos, err = placeCtx(ctx, c, j.Plan, final, src); err != nil {
 			return err
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+		// placeCtx moved everything into the library; commit Placed and drop
+		// .incoming before checking ctx so disk and job state never disagree.
+		placedNow = true
+		c.set(true, func(j *Job) {
+			if !j.Plan.Light {
+				j.Placed = true
+			}
+			j.Files = append([]string(nil), videos...) // videos changes below; the store's copy must not
+		})
 		os.RemoveAll(dlDir)
 		if filepath.Base(legacyDir) == ".incoming" {
 			os.Remove(legacyDir) // remove shared .incoming only if now empty
@@ -175,12 +182,14 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	c.set(true, func(j *Job) {
-		if !j.Plan.Light {
-			j.Placed = true
-		}
-		j.Files = append([]string(nil), videos...) // videos changes below; the store's copy must not
-	})
+	if !placedNow {
+		c.set(true, func(j *Job) {
+			if !j.Plan.Light {
+				j.Placed = true
+			}
+			j.Files = append([]string(nil), videos...) // videos changes below; the store's copy must not
+		})
+	}
 
 	for i, v := range videos {
 		switch prof := dvProfile(ctx, v); {
@@ -374,7 +383,11 @@ func moveCtx(ctx context.Context, src, dst string) error {
 		return err
 	}
 	if err := os.Link(src, dst); err == nil {
-		return os.Remove(src)
+		if err := os.Remove(src); err != nil {
+			os.Remove(dst)
+			return err
+		}
+		return nil
 	} else if errors.Is(err, os.ErrExist) {
 		return fmt.Errorf("%s already exists", filepath.Base(dst))
 	}
@@ -407,14 +420,101 @@ func uniqueSubPath(dst string) string {
 	}
 }
 
+type movePair struct{ src, dst string }
+
+type placer struct {
+	id          string
+	media       string
+	roots       map[string]bool
+	moved       []movePair
+	createdDirs []string
+	createdSet  map[string]bool
+}
+
+func newPlacer(id string) *placer {
+	media := filepath.Clean(Media)
+	return &placer{
+		id:    id,
+		media: media,
+		roots: map[string]bool{
+			media:                             true,
+			filepath.Join(media, "Movies"):   true,
+			filepath.Join(media, "TV Shows"): true,
+			filepath.Join(media, "Music"):    true,
+		},
+		createdSet: map[string]bool{},
+	}
+}
+
+func (pl *placer) trackNewDirs(dir string) {
+	for d := filepath.Clean(dir); !pl.roots[d] && strings.HasPrefix(d, pl.media+"/"); d = filepath.Dir(d) {
+		if pl.createdSet[d] {
+			break
+		}
+		if _, err := os.Lstat(d); os.IsNotExist(err) {
+			pl.createdSet[d] = true
+			pl.createdDirs = append(pl.createdDirs, d)
+		} else {
+			break
+		}
+	}
+}
+
+func (pl *placer) rollback() error {
+	var firstErr error
+	for i := len(pl.moved) - 1; i >= 0; i-- {
+		m := pl.moved[i]
+		if err := move(m.dst, m.src); err != nil {
+			log.Printf("[%s] rollback move %s -> %s: %v", pl.id, m.dst, m.src, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	sort.Slice(pl.createdDirs, func(i, j int) bool {
+		return len(pl.createdDirs[i]) > len(pl.createdDirs[j])
+	})
+	for _, d := range pl.createdDirs {
+		os.Remove(d)
+	}
+	return firstErr
+}
+
+func (pl *placer) moveOne(ctx context.Context, from, to string) error {
+	fail := func(err error) error {
+		if rbErr := pl.rollback(); rbErr != nil {
+			return fmt.Errorf("%w (rollback failed: %v)", err, rbErr)
+		}
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
+	pl.trackNewDirs(filepath.Dir(to))
+	if err := move(from, to); err != nil {
+		return fail(err)
+	}
+	pl.moved = append(pl.moved, movePair{from, to})
+	return nil
+}
+
 // place moves unpacked/downloaded files to their library names; returns video paths.
 func place(c jobCtx, p Plan, final, src string) ([]string, error) {
+	return placeCtx(context.Background(), c, p, final, src)
+}
+
+// placeCtx places files all-or-nothing: on error or cancellation mid-transfer,
+// every file moved in this call is moved back to its source and any empty
+// library folders created for it are removed.
+func placeCtx(ctx context.Context, c jobCtx, p Plan, final, src string) ([]string, error) {
 	var videos []string
 	for _, v := range filesWith(src, VideoExt) {
 		if !isSample(v) {
 			videos = append(videos, v)
 		}
 	}
+	pl := newPlacer(c.id)
+
 	var placed []string
 	switch p.Kind {
 	case "movie":
@@ -441,21 +541,20 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 		}
 		base := filepath.Base(final)
 		dst := filepath.Join(final, base+"."+ext(main))
-		if err := move(main, dst); err != nil {
+		if err := pl.moveOne(ctx, main, dst); err != nil {
 			return nil, err
 		}
 		placed = append(placed, dst)
 		for _, sub := range filesWith(src, SubExt) {
 			_, tail, _ := strings.Cut(filepath.Base(sub), ".")
 			subDst := uniqueSubPath(filepath.Join(final, base+"."+tail))
-			if err := move(sub, subDst); err != nil {
+			if err := pl.moveOne(ctx, sub, subDst); err != nil {
 				return nil, err
 			}
 		}
 	case "tv":
 		show := clean(p.Title)
 		def, _ := atoi(p.Season, 1)
-		type movePair struct{ src, dst string }
 		var videoMoves []movePair
 		seen := map[string]bool{}
 		for _, v := range videos {
@@ -479,7 +578,7 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 			return nil, errors.New("no video files found")
 		}
 		for _, m := range videoMoves {
-			if err := move(m.src, m.dst); err != nil {
+			if err := pl.moveOne(ctx, m.src, m.dst); err != nil {
 				return nil, err
 			}
 			placed = append(placed, m.dst)
@@ -499,7 +598,7 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 			}
 			subDst := uniqueSubPath(filepath.Join(Media, "TV Shows", show, fmt.Sprintf("Season %02d", s),
 				fmt.Sprintf("%s - S%02dE%02d%s", show, s, e, suffix)))
-			if err := move(sub, subDst); err != nil {
+			if err := pl.moveOne(ctx, sub, subDst); err != nil {
 				return nil, err
 			}
 		}
@@ -513,8 +612,23 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 		for _, a := range audio {
 			albums[filepath.Dir(a)] = append(albums[filepath.Dir(a)], a)
 		}
-		for dir, files := range albums {
-			tags := audioTags(files[0])
+		dirs := make([]string, 0, len(albums))
+		for dir := range albums {
+			dirs = append(dirs, dir)
+		}
+		sort.Strings(dirs)
+		var musicMoves []movePair
+		var albumLogs []string
+		seen := map[string]bool{}
+		for _, dir := range dirs {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			files := albums[dir]
+			tags := audioTagsCtx(ctx, files[0])
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			artist := clean(firstOf(p.Title, tags["album_artist"], tags["artist"], "Unknown Artist"))
 			fallbackAlbum := filepath.Base(dir)
 			if filepath.Base(filepath.Dir(dir)) == ".incoming" || fallbackAlbum == ".incoming" || fallbackAlbum == "x" {
@@ -522,9 +636,10 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 			}
 			album := clean(firstOf(tags["album"], fallbackAlbum))
 			dst := filepath.Join(Media, "Music", artist, album)
-			ents, _ := os.ReadDir(dir)
-			type movePair struct{ src, dst string }
-			var musicMoves []movePair
+			ents, err := os.ReadDir(dir)
+			if err != nil {
+				return nil, err
+			}
 			for _, f := range ents {
 				low := strings.ToLower(f.Name())
 				if f.IsDir() || strings.HasSuffix(low, ".url") || strings.HasSuffix(low, ".lnk") ||
@@ -532,17 +647,21 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 					continue
 				}
 				to := filepath.Join(dst, f.Name())
-				if _, err := os.Lstat(to); err == nil {
+				if _, err := os.Lstat(to); err == nil || seen[to] {
 					return nil, fmt.Errorf("%s already exists", f.Name())
 				}
+				seen[to] = true
 				musicMoves = append(musicMoves, movePair{filepath.Join(dir, f.Name()), to})
 			}
-			for _, m := range musicMoves {
-				if err := move(m.src, m.dst); err != nil {
-					return nil, err
-				}
+			albumLogs = append(albumLogs, "Album → Music/"+artist+"/"+album)
+		}
+		for _, m := range musicMoves {
+			if err := pl.moveOne(ctx, m.src, m.dst); err != nil {
+				return nil, err
 			}
-			c.log("Album → Music/" + artist + "/" + album)
+		}
+		for _, msg := range albumLogs {
+			c.log(msg)
 		}
 	}
 	return placed, nil
@@ -558,9 +677,13 @@ func firstOf(xs ...string) string {
 }
 
 func audioTags(p string) map[string]string {
-	ctx, cancel := context.WithTimeout(context.Background(), probeCmdTimeout)
+	return audioTagsCtx(context.Background(), p)
+}
+
+func audioTagsCtx(ctx context.Context, p string) map[string]string {
+	pctx, cancel := context.WithTimeout(ctx, probeCmdTimeout)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json", p).Output()
+	out, _ := exec.CommandContext(pctx, "ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json", p).Output()
 	var r struct {
 		Format struct {
 			Tags map[string]string `json:"tags"`

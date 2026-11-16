@@ -470,6 +470,12 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 			return j, errBusy
 		}
 		e.cancelDelete(id)
+		if d := e.cancelPost(id); d != nil {
+			<-d
+		}
+		if cur, ok := e.store.Get(id); ok {
+			j = cur
+		}
 		if p := fresh; p != nil {
 			j, _ = e.store.Update(id, true, func(j *Job) {
 				j.URL, j.Connections = p.URL, max(p.Connections, 1)
@@ -479,17 +485,31 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 		if j.Downloaded {
 			lp := legacyTargetPath(j)
 			lightReady := !j.Plan.Light || (len(j.Files) > 0 && exists(j.Files[0]))
-			if path, err := targetPath(j); (j.Placed && lightReady) || (err == nil && exists(path)) || (lp != "" && exists(lp)) {
-				if d := e.cancelPost(id); d != nil {
-					<-d
-				}
+			isFile := func(p string) bool {
+				fi, err := os.Stat(p)
+				return err == nil && !fi.IsDir()
+			}
+			hasFiles := func(root string) bool {
+				found := false
+				filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+					if err == nil && !d.IsDir() && !strings.HasSuffix(d.Name(), ".aria2") {
+						found = true
+						return filepath.SkipAll
+					}
+					return nil
+				})
+				return found
+			}
+			dir, fn, _, dirErr := jobPaths(j.Plan, j.ID)
+			incomingReady := dirErr == nil && fn == "" && !j.Plan.Archive && hasFiles(dir)
+			if path, err := targetPath(j); (j.Placed && lightReady) || (err == nil && isFile(path)) || (lp != "" && isFile(lp)) || incomingReady {
 				e.store.Update(id, true, func(j *Job) { j.State = Processing; logLine(j, "Retrying processing") })
 				e.startPost(id)
 				break
 			}
 		}
-		e.store.Update(id, true, func(j *Job) {
-			j.State, j.GID, j.Downloaded = Queued, "", false
+		j, _ = e.store.Update(id, true, func(j *Job) {
+			j.State, j.GID, j.Downloaded, j.Placed = Queued, "", false, false
 			logLine(j, "Queued again (resumes where it stopped)")
 		})
 		e.submit(ctx, j, true)
