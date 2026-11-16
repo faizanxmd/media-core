@@ -14,7 +14,7 @@ import (
 )
 
 func TestHowToPlay(t *testing.T) {
-	// what the user's browsers report (mint's journal, 2026-11-10)
+	// what the user's browsers report (the server's journal)
 	safari := parseCaps("h264,hevc,hdr,dv,aac,mp3,opus,flac,ac3,eac3,alac,switch")
 	chrome := parseCaps("h264,h264-10,hevc,av1,vp9,hdr,aac,mp3,opus,flac")
 	f := func(box, vc, hdr string, audio ...string) *MInfo {

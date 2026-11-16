@@ -11,7 +11,7 @@ export PATH="$HOME/.local/go/bin:$PATH"
 for tool in go aria2c ffmpeg ffprobe 7z mkvmerge; do
   command -v "$tool" >/dev/null || echo "warning: $tool not found (see docs/setup.md)" >&2
 done
-[ -x "$HOME/.local/bin/dovi_tool" ] || echo "warning: ~/.local/bin/dovi_tool missing: Dolby Vision P7 -> 8.1 conversion will fail" >&2
+{ command -v dovi_tool || [ -x "$HOME/.local/bin/dovi_tool" ]; } >/dev/null || echo "warning: dovi_tool missing: Dolby Vision P7 -> 8.1 conversion will fail" >&2
 
 # config: aria2 with a random RPC secret, first time only
 mkdir -p "$CONF" "$HOME/.local/share/media-core" "$HOME/.local/bin" "$UNITS"
