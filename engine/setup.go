@@ -156,8 +156,10 @@ func (s *setupAPI) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/setup/config", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, currentConfig(s.temp))
 	})
-	mux.HandleFunc("GET /api/setup/busy", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"busy": s.busy()})
+	// what a restart, an upgrade or an uninstall must wait for: the one place that decides "busy"
+	mux.HandleFunc("GET /api/busy", func(w http.ResponseWriter, r *http.Request) {
+		why := s.busy()
+		writeJSON(w, 200, map[string]any{"busy": why != "", "why": why})
 	})
 	mux.HandleFunc("POST /api/setup/config", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
@@ -169,87 +171,136 @@ func (s *setupAPI) mount(mux *http.ServeMux) {
 		if !readJSON(w, r, &b) {
 			return
 		}
-		envPath := filepath.Join(ConfDir, "engine.env")
-		restart := false
-		lib := Media
-		if b.Library != nil {
-			if strings.IndexFunc(*b.Library, func(c rune) bool { return c < 0x20 || c == 0x7f }) >= 0 {
-				errJSON(w, 400, "The folder's path can't contain line breaks or control characters")
-				return
-			}
-			want := filepath.Clean(strings.TrimSpace(*b.Library))
-			if strings.HasPrefix(want, "~/") {
-				want = filepath.Join(homeDir(), want[2:])
-			}
-			if !filepath.IsAbs(want) {
-				errJSON(w, 400, "Give the library folder's full path, starting with /")
-				return
-			}
-			if want != Media {
-				if s.temp {
-					errJSON(w, 400, "A temporary server's folder is fixed. Start it again with another --library.")
-					return
-				}
-				lib = want
-			}
-		}
-		// saving restarts the engine, which would cut off a stream or a download being finished
-		changing := lib != Media || (b.TMDBKey != nil && strings.TrimSpace(*b.TMDBKey) != "") ||
-			(b.Name != nil && cleanName(*b.Name, "") != serverName())
-		if changing {
-			if what := s.busy(); what != "" {
-				errJSON(w, 409, "Saving restarts the server. Wait until "+what+", then save.")
-				return
-			}
-		}
-		if b.MakeFolders {
-			for _, f := range libraryFolders {
-				if err := os.MkdirAll(filepath.Join(lib, f), 0o775); err != nil {
-					errJSON(w, 400, "Couldn't make "+filepath.Join(lib, f)+": "+err.Error())
-					return
-				}
-			}
-		}
-		if p := libraryProblem(lib); p != "" {
-			errJSON(w, 400, p)
+		res, err := applyConfig(configChange{Library: b.Library, MakeFolders: b.MakeFolders, Name: b.Name, TMDBKey: b.TMDBKey,
+			temp: s.temp, busy: s.busy})
+		if err != nil {
+			errJSON(w, err.status, err.msg)
 			return
 		}
-		if lib != Media {
-			if err := setEnvLine(envPath, "MEDIA_CORE_LIBRARY", lib); err != nil {
-				errJSON(w, 500, err.Error())
-				return
-			}
-			restart = true
-		}
-		if b.TMDBKey != nil {
-			key := strings.TrimSpace(*b.TMDBKey)
-			if key != "" {
-				if err := checkTMDBKey(key); err != nil {
-					errJSON(w, 400, err.Error())
-					return
-				}
-				if err := os.WriteFile(filepath.Join(ConfDir, "tmdb.key"), []byte(key+"\n"), 0o600); err != nil {
-					errJSON(w, 500, err.Error())
-					return
-				}
-				restart = true
-			}
-		}
-		if b.Name != nil {
-			name := cleanName(*b.Name, "")
-			if name != serverName() {
-				if err := setEnvLine(envPath, "MEDIA_CORE_NAME", name); err != nil {
-					errJSON(w, 500, err.Error())
-					return
-				}
-				restart = true
-			}
-		}
+		restart := len(res.Changed) > 0
 		if restart {
 			restartSelf(s.flush)
 		}
 		writeJSON(w, 200, map[string]any{"ok": true, "restart": restart})
 	})
+}
+
+// configChange is a change to the server's own settings; a nil field is left as it is.
+type configChange struct {
+	Library     *string
+	MakeFolders bool // make the library folder and Movies, TV Shows, Music in it
+	Name        *string
+	TMDBKey     *string
+	temp        bool          // a temporary server: its folder is fixed
+	busy        func() string // asked before a change the server must restart for; nil: don't ask
+}
+
+type configResult struct {
+	Changed []string // "library", "name", "tmdb": what was written
+	Library string   // the library after the change
+	Name    string
+	TMDB    bool // a key is saved
+}
+
+// applyConfig checks a settings change and writes it where the engine reads its settings (engine.env and
+// tmdb.key). The site's Settings page and `media-core-engine setup` and `install` all go through it, so
+// they accept and refuse the same things. Nothing is written unless every part of the change is fine, and
+// nothing is restarted here: anything in Changed needs a restart to take effect.
+func applyConfig(in configChange) (configResult, *cliErr) {
+	envPath := filepath.Join(ConfDir, "engine.env")
+	keyPath := filepath.Join(ConfDir, "tmdb.key")
+	res := configResult{Library: Media, Name: serverName()}
+	saved := ""
+	if b, err := os.ReadFile(keyPath); err == nil {
+		saved = strings.TrimSpace(string(b))
+	}
+	res.TMDB = saved != ""
+
+	if in.Library != nil {
+		if strings.IndexFunc(*in.Library, func(c rune) bool { return c < 0x20 || c == 0x7f }) >= 0 {
+			return res, cliFail(exitUsage, "The folder's path can't contain line breaks or control characters")
+		}
+		want := expandHome(strings.TrimSpace(*in.Library))
+		if !filepath.IsAbs(want) {
+			return res, cliFail(exitUsage, "Give the library folder's full path, starting with /")
+		}
+		if want = filepath.Clean(want); want != Media {
+			if in.temp {
+				return res, cliFail(exitFailed, "A temporary server's folder is fixed. Start it again with another --library.")
+			}
+			res.Library = want
+		}
+	}
+	name, key := res.Name, ""
+	if in.Name != nil {
+		name = cleanName(*in.Name, "")
+	}
+	if in.TMDBKey != nil {
+		key = strings.TrimSpace(*in.TMDBKey)
+	}
+	newKey := key != "" && key != saved
+	// saving restarts the engine, which would cut off a stream or a download being finished
+	if (res.Library != Media || name != res.Name || newKey) && in.busy != nil {
+		if what := in.busy(); what != "" {
+			return res, cliFail(exitBusy, "Saving restarts the server. Wait until %s, then save.", what)
+		}
+	}
+	if in.MakeFolders {
+		for _, f := range libraryFolders {
+			if err := os.MkdirAll(filepath.Join(res.Library, f), 0o775); err != nil {
+				return res, cliFail(exitFailed, "Couldn't make %s: %v", filepath.Join(res.Library, f), err)
+			}
+		}
+	}
+	if in.Library != nil || in.MakeFolders {
+		if p := libraryProblem(res.Library); p != "" {
+			res.Library = Media
+			return res, cliFail(exitFailed, "%s", p)
+		}
+	}
+	if newKey {
+		if err := checkTMDBKey(key); err != nil {
+			res.Library = Media
+			return res, cliFail(exitFailed, "%s", err.Error())
+		}
+	}
+
+	internal := func(err error) *cliErr {
+		return &cliErr{code: exitFailed, status: http.StatusInternalServerError, msg: err.Error()}
+	}
+	if res.Library != Media {
+		if err := setEnvLine(envPath, "MEDIA_CORE_LIBRARY", res.Library); err != nil {
+			return res, internal(err)
+		}
+		res.Changed = append(res.Changed, "library")
+	} else if in.Library != nil && parseEnvFile(envPath)["MEDIA_CORE_LIBRARY"] == "" {
+		// the default, named on purpose: pin it, so a later version's different default can't move it
+		// (the same folder as now, so nothing restarts)
+		if err := setEnvLine(envPath, "MEDIA_CORE_LIBRARY", res.Library); err != nil {
+			return res, internal(err)
+		}
+	}
+	if name != res.Name {
+		if err := setEnvLine(envPath, "MEDIA_CORE_NAME", name); err != nil {
+			return res, internal(err)
+		}
+		res.Name = name
+		res.Changed = append(res.Changed, "name")
+	}
+	if newKey {
+		if err := os.MkdirAll(ConfDir, 0o700); err != nil {
+			return res, internal(err)
+		}
+		if err := os.WriteFile(keyPath+".tmp", []byte(key+"\n"), 0o600); err != nil {
+			return res, internal(err)
+		}
+		if err := os.Rename(keyPath+".tmp", keyPath); err != nil {
+			return res, internal(err)
+		}
+		res.TMDB = true
+		res.Changed = append(res.Changed, "tmdb")
+	}
+	return res, nil
 }
 
 // busyWith: what a library move must wait for, in words ("" when nothing).

@@ -1,0 +1,63 @@
+### media-core-aria2.service
+# Written by media-core-engine install. Edits are replaced on upgrade; use a drop-in instead.
+[Unit]
+Description=Media Core downloader (aria2, RPC on localhost only)
+
+[Service]
+ExecStart=/usr/bin/aria2c --conf-path=/srv/u/.config/media-core/aria2.conf
+Restart=on-failure
+RestartSec=5
+# downloads are network-bound; keep them out of playback's way on CPU and disk
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+UMask=0002
+
+[Install]
+WantedBy=default.target
+
+### media-core-engine.service
+# Written by media-core-engine install. Edits are replaced on upgrade; use a drop-in instead.
+[Unit]
+Description=Media Core engine: downloads into the library and serves the site and the apps
+After=network-online.target media-core-aria2.service
+Wants=media-core-aria2.service
+
+[Service]
+ExecStart=/srv/u/.local/bin/media-core-engine serve
+Restart=always
+RestartSec=3
+Environment=PATH=/srv/u/.local/bin:/usr/local/bin:/usr/bin:/bin
+UMask=0002
+# post-processing (ffmpeg, 7z) picks up again after a restart, so a quick stop is fine
+TimeoutStopSec=10
+# a stream keeps up to about 150M of pieces in memory while a title plays (stream.go)
+MemoryHigh=800M
+
+[Install]
+WantedBy=default.target
+
+### media-core-backup.service
+# Written by media-core-engine install. Edits are replaced on upgrade; use a drop-in instead.
+[Unit]
+Description=Media Core: back up watch progress, settings and devices
+
+[Service]
+Type=oneshot
+ExecStart=/srv/u/.local/bin/media-core-engine backup
+Nice=19
+IOSchedulingClass=idle
+
+### media-core-backup.timer
+# Written by media-core-engine install. Edits are replaced on upgrade; use a drop-in instead.
+[Unit]
+Description=Media Core: nightly backup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

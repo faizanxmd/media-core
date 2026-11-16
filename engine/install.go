@@ -2,690 +2,423 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
+	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
-	"text/template"
 	"time"
 )
 
-// install, setup, upgrade and uninstall: everything after the binary is on the computer. The one-line
-// install (install.sh) downloads the binary and runs `install`; an AI agent can run the same commands with
-// --yes and flags instead of answers. None of them ever touches the library's files.
-//
-// Linux: systemd user services (aria2, the engine, a nightly backup). macOS: a LaunchAgent for the engine,
-// which then runs aria2 itself.
+// install sets this computer up as a server and starts it: the binary in ~/.local/bin, the settings, the
+// downloader's config, the systemd user units. The one-line install (install.sh) downloads the binary and
+// runs it; an AI agent runs the same command with --yes --json. It is safe to run again at any time: it
+// never overwrites engine.env, aria2.conf, tmdb.key, devices.json or any data, and never touches the library.
 
-const defaultRepo = "faizanxmd/media-core"
+const installUsage = `usage: media-core-engine install [--library DIR] [--make-folders] [--name NAME]
+                                 [--tmdb-key KEY | --tmdb-key-file FILE]
+                                 [--no-service] [--no-apps] [--yes] [--json]`
 
-func binPath() string { return filepath.Join(homeDir(), ".local", "bin", "media-core-engine") }
+const macHint = "Media Core doesn't install itself as a service on this system (it needs Linux with systemd).\n" +
+	"On a Mac, run it yourself:\n  media-core-engine setup --library DIR\n  media-core-engine serve"
 
-func unitDir() string { return filepath.Join(homeDir(), ".config", "systemd", "user") }
-
-var unitNames = []string{"media-core-aria2.service", "media-core-engine.service", "media-core-backup.service", "media-core-backup.timer"}
-
-type unitVars struct{ Bin, Aria2c, Conf, Data, Path string }
-
-var unitTemplates = map[string]string{
-	"media-core-aria2.service": `[Unit]
-Description=Media Core downloader (aria2, RPC on localhost only)
-
-[Service]
-ExecStart={{.Aria2c}} --conf-path={{.Conf}}/aria2.conf
-Restart=on-failure
-RestartSec=5
-# downloads are network-bound; keep them out of playback's way on CPU and disk
-Nice=5
-IOSchedulingClass=best-effort
-IOSchedulingPriority=6
-UMask=0002
-
-[Install]
-WantedBy=default.target
-`,
-	"media-core-engine.service": `[Unit]
-Description=Media Core engine: downloads into the library and serves the site and the apps
-After=network-online.target media-core-aria2.service
-Wants=media-core-aria2.service
-
-[Service]
-ExecStart={{.Bin}} serve
-Restart=always
-RestartSec=3
-Environment=PATH={{.Path}}
-UMask=0002
-# post-processing (ffmpeg, 7z) picks up again after a restart, so a quick stop is fine
-TimeoutStopSec=10
-# a stream keeps up to about 150M of pieces in memory while a title plays (stream.go)
-MemoryHigh=800M
-
-[Install]
-WantedBy=default.target
-`,
-	"media-core-backup.service": `[Unit]
-Description=Media Core: back up watch progress, settings and devices
-
-[Service]
-Type=oneshot
-ExecStart={{.Bin}} backup
-Nice=19
-IOSchedulingClass=idle
-`,
-	"media-core-backup.timer": `[Unit]
-Description=Media Core: nightly backup
-
-[Timer]
-OnCalendar=*-*-* 04:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-`,
-}
-
-const launchAgent = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>app.mediacore.engine</string>
-  <key>ProgramArguments</key><array><string>{{.Bin}}</string><string>serve</string></array>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>{{.Path}}</string></dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardErrorPath</key><string>{{.Data}}/engine.log</string>
-  <key>StandardOutPath</key><string>{{.Data}}/engine.log</string>
-</dict>
-</plist>
-`
-
-func launchAgentPath() string {
-	return filepath.Join(homeDir(), "Library", "LaunchAgents", "app.mediacore.engine.plist")
-}
-
-func render(tmpl string, v unitVars) string {
-	var b bytes.Buffer
-	template.Must(template.New("").Parse(tmpl)).Execute(&b, v)
-	return b.String()
-}
-
-// writeIfChanged writes text to path when it differs, and says whether it did.
-func writeIfChanged(path, text string, mode os.FileMode) (bool, error) {
-	if b, err := os.ReadFile(path); err == nil && string(b) == text {
-		return false, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
-	if err := os.WriteFile(path+".tmp", []byte(text), mode); err != nil {
-		return false, err
-	}
-	return true, os.Rename(path+".tmp", path)
-}
-
-func currentUnitVars(bin string) unitVars {
-	aria, _ := exec.LookPath("aria2c")
-	if aria == "" {
-		aria = "/usr/bin/aria2c"
-	}
-	path := filepath.Join(homeDir(), ".local", "bin") + ":/usr/local/bin:/usr/bin:/bin"
-	if runtime.GOOS == "darwin" {
-		path = filepath.Join(homeDir(), ".local", "bin") + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-	}
-	return unitVars{Bin: bin, Aria2c: aria, Conf: ConfDir, Data: DataDir, Path: path}
-}
-
-// ask prints a question and reads a line; def when nothing is typed (or there's no one to ask).
-func ask(in *bufio.Reader, q, def string) string {
-	if in == nil {
-		return def
-	}
-	if def != "" {
-		fmt.Printf("%s [%s]: ", q, def)
-	} else {
-		fmt.Printf("%s: ", q)
-	}
-	line, err := in.ReadString('\n')
-	if err != nil && line == "" {
-		return def
-	}
-	if line = strings.TrimSpace(line); line == "" {
-		return def
-	}
-	return line
-}
-
-func expandHome(p string) string {
-	if p == "~" {
-		return homeDir()
-	}
-	if strings.HasPrefix(p, "~/") {
-		return filepath.Join(homeDir(), p[2:])
-	}
-	return p
-}
+const noSessionHint = "No systemd user session. Log in normally (not `su`), or set XDG_RUNTIME_DIR=/run/user/$(id -u), " +
+	"or use --no-service and run `media-core-engine serve` yourself."
 
 type installOpts struct {
-	library, name, tmdbKey string
-	yes, quiet             bool
+	library, name, tmdbKey, tmdbKeyFile                string
+	makeFolders, noService, noApps, yes, force, asJSON bool
 }
 
-func installFlags(name string, args []string) installOpts {
-	fs := flag.NewFlagSet(name, flag.ExitOnError)
-	var o installOpts
+type installResult struct {
+	OK             bool              `json:"ok"`
+	Error          string            `json:"error,omitempty"`
+	Version        string            `json:"version"`
+	Binary         string            `json:"binary"`
+	Service        string            `json:"service"` // running, not-installed, failed
+	URLs           []string          `json:"urls"`
+	SetupURL       string            `json:"setup_url"`
+	SetupCode      string            `json:"setup_code"`
+	Claimed        bool              `json:"claimed"`
+	Library        string            `json:"library"`
+	LibraryProblem string            `json:"library_problem"`
+	Apps           map[string]string `json:"apps"`
+	NeedsSudo      []string          `json:"needs_sudo"`
+	Warnings       []string          `json:"warnings"`
+}
+
+// configFlags: the settings flags install and setup share.
+func configFlags(fs *flag.FlagSet, o *installOpts) {
 	fs.StringVar(&o.library, "library", "", "the library folder (Movies, TV Shows and Music go in it)")
+	fs.BoolVar(&o.makeFolders, "make-folders", false, "make the library folder and Movies, TV Shows, Music in it")
 	fs.StringVar(&o.name, "name", "", "the server's name, as the apps show it")
-	fs.StringVar(&o.tmdbKey, "tmdb-key", "", "a TMDB API key, for posters and details")
+	fs.StringVar(&o.tmdbKey, "tmdb-key", "", "a TMDB API key (prefer --tmdb-key-file or MEDIA_CORE_TMDB_KEY: a flag shows in shell history)")
+	fs.StringVar(&o.tmdbKeyFile, "tmdb-key-file", "", "a file holding the TMDB API key")
 	fs.BoolVar(&o.yes, "yes", false, "ask nothing; use the flags and defaults")
-	fs.Parse(args)
-	return o
+	fs.BoolVar(&o.asJSON, "json", false, "print one JSON object")
 }
 
-// installCmd sets this computer up as a server and starts it. Safe to run again: it keeps every setting
-// and secret, rewrites the service files only if they changed, and restarts the engine.
-func installCmd(o installOpts) {
-	var in *bufio.Reader
-	if !o.yes {
-		if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
-			in = bufio.NewReader(os.Stdin)
+// tmdbKeyFrom: the key from --tmdb-key, else --tmdb-key-file, else MEDIA_CORE_TMDB_KEY ("" when none is given).
+func tmdbKeyFrom(o installOpts) (string, *cliErr) {
+	if o.tmdbKey != "" {
+		return strings.TrimSpace(o.tmdbKey), nil
+	}
+	if o.tmdbKeyFile != "" {
+		b, err := os.ReadFile(expandHome(o.tmdbKeyFile))
+		if err != nil {
+			return "", cliFail(exitFailed, "couldn't read the TMDB key file: %v", err)
+		}
+		if strings.TrimSpace(string(b)) == "" {
+			return "", cliFail(exitFailed, "%s is empty", o.tmdbKeyFile)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return strings.TrimSpace(os.Getenv("MEDIA_CORE_TMDB_KEY")), nil
+}
+
+// configChangeFrom turns the flags into a settings change (nil fields for what wasn't given).
+func configChangeFrom(o installOpts) (configChange, *cliErr) {
+	in := configChange{MakeFolders: o.makeFolders}
+	if o.library != "" {
+		in.Library = &o.library
+	}
+	if o.name != "" {
+		in.Name = &o.name
+	}
+	key, err := tmdbKeyFrom(o)
+	if err != nil {
+		return in, err
+	}
+	if key != "" {
+		in.TMDBKey = &key
+	}
+	return in, nil
+}
+
+func installCmd(args []string) {
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	fs.Usage = func() { fmt.Fprintln(os.Stderr, installUsage) }
+	var o installOpts
+	configFlags(fs, &o)
+	fs.BoolVar(&o.noService, "no-service", false, "don't set up the systemd service; you run `media-core-engine serve`")
+	fs.BoolVar(&o.noApps, "no-apps", false, "don't fetch the TV and phone apps")
+	fs.BoolVar(&o.force, "force", false, "restart even while something plays or downloads")
+	if fs.Parse(args) != nil || fs.NArg() > 0 {
+		fmt.Fprintln(os.Stderr, installUsage)
+		os.Exit(exitUsage)
+	}
+	res, err := runInstall(o, sayTo(o.asJSON))
+	if err != nil {
+		if res == nil || !o.asJSON {
+			failWith(err.code, o.asJSON, err.msg)
+		}
+		res.Error = err.msg
+		printJSON(res)
+		os.Exit(err.code)
+	}
+	if o.asJSON {
+		printJSON(res)
+	}
+}
+
+func runInstall(o installOpts, say func(string, ...any)) (*installResult, *cliErr) {
+	if os.Getuid() == 0 {
+		return nil, cliFail(exitUnsupported, "Don't install Media Core as root. It runs as your own user: log in as that user and run this again.")
+	}
+	if runtime.GOOS != "linux" {
+		return nil, cliFail(exitUnsupported, "%s", macHint)
+	}
+	if !o.noService {
+		if !hasSystemd() {
+			return nil, cliFail(exitUnsupported, "%s", noSessionHint)
 		}
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		fail(err.Error())
-	}
-	exe, _ = filepath.EvalSymlinks(exe)
 	if err := os.MkdirAll(ConfDir, 0o700); err != nil {
-		fail(err.Error())
+		return nil, cliFail(exitFailed, "%v", err)
 	}
 	os.Chmod(ConfDir, 0o700)
-	if err := os.MkdirAll(DataDir, 0o755); err != nil {
-		fail(err.Error())
+	if err := os.MkdirAll(DataDir, 0o700); err != nil {
+		return nil, cliFail(exitFailed, "%v", err)
+	}
+
+	// the binary, in its place
+	bin, err := selfExe()
+	if err != nil {
+		return nil, cliFail(exitFailed, "%v", err)
+	}
+	if dst := binPath(); bin != dst {
+		a, errA := os.Stat(bin)
+		b, errB := os.Stat(dst)
+		if errA != nil || errB != nil || !os.SameFile(a, b) {
+			if err := copyExecutable(bin, dst); err != nil {
+				return nil, cliFail(exitFailed, "couldn't put the binary at %s: %v", dst, err)
+			}
+		}
+		bin = dst
+	}
+	res := &installResult{Version: version, Binary: bin, Service: "not-installed", URLs: []string{}, Apps: map[string]string{},
+		NeedsSudo: []string{}, Warnings: []string{}}
+	warn := func(format string, a ...any) { res.Warnings = append(res.Warnings, fmt.Sprintf(format, a...)) }
+
+	// the settings, exactly as `setup` applies them
+	in, cerr := configChangeFrom(o)
+	if cerr != nil {
+		return nil, cerr
 	}
 	envPath := filepath.Join(ConfDir, "engine.env")
+	if in.Library == nil && envOrFrom("MEDIA_CORE_LIBRARY", "", envPath) == "" && libraryProblem(Media) != "" && !o.yes && stdinTTY() {
+		rd := bufio.NewReader(os.Stdin)
+		lib := expandHome(ask(rd, "Where is your media?", Media))
+		in.Library = &lib
+		if fi, err := os.Stat(lib); err != nil || !fi.IsDir() || len(missingFolders(lib)) > 0 {
+			in.MakeFolders = askYesIn(rd, "Make "+lib+" with Movies, TV Shows and Music folders in it?")
+		}
+	}
+	cfg, cerr := applyConfig(in)
+	if cerr != nil {
+		if in.Library != nil && !in.MakeFolders && cerr.code == exitFailed {
+			cerr.msg += "\nMake the folder first, or add --make-folders."
+		}
+		return nil, cerr
+	}
+	if cfg.Library != Media {
+		setPaths(ConfDir, DataDir, cfg.Library)
+	}
+	res.Library, res.LibraryProblem = Media, libraryProblem(Media)
 
-	// the library: a flag, else what's set already, else ask (the default is ~/Media)
-	lib := expandHome(o.library)
-	if lib == "" {
-		if set := envOr("MEDIA_CORE_LIBRARY", ""); set != "" {
-			lib = set
-		} else {
-			lib = expandHome(ask(in, "Library folder (your films, shows and music go here)", filepath.Join(homeDir(), "Media")))
-		}
-	}
-	if !filepath.IsAbs(lib) {
-		fail("the library folder needs a full path, like /srv/media or ~/Media")
-	}
-	lib = filepath.Clean(lib)
-	for _, f := range libraryFolders {
-		if err := os.MkdirAll(filepath.Join(lib, f), 0o775); err != nil {
-			fail("couldn't make " + filepath.Join(lib, f) + ": " + err.Error())
-		}
-	}
-	if p := libraryProblem(lib); p != "" {
-		fail(p)
-	}
-	if envOrFrom("MEDIA_CORE_LIBRARY", "", envPath) != lib {
-		if err := setEnvLine(envPath, "MEDIA_CORE_LIBRARY", lib); err != nil {
-			fail(err.Error())
-		}
-	}
-	if o.name != "" {
-		if err := setEnvLine(envPath, "MEDIA_CORE_NAME", cleanName(o.name, "")); err != nil {
-			fail(err.Error())
-		}
-	}
-	if o.tmdbKey != "" {
-		if err := checkTMDBKey(o.tmdbKey); err != nil {
-			fail(err.Error())
-		}
-		if err := os.WriteFile(filepath.Join(ConfDir, "tmdb.key"), []byte(o.tmdbKey+"\n"), 0o600); err != nil {
-			fail(err.Error())
-		}
-	}
-	setPaths(ConfDir, DataDir, lib)
-	if err := ensureAria2Conf(6800); err != nil {
-		fail(err.Error())
-	}
-
-	v := currentUnitVars(exe)
-	managed := true
-	switch {
-	case runtime.GOOS == "linux" && hasSystemd():
-		for _, n := range unitNames {
-			changed, err := writeIfChanged(filepath.Join(unitDir(), n), render(unitTemplates[n], v), 0o644)
-			if err != nil {
-				fail(err.Error())
-			}
-			if changed {
-				fmt.Println("wrote", filepath.Join(unitDir(), n))
-			}
-		}
-		run("systemctl", "--user", "daemon-reload")
-		run("systemctl", "--user", "enable", "--now", "media-core-aria2.service", "media-core-engine.service", "media-core-backup.timer")
-		run("systemctl", "--user", "restart", "media-core-engine.service")
-	case runtime.GOOS == "darwin":
-		if _, err := writeIfChanged(launchAgentPath(), render(launchAgent, v), 0o644); err != nil {
-			fail(err.Error())
-		}
-		exec.Command("launchctl", "unload", launchAgentPath()).Run()
-		run("launchctl", "load", "-w", launchAgentPath())
-	default:
-		managed = false
-	}
-
-	// what needs the owner (sudo): missing tools, and staying up after logout
-	var lines []string
-	for _, t := range toolStates() {
-		if !t.Found && t.Install != "" {
-			lines = append(lines, t.Install)
-		}
-	}
-	if runtime.GOOS == "linux" && hasSystemd() {
-		if u := os.Getenv("USER"); u != "" {
-			if out, _ := exec.Command("loginctl", "show-user", u, "-p", "Linger", "--value").Output(); strings.TrimSpace(string(out)) != "yes" {
-				lines = append(lines, "sudo loginctl enable-linger "+u+"   # keeps the server running after you log out")
+	// the downloader's settings: only written when missing
+	port := 6800
+	if _, err := os.Stat(Aria2Conf); err != nil {
+		if portTaken(port) { // something else has aria2's usual port
+			if p, err := freePort(); err == nil {
+				port = p
 			}
 		}
 	}
-	if len(lines) > 0 {
-		fmt.Println("\nStill to do (these need you, and some need sudo):")
-		for _, l := range uniq(lines) {
-			fmt.Println("  " + l)
-		}
+	if err := ensureAria2Conf(port); err != nil {
+		return nil, cliFail(exitFailed, "%v", err)
 	}
 
-	if v := releaseVersion(); v != "" && readAppInfo("media-core") == nil {
-		if err := fetchApps(v); err != nil {
-			fmt.Println("The apps couldn't be fetched (" + err.Error() + "); later: media-core-engine apps")
-		} else {
-			fmt.Println("Fetched the TV and phone apps")
+	var failed *cliErr
+	if !o.noService {
+		failed = installService(o, bin, res, say, warn)
+	}
+
+	// what needs the owner, and sudo: missing tools, staying up after logout
+	sudo, byHand := missingTools()
+	res.NeedsSudo = append(sudo, res.NeedsSudo...)
+	res.Warnings = append(res.Warnings, byHand...)
+	if failed != nil {
+		return res, failed
+	}
+
+	if !o.noApps {
+		if tag := releaseVersion(); tag != "" && !appsAt(version) {
+			say("Fetching the TV and phone apps…")
+			if err := fetchApps(tag); err != nil {
+				warn("The apps couldn't be fetched (%v). Later: %s upgrade --apps", err, cmdName(bin))
+			}
 		}
 	}
-	if !managed {
-		fmt.Printf("\nSettings are saved. There's no systemd here to run it as a service: start it with\n  %s serve\nthen run media-core-engine setup-code and open %s/#/setup\n", exe, siteURLs())
-		return
-	}
-	if !waitHello(20*time.Second, "") {
-		fmt.Println("\nThe server didn't answer yet. Check: media-core-engine doctor")
-		os.Exit(2)
-	}
-	site := siteURLs()
-	if d, err := loadDevices(filepath.Join(ConfDir, "devices.json")); err == nil && !d.claimed() {
-		code, err := newSetupCode(filepath.Join(ConfDir, "setup.code"))
-		if err == nil {
-			fmt.Printf("\nMedia Core is running. To finish, open this on a computer or phone at home:\n\n  %s/#/setup\n\nand enter the setup code %s (it lasts 24 hours; media-core-engine setup-code makes a new one).\n", site, code)
-		}
+	res.Apps = appVersions()
+
+	if d, err := loadDevices(filepath.Join(ConfDir, "devices.json")); err != nil {
+		warn("%v", err)
 	} else {
-		fmt.Printf("\nMedia Core is running: %s\n", site)
+		res.Claimed = d.claimed()
 	}
-}
-
-func uniq(xs []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, x := range xs {
-		if !seen[x] {
-			seen[x] = true
-			out = append(out, x)
-		}
-	}
-	return out
-}
-
-func run(name string, args ...string) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		fail(name + " " + strings.Join(args, " ") + ": " + err.Error())
-	}
-}
-
-// siteURLs: the site's address on the home network (the first one), for the setup link.
-func siteURLs() string {
-	if lan, _ := helloInfo()["lan"].([]string); len(lan) > 0 {
-		u := strings.TrimSuffix(lan[0], ":"+portOf(playerAddr(), "8790"))
-		return u + ":" + sitePort()
-	}
-	return "http://localhost:" + sitePort()
-}
-
-// waitHello waits until the running server answers (with version want, unless want is "").
-func waitHello(d time.Duration, want string) bool {
-	u := "http://127.0.0.1:" + portOf(playerAddr(), "8790") + "/api/v1/hello"
-	c := &http.Client{Timeout: 2 * time.Second}
-	for end := time.Now().Add(d); time.Now().Before(end); time.Sleep(500 * time.Millisecond) {
-		r, err := c.Get(u)
+	res.URLs = siteURLs()
+	res.SetupURL = res.URLs[0] + "#/setup"
+	// the code is made only once the server runs: a server that starts later makes its own and drops this one
+	if !res.Claimed && res.Service == "running" {
+		code, err := newSetupCode(filepath.Join(ConfDir, "setup.code"))
 		if err != nil {
-			continue
+			warn("couldn't make a setup code (%v). Try: %s setup-code", err, cmdName(bin))
 		}
-		var h struct{ Version string }
-		json.NewDecoder(r.Body).Decode(&h)
-		r.Body.Close()
-		if want == "" || h.Version == want {
-			return true
-		}
+		res.SetupCode = code
 	}
-	return false
+	res.OK = true
+	printInstallSummary(res, say)
+	return res, nil
 }
 
-// setupCmd changes the library, name or TMDB key: through the running server when it answers (it checks
-// nothing is playing or downloading, and restarts itself), else straight into the files.
-func setupCmd(o installOpts) {
-	body := map[string]any{"make_folders": true}
-	if o.library != "" {
-		body["library"] = expandHome(o.library)
-	}
-	if o.name != "" {
-		body["name"] = o.name
-	}
-	if o.tmdbKey != "" {
-		body["tmdb_key"] = o.tmdbKey
-	}
-	if len(body) == 1 {
-		fail("usage: media-core-engine setup [--library DIR] [--name NAME] [--tmdb-key KEY]")
-	}
-	b, _ := json.Marshal(body)
-	resp, err := cliCall("POST", adminURL()+"/api/setup/config", b, 30*time.Second)
-	if err == nil {
-		resp.Body.Close()
-		fmt.Println("Saved. The server restarts to use it.")
-		return
-	}
-	if waitHello(time.Second, "") {
-		fail(err.Error()) // the server answered and said no
-	}
-	envPath := filepath.Join(ConfDir, "engine.env")
-	if o.library != "" {
-		lib := filepath.Clean(expandHome(o.library))
-		for _, f := range libraryFolders {
-			os.MkdirAll(filepath.Join(lib, f), 0o775)
-		}
-		if p := libraryProblem(lib); p != "" {
-			fail(p)
-		}
-		if err := setEnvLine(envPath, "MEDIA_CORE_LIBRARY", lib); err != nil {
-			fail(err.Error())
-		}
-	}
-	if o.name != "" {
-		if err := setEnvLine(envPath, "MEDIA_CORE_NAME", cleanName(o.name, "")); err != nil {
-			fail(err.Error())
-		}
-	}
-	if o.tmdbKey != "" {
-		if err := checkTMDBKey(o.tmdbKey); err != nil {
-			fail(err.Error())
-		}
-		os.MkdirAll(ConfDir, 0o700)
-		if err := os.WriteFile(filepath.Join(ConfDir, "tmdb.key"), []byte(o.tmdbKey+"\n"), 0o600); err != nil {
-			fail(err.Error())
-		}
-	}
-	fmt.Println("Saved (the server wasn't running; it uses this when it starts).")
-}
-
-// ---------- upgrade ----------
-
-func releaseBase(ver string) string {
-	if u := envOr("MEDIA_CORE_BASE_URL", ""); u != "" {
-		return strings.TrimRight(u, "/") // a copy of a release's files somewhere else (tests, mirrors)
-	}
-	repo := envOr("MEDIA_CORE_REPO", defaultRepo)
-	if ver == "" || ver == "latest" {
-		return "https://github.com/" + repo + "/releases/latest/download"
-	}
-	if !strings.HasPrefix(ver, "v") {
-		ver = "v" + ver
-	}
-	return "https://github.com/" + repo + "/releases/download/" + ver
-}
-
-func download(url string, max int64) ([]byte, error) {
-	c := &http.Client{Timeout: 5 * time.Minute}
-	r, err := c.Get(url)
+// installService writes the units, starts the services and waits for the server. It fills res.Service and
+// the linger line in res.NeedsSudo.
+func installService(o installOpts, bin string, res *installResult, say func(string, ...any), warn func(string, ...any)) *cliErr {
+	changed, err := writeUnits(unitDir(), bin)
 	if err != nil {
-		return nil, err
+		return cliFail(exitFailed, "couldn't write the service files: %v", err)
 	}
-	defer r.Body.Close()
-	if r.StatusCode != 200 {
-		return nil, fmt.Errorf("%s: %s", url, r.Status)
+	for _, n := range changed {
+		say("wrote %s", filepath.Join(unitDir(), n))
 	}
-	return io.ReadAll(io.LimitReader(r.Body, max))
-}
+	hasAria := fileExists(filepath.Join(unitDir(), aria2Unit))
+	if out, err := runSystemctl("daemon-reload"); err != nil {
+		return cliFail(exitFailed, "systemctl --user daemon-reload: %v %s", err, out)
+	}
+	enable := []string{"enable", engineUnit}
+	if hasAria {
+		enable = append(enable, aria2Unit)
+	}
+	if out, err := runSystemctl(enable...); err != nil {
+		return cliFail(exitFailed, "systemctl --user %s: %v %s", strings.Join(enable, " "), err, out)
+	}
+	if out, err := runSystemctl("enable", "--now", backupTimer); err != nil {
+		warn("the nightly backup's timer didn't start (%v %s)", err, out)
+	}
 
-// sumFor finds file's hash in a SHA256SUMS text.
-func sumFor(sums, file string) string {
-	for _, l := range strings.Split(sums, "\n") {
-		f := strings.Fields(l)
-		if len(f) == 2 && strings.TrimPrefix(f[1], "*") == file {
-			return f[0]
-		}
+	// restart only when there is something new to run (a changed unit, another version, or nothing
+	// running), and never while something plays or downloads
+	running, up := helloVersion()
+	active, _ := runSystemctl("is-active", engineUnit)
+	needed := len(changed) > 0 || !up || running != version || active != "active"
+	why := ""
+	if needed && up && !o.force {
+		why, _ = serverBusy()
 	}
-	return ""
-}
-
-// upgradeCmd replaces the binary with a release, checked against its SHA256SUMS. It refuses while something
-// plays or downloads, keeps the old binary as .prev, and puts it back if the new one doesn't come up.
-func upgradeCmd(args []string) {
-	fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
-	ver := fs.String("version", "latest", "the release to install, like v1.2.0")
-	force := fs.Bool("force", false, "upgrade even while something plays or downloads")
-	fs.Parse(args)
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		fail("upgrade works on Linux and macOS")
-	}
-	if !*force {
-		resp, err := cliCall("GET", adminURL()+"/api/setup/busy", nil, 5*time.Second)
-		if err == nil {
-			var b struct{ Busy string }
-			json.NewDecoder(resp.Body).Decode(&b)
-			resp.Body.Close()
-			if b.Busy != "" {
-				fail("Not now: wait until " + b.Busy + " (or pass --force).")
+	want := version
+	switch {
+	case !needed:
+	case why != "":
+		want = "" // the old server keeps running; any answer will do
+		warn("The server wasn't restarted, so it still runs what it ran before. Wait until %s, then: systemctl --user restart %s", why, engineUnit)
+	default:
+		if hasAria {
+			if a, _ := runSystemctl("is-active", aria2Unit); a != "active" || contains(changed, aria2Unit) {
+				if out, err := runSystemctl("restart", aria2Unit); err != nil {
+					warn("the downloader's service didn't start (%v %s)", err, out)
+				}
 			}
 		}
-	}
-	file := "media-core-engine-" + runtime.GOOS + "-" + runtime.GOARCH
-	base := releaseBase(*ver)
-	sums, err := download(base+"/SHA256SUMS", 1<<20)
-	if err != nil {
-		fail("couldn't get the release's SHA256SUMS: " + err.Error())
-	}
-	want := sumFor(string(sums), file)
-	if want == "" {
-		fail("the release has no " + file)
-	}
-	bin, err := download(base+"/"+file, 200<<20)
-	if err != nil {
-		fail(err.Error())
-	}
-	got := sha256.Sum256(bin)
-	if hex.EncodeToString(got[:]) != want {
-		fail("the download doesn't match SHA256SUMS; nothing was changed")
-	}
-	dst := binPath()
-	if exe, err := os.Executable(); err == nil {
-		if e, err := filepath.EvalSymlinks(exe); err == nil {
-			dst = e
+		if out, err := runSystemctl("restart", engineUnit); err != nil {
+			res.Service = "failed"
+			return cliFail(exitFailed, "the server's service didn't start: %v %s\n%s", err, out, journalTail(engineUnit, 20))
 		}
 	}
-	if err := os.WriteFile(dst+".new", bin, 0o755); err != nil {
-		fail(err.Error())
+	if !waitHello(helloWait, want) {
+		res.Service = "failed"
+		return cliFail(exitFailed, "The server didn't answer within %s. Its last log lines:\n%s", helloWait, journalTail(engineUnit, 20))
 	}
-	out, err := exec.Command(dst+".new", "version").Output()
-	if err != nil {
-		os.Remove(dst + ".new")
-		fail("the new binary doesn't run on this computer: " + err.Error())
-	}
-	newVer := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(out)), "media-core-engine"))
-	if newVer == version {
-		os.Remove(dst + ".new")
-		fmt.Println("Already on", version)
-		return
-	}
-	if err := os.Rename(dst, dst+".prev"); err != nil {
-		fail(err.Error())
-	}
-	if err := os.Rename(dst+".new", dst); err != nil {
-		os.Rename(dst+".prev", dst)
-		fail(err.Error())
-	}
-	fmt.Printf("Upgrading %s -> %s\n", version, newVer)
-	restartEngine()
-	if waitHello(30*time.Second, newVer) {
-		fmt.Println("Done. The old version is kept as", dst+".prev")
-		// the new binary refreshes the service files it ships with
-		cmd := exec.Command(dst, "install", "--yes")
-		cmd.Stdout, cmd.Stderr = io.Discard, os.Stderr
-		cmd.Run()
-		cmd = exec.Command(dst, "apps")
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		cmd.Run()
-		return
-	}
-	fmt.Fprintln(os.Stderr, "The new version didn't come up; putting", version, "back.")
-	os.Rename(dst, dst+".failed")
-	os.Rename(dst+".prev", dst)
-	restartEngine()
-	os.Exit(2)
-}
+	res.Service = "running"
 
-func restartEngine() {
-	switch {
-	case runtime.GOOS == "linux" && hasSystemd():
-		exec.Command("systemctl", "--user", "restart", "media-core-engine.service").Run()
-	case runtime.GOOS == "darwin":
-		exec.Command("launchctl", "kickstart", "-k", fmt.Sprintf("gui/%d/app.mediacore.engine", os.Getuid())).Run()
-	}
-}
-
-// ---------- uninstall ----------
-
-// uninstallCmd stops and removes the services and the binary. --purge also deletes the settings, devices,
-// progress and caches. The library is never touched.
-func uninstallCmd(args []string) {
-	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
-	purge := fs.Bool("purge", false, "also delete settings, paired devices, watch progress and caches")
-	yes := fs.Bool("yes", false, "don't ask")
-	fs.Parse(args)
-	if *purge && !*yes {
-		fmt.Printf("This deletes %s and %s: settings, paired devices and everyone's watch progress.\nYour library (%s) stays. Type delete to go on: ", ConfDir, DataDir, Media)
-		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		if strings.TrimSpace(line) != "delete" {
-			fail("Nothing was removed.")
-		}
-	}
-	switch {
-	case runtime.GOOS == "linux" && hasSystemd():
-		exec.Command("systemctl", "--user", "disable", "--now", "media-core-engine.service", "media-core-aria2.service", "media-core-backup.timer").Run()
-		for _, n := range unitNames {
-			os.Remove(filepath.Join(unitDir(), n))
-		}
-		exec.Command("systemctl", "--user", "daemon-reload").Run()
-	case runtime.GOOS == "darwin":
-		exec.Command("launchctl", "unload", launchAgentPath()).Run()
-		os.Remove(launchAgentPath())
-	}
-	for _, p := range []string{binPath(), binPath() + ".prev", binPath() + ".failed"} {
-		os.Remove(p)
-	}
-	if *purge {
-		os.RemoveAll(ConfDir)
-		os.RemoveAll(DataDir)
-		fmt.Println("Removed Media Core, its settings and its data. Your library is untouched:", Media)
-		return
-	}
-	fmt.Printf("Removed Media Core. Settings and progress are still in %s and %s (uninstall --purge removes them).\nYour library is untouched: %s\n", ConfDir, DataDir, Media)
-}
-
-// ---------- the apps ----------
-
-// appFiles: what a release carries for the apps, checked against its APPS.SHA256SUMS.
-var appFiles = []string{"media-core.apk", "media-core.json", "media-core-phone.apk", "media-core-phone.json"}
-
-// fetchApps puts the TV and phone apps from release ver into the data folder, where the server hands them to
-// devices (and they offer the update). The .json goes in last, so a device never sees a version whose APK
-// isn't there yet.
-func fetchApps(ver string) error {
-	base := releaseBase(ver)
-	sums, err := download(base+"/APPS.SHA256SUMS", 1<<20)
-	if err != nil {
-		return fmt.Errorf("this release has no apps (%v)", err)
-	}
-	dir := filepath.Join(DataDir, "app")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	got := map[string][]byte{}
-	for _, f := range appFiles {
-		want := sumFor(string(sums), f)
-		if want == "" {
-			return fmt.Errorf("APPS.SHA256SUMS has no %s", f)
-		}
-		b, err := download(base+"/"+f, 300<<20)
-		if err != nil {
-			return err
-		}
-		h := sha256.Sum256(b)
-		if hex.EncodeToString(h[:]) != want {
-			return fmt.Errorf("%s doesn't match APPS.SHA256SUMS", f)
-		}
-		got[f] = b
-	}
-	for _, f := range appFiles { // APKs first, then their .json
-		if !strings.HasSuffix(f, ".apk") {
-			continue
-		}
-		if err := writeAtomic(filepath.Join(dir, f), got[f]); err != nil {
-			return err
-		}
-	}
-	for _, f := range appFiles {
-		if strings.HasSuffix(f, ".json") {
-			if err := writeAtomic(filepath.Join(dir, f), got[f]); err != nil {
-				return err
+	// staying up after logout
+	if name := userName(); name != "" {
+		if out, _ := runLoginctl("show-user", name, "-p", "Linger", "--value"); strings.TrimSpace(out) != "yes" {
+			if _, err := runLoginctl("enable-linger"); err != nil {
+				res.NeedsSudo = append(res.NeedsSudo, "sudo loginctl enable-linger "+name)
 			}
 		}
 	}
 	return nil
 }
 
-func writeAtomic(path string, b []byte) error {
-	if err := os.WriteFile(path+".tmp", b, 0o644); err != nil {
-		return err
+func printInstallSummary(res *installResult, say func(string, ...any)) {
+	me := cmdName(res.Binary)
+	say("")
+	switch {
+	case res.Service != "running":
+		say("Media Core %s is set up, without a service. Start it yourself:\n  %s serve", res.Version, me)
+		if !res.Claimed {
+			say("It prints a setup code when it starts. Open one of these at home and enter it:")
+			for _, u := range res.URLs {
+				say("  %s#/setup", u)
+			}
+		}
+	case res.Claimed:
+		say("Media Core %s is running:", res.Version)
+		for _, u := range res.URLs {
+			say("  %s", u)
+		}
+	default:
+		say("Media Core %s is running. To finish, open this on a computer or phone at home:", res.Version)
+		for _, u := range res.URLs {
+			say("  %s#/setup", u)
+		}
+		say("Setup code: %s   (lasts 24 hours; `%s setup-code` makes a new one)", res.SetupCode, me)
 	}
-	return os.Rename(path+".tmp", path)
+	if res.LibraryProblem != "" {
+		say("\nThe library isn't ready: %s\nPick the folder on the setup page, or: %s setup --library DIR --make-folders", res.LibraryProblem, me)
+	}
+	if len(res.NeedsSudo) > 0 {
+		say("\nStill to do, for you to run:")
+		for _, l := range res.NeedsSudo {
+			say("  %s", l)
+		}
+	}
+	for _, w := range res.Warnings {
+		say("\nNote: %s", w)
+	}
+	if me != "media-core-engine" {
+		dir := filepath.Dir(res.Binary)
+		say("\n%s isn't on your PATH. Add this to your shell's profile:\n  export PATH=\"%s:$PATH\"", dir, homeRel(dir))
+	}
+	say("\nCheck it any time: %s doctor", me)
 }
 
-// releaseVersion: the release this binary came from ("v1.2.3"), or "" for a build from source.
-func releaseVersion() string {
-	v := version
-	if v == "" || v == "dev" || strings.HasPrefix(v, "dev-") || strings.Contains(v, "test") || !strings.ContainsAny(v[:1], "0123456789") {
-		return ""
+// homeRel writes a path under the home folder with $HOME, for a line someone pastes into a profile.
+func homeRel(p string) string {
+	if h := homeDir(); strings.HasPrefix(p, h+"/") {
+		return "$HOME" + strings.TrimPrefix(p, h)
 	}
-	return "v" + v
+	return p
 }
 
-func appsCmd(args []string) {
-	fs := flag.NewFlagSet("apps", flag.ExitOnError)
-	ver := fs.String("version", "", "the release to take the apps from (default: this engine's own, else the latest)")
-	fs.Parse(args)
-	v := *ver
-	if v == "" {
-		v = releaseVersion()
+// missingTools: one install command for every missing tool this system's package manager has (the tools
+// named after it), and a line for each tool that has to be fetched by hand.
+func missingTools() (sudo, byHand []string) {
+	var pkgs, ids []string
+	pm := pkgManager()
+	for _, t := range tools {
+		if toolPath(t.ID) != "" {
+			continue
+		}
+		if pm != "" && t.Pkg[pm] != "" {
+			pkgs = append(pkgs, strings.Fields(t.Pkg[pm])...)
+			ids = append(ids, t.ID)
+		} else {
+			byHand = append(byHand, t.ID+" is missing ("+t.Feature+"): "+installHint(t.ID))
+		}
 	}
-	if err := fetchApps(v); err != nil {
-		fail("apps: " + err.Error())
+	sudo = []string{}
+	if len(pkgs) > 0 {
+		sudo = append(sudo, pkgInstall[pm]+" "+strings.Join(uniq(pkgs), " ")+"   # "+strings.Join(ids, ", "))
 	}
-	fmt.Println("The TV and phone apps are ready: devices offer the update, and the server's apps page has them.")
+	return sudo, byHand
+}
+
+// portTaken: something on this computer already listens on a localhost port.
+var portTaken = func(port int) bool {
+	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), time.Second)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
+}
+
+func missingFolders(lib string) []string {
+	var missing []string
+	for _, f := range libraryFolders {
+		if fi, err := os.Stat(filepath.Join(lib, f)); err != nil || !fi.IsDir() {
+			missing = append(missing, f)
+		}
+	}
+	return missing
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }
