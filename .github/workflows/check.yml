@@ -77,5 +77,5 @@ jobs:
           set -e
           run() { docker run --rm -v "$PWD:/src:ro" "$1" sh -c "$2 && useradd -m t && su t -c 'sh /src/scripts/test-install.sh /src/media-core-engine-test'"; }
           run debian:12 "apt-get update -qq && apt-get install -y -qq curl python3 aria2 ffmpeg >/dev/null"
-          run fedora:41 "dnf install -y -q curl python3 aria2 ffmpeg-free procps-ng >/dev/null"
+          run fedora:41 "dnf install -y -q curl python3 aria2 ffmpeg-free procps-ng util-linux shadow-utils >/dev/null"
           run archlinux:latest "pacman -Sy --noconfirm --quiet curl python aria2 ffmpeg >/dev/null"
