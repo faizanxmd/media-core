@@ -10,7 +10,6 @@ import (
 
 func TestServeDiscoverLoopback(t *testing.T) {
 	t.Setenv("MEDIA_CORE_NAME", "TestBox")
-	t.Setenv("MEDIA_CORE_PUBLIC_HOST", "box.example.com")
 
 	pc := serveDiscover("127.0.0.1:0")
 	if pc == nil {
@@ -59,8 +58,8 @@ func TestServeDiscoverLoopback(t *testing.T) {
 	if got["name"] != "TestBox" {
 		t.Fatalf("reply name = %v, want TestBox", got["name"])
 	}
-	if got["magicdns"] == nil {
-		t.Fatalf("expected magicdns in reply: %v", got)
+	if _, has := got["magicdns"]; has {
+		t.Fatalf("reply has magicdns: %v", got)
 	}
 }
 

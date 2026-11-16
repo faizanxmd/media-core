@@ -21,10 +21,10 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Talks to the engine's player API. At home that's the LAN address (full speed, no VPN); away it's the Tailscale
- * address. The app races every address it knows and prefers the LAN one. It learns them three ways: from the server
- * itself (/hello lists them all), from a broadcast on the home network, and from a connect link
- * (mediacore://connect?u=…, on the server's download page) or an address typed on the "can't find" screen.
+ * Talks to the engine's player API on the home network. The app races every address it knows. It learns them from
+ * the server itself (/hello lists them all), from a broadcast on the home network, from a connect link
+ * (mediacore://connect?u=…, on the server's download page), or from an address typed on the "can't find" screen.
+ * Reaching the server away from home isn't supported yet.
  */
 object Api {
     val http: OkHttpClient = OkHttpClient.Builder()
@@ -35,7 +35,7 @@ object Api {
     private val probe = http.newBuilder()
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
         .readTimeout(2500, TimeUnit.MILLISECONDS)
-        .callTimeout(4, TimeUnit.SECONDS) // also bounds DNS (MagicDNS when Tailscale is off)
+        .callTimeout(4, TimeUnit.SECONDS) // also bounds DNS (a typed name that doesn't resolve)
         .build()
 
     /** The player API's port, and the one the server answers broadcasts on. */
@@ -75,7 +75,8 @@ object Api {
     /** Can't reach the server: the message every caller shows. */
     val unreachable: String get() = "Can't reach $name"
 
-    val viaTailscale: Boolean get() = !isLan(base)
+    /** The server is reached by an address outside the home network (a typed name, say): treat it as a thin link. */
+    val away: Boolean get() = !isLan(base)
 
     /** The host of an address like "http://192.168.1.5:8790"; empty if it carries a user part ("a@b"). */
     private fun hostOf(u: String): String {
@@ -96,22 +97,14 @@ object Api {
         return p[0] == 10 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && p[1] in 16..31)
     }
 
-    /** A Tailscale address or name (100.64.0.0/10, *.ts.net): reachable away from home. */
-    private fun isTailscale(u: String): Boolean {
-        val host = hostOf(u)
-        if (host.endsWith(".ts.net")) return true
-        val p = ipv4(host) ?: return false
-        return p[0] == 100 && p[1] in 64..127
-    }
-
     /**
-     * A connect link from the server's download page: mediacore://connect?u=<address>&u=… . Only home-network and
-     * Tailscale addresses are taken, so a link on some other web page can't point the app at a server on the internet.
+     * A connect link from the server's download page: mediacore://connect?u=<address>&u=… . Only home-network
+     * addresses are taken, so a link on some other web page can't point the app at a server on the internet.
      */
     fun connect(uri: android.net.Uri?): Boolean {
         if (uri == null || uri.scheme != "mediacore" || uri.host != "connect") return false
         val us = uri.getQueryParameters("u").map { it.trimEnd('/') }
-            .filter { (it.startsWith("http://") || it.startsWith("https://")) && (isLan(it) || isTailscale(it)) }
+            .filter { (it.startsWith("http://") || it.startsWith("https://")) && isLan(it) }
         if (us.isEmpty()) return false
         forget(us.toSet())
         return true
@@ -141,7 +134,7 @@ object Api {
     /** True while a search for the server is running (the offline screen waits for it before trying again). */
     val searching: Boolean get() = discoverLock.isLocked
 
-    /** Finds a server address that answers; LAN wins if it replies within ~1 s of a Tailscale reply. */
+    /** Finds a server address that answers; a home-network one wins if it replies within ~1 s of another. */
     suspend fun discover(): String? = discoverLock.withLock {
         val known = (listOf(prefs.getString("base", "") ?: "") +
             (prefs.getStringSet("known", emptySet()) ?: emptySet()))
@@ -193,7 +186,7 @@ object Api {
             val caps = cm.getNetworkCapabilities(net) ?: continue
             if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
                 !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) continue
-            // a VPN (Tailscale) reports the Wi-Fi under it too; broadcasting into it finds nothing
+            // a VPN reports the Wi-Fi under it too; broadcasting into it finds nothing
             if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) continue
             val lp = cm.getLinkProperties(net) ?: continue
             for (la in lp.linkAddresses) {
@@ -234,14 +227,11 @@ object Api {
         return java.net.InetAddress.getByAddress(byteArrayOf((bc ushr 24).toByte(), (bc ushr 16).toByte(), (bc ushr 8).toByte(), bc.toByte()))
     }
 
-    /** Every address a /hello answer lists: LAN, Tailscale, then the Tailscale name. */
+    /** Every address a /hello answer lists (its home-network addresses). */
     private fun addresses(j: JSONObject): Set<String> {
         val all = linkedSetOf<String>()
-        for (k in listOf("lan", "tailscale")) {
-            val a = j.optJSONArray(k) ?: continue
-            for (i in 0 until a.length()) all += a.getString(i)
-        }
-        j.optString("magicdns").takeIf { it.isNotEmpty() }?.let { all += it }
+        val a = j.optJSONArray("lan") ?: return all
+        for (i in 0 until a.length()) all += a.getString(i)
         return all
     }
 

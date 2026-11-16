@@ -489,8 +489,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     private fun loadThumbs(j: JSONObject?) {
-        // pictures for scrubbing: fetched right away at home, only when first needed over Tailscale
-        if (j != null) st.thumbs?.load(j.optString("id"), j.optInt("thumbs"), eager = !Api.viaTailscale)
+        // pictures for scrubbing: fetched right away at home, only when first needed on a thin link
+        if (j != null) st.thumbs?.load(j.optString("id"), j.optInt("thumbs"), eager = !Api.away)
     }
 
     // ---------- lifecycle ----------
@@ -856,7 +856,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             val network = error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
             val hint = when {
                 decoder -> "This TV can't decode this video."
-                network -> "Lost the connection to ${Api.name}. Away from home? Check that Tailscale is on."
+                network -> "Lost the connection to ${Api.name}. Check that you're on the home Wi-Fi."
                 else -> "Something went wrong while playing."
             }
             abandonHold()

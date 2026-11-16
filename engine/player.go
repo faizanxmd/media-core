@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"html/template"
@@ -11,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -21,9 +19,8 @@ import (
 )
 
 // The player API (/api/v1) is what the TV and phone app talk to. It's served
-// on its own port (PlayerListen) that home Wi-Fi may reach, and it can only
-// read the library, stream and record progress: queueing and deleting stay
-// on the Tailscale-only admin port.
+// on its own port (PlayerListen), and it can only read the library, stream
+// and record progress: queueing and deleting stay on the admin port.
 
 const PlayerListen = ":8790"
 
@@ -139,48 +136,10 @@ func slimCast(it *Item) *Item {
 	return it
 }
 
-var (
-	magicDNSMu   sync.Mutex
-	magicDNSAt   time.Time
-	magicDNSName string
-)
-
-func magicDNS() string {
-	if v := strings.TrimSuffix(strings.TrimSpace(envOr("MEDIA_CORE_PUBLIC_HOST", "")), "."); v != "" {
-		return v
-	}
-	magicDNSMu.Lock()
-	defer magicDNSMu.Unlock()
-	// one lookup per 5 minutes, found or not: discovery replies must never wait on tailscale
-	if !magicDNSAt.IsZero() && time.Since(magicDNSAt) < 5*time.Minute {
-		return magicDNSName
-	}
-	magicDNSAt = time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if out, err := exec.CommandContext(ctx, "tailscale", "status", "--json").Output(); err == nil {
-		var r struct {
-			Self struct {
-				DNSName string
-			}
-		}
-		if json.Unmarshal(out, &r) == nil {
-			if dns := strings.TrimSuffix(strings.TrimSpace(r.Self.DNSName), "."); dns != "" {
-				magicDNSName = dns
-				return magicDNSName
-			}
-		}
-	}
-	if magicDNSName != "" {
-		return magicDNSName
-	}
-	return ""
-}
-
 // helloInfo builds the discovery payload for /api/v1/hello and LAN UDP replies.
 func helloInfo() map[string]any {
 	port := portOf(playerAddr(), "8790")
-	var lan, ts []string
+	var lan []string
 	ifs, _ := net.Interfaces()
 	for _, i := range ifs {
 		if i.Flags&net.FlagUp == 0 || i.Flags&net.FlagLoopback != 0 {
@@ -192,28 +151,20 @@ func helloInfo() map[string]any {
 			if !ok || ipn.IP.To4() == nil {
 				continue
 			}
-			u := "http://" + net.JoinHostPort(ipn.IP.String(), port)
-			if i.Name == "tailscale0" {
-				ts = append(ts, u)
-			} else if ipn.IP.IsPrivate() {
-				lan = append(lan, u)
+			// home-network addresses only (Tailscale's 100.64/10 isn't private, so it never lands here)
+			if ipn.IP.IsPrivate() {
+				lan = append(lan, "http://"+net.JoinHostPort(ipn.IP.String(), port))
 			}
 		}
 	}
-	info := map[string]any{
-		"name":      serverName(),
-		"lan":       lan,
-		"tailscale": ts,
-		"app":       readAppInfo("media-core"),
+	return map[string]any{
+		"name": serverName(),
+		"lan":  lan,
+		"app":  readAppInfo("media-core"),
 	}
-	if mdns := magicDNS(); mdns != "" {
-		info["magicdns"] = "http://" + net.JoinHostPort(mdns, port)
-	}
-	return info
 }
 
-// hello lets the app find every address this server answers on, so it can
-// switch between home Wi-Fi and Tailscale without asking.
+// hello lets the app learn every address this server answers on.
 func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, helloInfo())
 }
@@ -480,12 +431,6 @@ func connectDeepLink(info map[string]any) string {
 	if lan, ok := info["lan"].([]string); ok {
 		addrs = append(addrs, lan...)
 	}
-	if ts, ok := info["tailscale"].([]string); ok {
-		addrs = append(addrs, ts...)
-	}
-	if mdns, ok := info["magicdns"].(string); ok && mdns != "" {
-		addrs = append(addrs, mdns)
-	}
 	params := make([]string, 0, len(addrs))
 	for _, a := range addrs {
 		params = append(params, "u="+url.QueryEscape(a))
@@ -546,9 +491,8 @@ func renderConnectPage(info map[string]any) []byte {
 	return buf.Bytes()
 }
 
-// servePlayer runs the player API on its own port. Firewall: home Wi-Fi +
-// tailscale0 only, and of Tailscale only the owner's own devices (owner.go).
-func servePlayer(p *Player, gate *ownerGate) *http.Server {
+// servePlayer runs the player API on its own port, for the home network only (gate.go).
+func servePlayer(p *Player, gate *homeGate) *http.Server {
 	mux := http.NewServeMux()
 	p.mount(mux)
 	mountDAV(mux)

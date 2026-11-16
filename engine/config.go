@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Listen = ":8780" // ufw only lets tailscale0 reach it
+	Listen = ":8780" // the site and Manager
 	UA     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 	// MB/s used for ETAs until a real download has been measured.
 	DefaultMBps = 3.5

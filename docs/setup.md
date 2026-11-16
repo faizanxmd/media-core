@@ -29,7 +29,6 @@ You also need:
   ```
   On an ARM box, use the `linux-arm64` file instead.
 - **dovi_tool**, optional. It converts Dolby Vision profile 7 files (Blu-ray remuxes) so Android TVs play them in Dolby Vision; without it they play as HDR10. Skip it unless you have such files. Otherwise download the Linux release from github.com/quietvoid/dovi_tool and put the `dovi_tool` binary in `~/.local/bin/`.
-- **Tailscale**, optional, for use away from home.
 
 ## 2. Make the library folder
 
@@ -63,7 +62,6 @@ It holds plain `KEY=value` lines:
 | --- | --- | --- |
 | `MEDIA_CORE_LIBRARY` | `/srv/data/media` | the library folder |
 | `MEDIA_CORE_NAME` | the host name | the server's name in the apps ("mint is offline") |
-| `MEDIA_CORE_PUBLIC_HOST` | asked of Tailscale | a host name the apps can use away from home |
 | `MEDIA_CORE_LISTEN` | `:8780` | the website and Manager |
 | `MEDIA_CORE_PLAYER_LISTEN` | `:8790` | the apps' API, and the UDP port the apps search on |
 | `MEDIA_CORE_DOVI_TOOL` | `dovi_tool` on the PATH, else `~/.local/bin/dovi_tool` | the Dolby Vision tool |
@@ -91,21 +89,20 @@ Both services say `active (running)`, the second command prints the server's nam
 
 ## 6. Firewall
 
-Port 8780 is the website and Manager; port 8790 is the apps' API (TCP) and how the apps search for the server (UDP). Allow 8780 on `tailscale0` only, and 8790 on the home network and on `tailscale0`. With ufw (`sudo ufw status` shows whether it's on), where `192.168.1.0/24` is your home network:
+Port 8780 is the website and Manager; port 8790 is the apps' API (TCP) and how the apps search for the server (UDP). Allow both from the home network only. With ufw (`sudo ufw status` shows whether it's on), where `192.168.1.0/24` is your home network:
 
 ```sh
-sudo ufw allow in on tailscale0 to any port 8780 proto tcp
-sudo ufw allow in on tailscale0 to any port 8790
+sudo ufw allow from 192.168.1.0/24 to any port 8780 proto tcp
 sudo ufw allow from 192.168.1.0/24 to any port 8790
 ```
 
-Without Tailscale, allow 8780 from the home network instead: `sudo ufw allow from 192.168.1.0/24 to any port 8780 proto tcp`. With another firewall, open the same ports.
+With another firewall, open the same ports.
 
-Never open either port to the internet: there are no accounts, and the home network is trusted.
+Never open either port to the internet. There are no accounts, so the engine refuses anything that isn't the home network or the box itself.
 
 ## 7. Connect the apps
 
-On a phone, open `http://<server>:8790/` and install the app from there. On a TV, use a downloader app or `adb install` with `http://<server>:8790/api/v1/app.apk`. At home the app finds the server by itself. Away from home, open the same page over Tailscale after installing and tap **Open in Media Core**. If neither works, type the server's address on the app's offline screen.
+On a phone, open `http://<server>:8790/` and install the app from there. On a TV, use a downloader app or `adb install` with `http://<server>:8790/api/v1/app.apk`. The app finds the server on the home network by itself. If it doesn't, type the server's address on the app's offline screen. Use away from home isn't supported yet.
 
 Each app offers an update when a newer build is published on the server.
 

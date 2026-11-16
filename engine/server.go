@@ -352,7 +352,7 @@ func (s *Server) routes() http.Handler {
 		}
 		writeJSON(w, 200, map[string]any{"ok": true, "freed": freed})
 	})
-	s.p.mount(mux) // the app's API is reachable here too (Tailscale)
+	s.p.mount(mux) // the app's API is reachable here too
 	mountWebCopies(mux, s.p)
 	s.mountManager(mux)
 	mux.HandleFunc("POST /api/settings", func(w http.ResponseWriter, r *http.Request) {
@@ -454,8 +454,7 @@ func serve() {
 	}
 	go e.Run()
 	pl := &Player{c: cat, w: watch, t: tm, e: e}
-	go pl.watchRelay()
-	gate := newOwnerGate()
+	gate := newHomeGate()
 	ps := servePlayer(pl, gate)
 	dc := serveDiscover(discoverAddr(playerAddr()))
 	srv := &Server{e: e, p: pl, assets: loadAssets()}

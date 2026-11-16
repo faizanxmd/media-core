@@ -637,8 +637,7 @@ const Manager = (() => {
     // the bar shows everything that fills the disk, so what's left of it is what's free
     const parts = [["Films", L.films, "var(--ink)"], ["Shows", L.shows, "var(--muted)"], ["Music", L.music, "#5E636D"], ...(other > 5e9 ? [["Not the library", other, "#4A505B"]] : [])];
     const s = S.settings, seg = (key, vals) => `<div class="seg" role="radiogroup">${vals.map(([v, l]) => `<button role="radio" aria-checked="${s[key] === v}" data-set="${key}" data-v="${v}" class="${s[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
-    const relayed = (SYS.now || []).filter(n => n.relayed).map(n => n.device);
-    const devs = SYS.devices || [], now = SYS.now || [];
+    const now = SYS.now || [];
     const days = SYS.uptime_s >= 2 * 86400 ? plural(Math.floor(SYS.uptime_s / 86400), "day") : dur(SYS.uptime_s).replace(/ \d+ min$/, "");
     const fig = (v, k, cls = "") => v ? `<div><div class="title fig ${cls}">${esc(v)}</div><div class="caption mut">${k}</div></div>` : "";
     const backup = SYS.backup_at ? ago(SYS.backup_at).split(", ") : ["None yet"];
@@ -658,9 +657,6 @@ const Manager = (() => {
           ${(SYS.apps || []).map(([name, href, file, a]) => `<div class="sline"><span>${name}<small>${a?.version_name ? esc(a.version_name) : "No build yet"}</small></span>
             ${a?.version_name ? `<a class="word" href="${href}" download="${file}">Download</a>` : ""}</div>`).join("")}</section>
         ${now.length ? `<section><h3>Playing now</h3>${now.map(n => line(n.title, "", "", n.device)).join("")}</section>` : ""}
-        ${devs.length ? `<section><h3>Away from home</h3>
-          ${devs.map(d => line(d.name, !d.online ? "Offline" : !d.active ? "Idle" : d.direct ? "Direct" : "Relayed: too slow for films", d.active && !d.direct ? "warnc" : "mut")).join("")}
-          ${relayed.length ? `<div class="warn">${esc(relayed.join(", "))} ${relayed.length > 1 ? "are" : "is"} playing through Tailscale's relay, which carries about 10 Mb/s. The router's port forward for 41641 is the usual cause.</div>` : ""}</section>` : ""}
       </div></div>`;
     if (body._k === "sys" && body._h === html) return;
     body._k = "sys"; body._h = html; body.innerHTML = html;

@@ -15,7 +15,7 @@ import (
 
 // Manager (the site's Manager tab): the library's files with where each one
 // plays, the MP4 step and Light copies for titles already in the library, and
-// how the server is doing. All of it is on the Tailscale-only admin port.
+// how the server is doing. All of it is on the admin port (home network only).
 
 type mFile struct {
 	ID      string              `json:"id"`
@@ -284,15 +284,10 @@ func (s *Server) system() map[string]any {
 	if now == nil {
 		now = []Playing{}
 	}
-	devs := devices()
-	if devs == nil {
-		devs = []Device{}
-	}
 	films, shows, music := sectionSizes()
 	return map[string]any{
 		"load": load, "cores": cores,
-		"now":     now,  // what's playing, and on what
-		"devices": devs, // the owner's other machines, and whether each reaches the server directly
+		"now": now, // what's playing, and on what
 		"library": map[string]any{"free": free, "total": total,
 			"films": films, "shows": shows,
 			"music": music, "light": light},

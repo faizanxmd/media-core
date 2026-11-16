@@ -1,4 +1,4 @@
-// media-core-engine: paste a link, it lands in the library. Web UI + API on :8780 (Tailscale only).
+// media-core-engine: paste a link, it lands in the library. Web UI + API on :8780 (home network only).
 //
 //	media-core-engine [serve]             run the web app (media-core-engine.service)
 //	media-core-engine add <url> [kind] [title]   queue a link with the guessed (or given) name

@@ -15,10 +15,10 @@
 ## Ports and flow
 
 ```
-link ─▶ :8780 site + API (Tailscale only) ─▶ aria2 RPC 127.0.0.1:6800 ─▶ library
+link ─▶ :8780 site + API (home network) ─▶ aria2 RPC 127.0.0.1:6800 ─▶ library
                                                                             │
 TV / phone app ◀─ :8790 player API /api/v1, streaming, WebDAV /dav ◀─ catalog
-                  (home network + Tailscale; UDP 8790 answers the apps' search)
+                  (home network; UDP 8790 answers the apps' search)
 ```
 
 The engine never converts the picture while you watch. The apps get each file as it is, reading the parts they need (HTTP range requests), and decode it themselves with Media3, plus FFmpeg decoders for DTS and TrueHD.
@@ -27,11 +27,11 @@ Browsers are the exception, because some can't open a file as it is: an MKV in S
 
 ## How the apps find the server
 
-An app races every address it knows and prefers the home network. It learns them from the server: `GET /api/v1/hello` lists the server's name, its home-network and Tailscale addresses, and its Tailscale name. A fresh app finds the server by sending `media-core?` as a UDP broadcast to port 8790; the engine answers devices on the home network with the same list. Away from home, the download page at `http://<server>:8790/` has an "Open in Media Core" button, a `mediacore://connect?u=…` link that hands the app the addresses. If neither works, the app's offline screen takes a typed address.
+An app races every address it knows. It learns them from the server: `GET /api/v1/hello` lists the server's name and its home-network addresses. A fresh app finds the server by sending `media-core?` as a UDP broadcast to port 8790; the engine answers devices on the home network with the same list. The download page at `http://<server>:8790/` also has an "Open in Media Core" button, a `mediacore://connect?u=…` link that hands the app the addresses. If neither works, the app's offline screen takes a typed address. Use away from home isn't supported yet.
 
 ## Who can use it
 
-There are no accounts. The engine answers the home network, and of Tailscale only the owner's own devices (`engine/owner.go`), so sharing the server with another Tailscale account does not open it to them. The firewall ([setup.md](setup.md), step 6) keeps 8780 to Tailscale. Anyone on the home network can use the apps' API, so never expose either port to the internet.
+There are no accounts. The engine answers only this machine and the home network (`engine/gate.go`) and refuses everything else, whatever the firewall allows. Anyone on the home network can use the site and the apps' API, so never expose either port to the internet.
 
 ## The library
 

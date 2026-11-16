@@ -117,7 +117,7 @@ fun ErrorView(msg: String, onRetry: () -> Unit) {
             if (Api.hasServer) {
                 Text(Api.unreachable, style = Type.Title)
                 Spacer(Modifier.height(12.dp))
-                Text("At home: check that ${Api.name} is on.\nAway from home: open the Tailscale app and connect.", style = Type.Body, color = Muted)
+                Text("Check that ${Api.name} is on, and that you're on the home Wi-Fi.", style = Type.Body, color = Muted)
                 if (msg != Api.unreachable) Text(msg, style = Type.Caption, color = Muted, modifier = Modifier.padding(top = 8.dp))
             } else {
                 Text("Looking for your server", style = Type.Title)

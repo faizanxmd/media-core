@@ -346,8 +346,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     private fun loadThumbs(j: JSONObject?) {
-        // pictures for scrubbing: fetched right away at home, only when first needed over Tailscale
-        if (j != null) st.thumbs?.load(j.optString("id"), j.optInt("thumbs"), eager = !Api.viaTailscale)
+        // pictures for scrubbing: fetched right away at home, only when first needed on a thin link
+        if (j != null) st.thumbs?.load(j.optString("id"), j.optInt("thumbs"), eager = !Api.away)
     }
 
     // ---------- lifecycle ----------
@@ -402,10 +402,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             .setEnableDecoderFallback(true)
         val load = DefaultLoadControl.Builder()
             // keep up to ~50 s ahead and the last 20 s behind, so skips both ways stay in memory.
-            // At home playback starts at 0.5 s buffered; over Tailscale, a thin connection, it waits
+            // At home playback starts at 0.5 s buffered; on a thin connection it waits
             // for more, and for more again after running dry, rather than stopping every few seconds.
             // Capped at 128 MB (largeHeap): all 70 s of a 15 Mb/s WEB-DL
-            .setBufferDurationsMs(15_000, 50_000, if (Api.viaTailscale) 2_500 else 500, if (Api.viaTailscale) 6_000 else 2_000)
+            .setBufferDurationsMs(15_000, 50_000, if (Api.away) 2_500 else 500, if (Api.away) 6_000 else 2_000)
             .setBackBuffer(20_000, true)
             .setTargetBufferBytes(128 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
@@ -663,7 +663,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             val network = error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
             val hint = when {
                 decoder -> "This phone can't decode this video."
-                network -> "Lost the connection to ${Api.name}. Away from home? Check that Tailscale is on."
+                network -> "Lost the connection to ${Api.name}. Check that you're on the home Wi-Fi."
                 else -> "Something went wrong while playing."
             }
             st.mode = Mode.Hidden

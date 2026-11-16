@@ -59,5 +59,5 @@ Shape: 6 everywhere. Space: 4, 8, 12, 16, 24. Side margin 16, row title to cards
 - A sideways drag anywhere moves through the film (the whole screen is 6 minutes). The bar is for long jumps: a finger on it goes straight there, with no knob.
 - While moving, the film holds still and the TV's picture strip takes over. Lifting the finger lands and plays.
 - Speed, Audio, Subtitles and Episodes open as a list down the right, so the picture stays in view. A tap beside it closes it.
-- Over Tailscale it waits for more buffer before starting (2.5 s, and 6 s after running dry) than it does at home (0.5 s, 2 s).
+- Away from the home network it waits for more buffer before starting (2.5 s, and 6 s after running dry) than it does at home (0.5 s, 2 s).
 - No chapters, as on the TV.

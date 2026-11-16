@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
  * How fast the server reaches this device, measured in the background so it's known before a title is picked:
  * a few seconds after the app opens, again when the network changes, and again when a title starts and the
  * last result is over 10 minutes old. One result is kept per network (Wi-Fi, mobile data, ethernet; at home
- * or over Tailscale), so moving between them uses what that network last measured.
+ * or away), so moving between them uses what that network last measured.
  */
 object Speed {
     private const val STALE_MS = 10 * 60_000L
@@ -83,7 +83,7 @@ object Speed {
 
     private fun key(): String {
         val caps = runCatching { cm?.getNetworkCapabilities(cm?.activeNetwork) }.getOrNull()
-        return transport(caps) + if (Api.viaTailscale) ":tailscale" else ":home"
+        return transport(caps) + if (Api.away) ":away" else ":home"
     }
 
     private fun measureSoon(delayMs: Long) {

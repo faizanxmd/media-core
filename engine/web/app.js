@@ -157,7 +157,7 @@ function loadingPage() {
 }
 function errorPage(retry) {
   show(`<div class="centre"><div class="title">Can't reach ${esc(serverName)}</div>
-    <p class="mut" style="margin:1.2rem 0 2.4rem">At home: check that ${esc(serverName)} is on.<br>Away from home: open Tailscale and connect.</p>
+    <p class="mut" style="margin:1.2rem 0 2.4rem">Check that ${esc(serverName)} is on, and that you're on the home network.</p>
     <button class="tool" id="retry" aria-label="Try again" title="Try again">${icon("Refresh")}</button></div>`);
   $("#retry").onclick = retry;
 }

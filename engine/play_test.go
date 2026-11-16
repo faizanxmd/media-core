@@ -165,30 +165,3 @@ func TestServeAPKSendsNoStore(t *testing.T) {
 		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
 }
-
-func TestHelloMagicDNSFromTailscale(t *testing.T) {
-	magicDNSMu.Lock()
-	magicDNSName = ""
-	magicDNSMu.Unlock()
-	defer func() {
-		magicDNSMu.Lock()
-		magicDNSName = ""
-		magicDNSMu.Unlock()
-	}()
-
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "tailscale")
-	os.WriteFile(bin, []byte("#!/bin/sh\necho '{\"Self\":{\"DNSName\":\"custom-host.tailnet.ts.net.\"}}'\n"), 0o755)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	p := &Player{c: &Catalog{items: map[string]*Item{}}, w: newTestWatch(), t: &TMDB{}}
-	rec := httptest.NewRecorder()
-	p.hello(rec, httptest.NewRequest("GET", "/api/v1/hello", nil))
-	var out struct {
-		MagicDNS string `json:"magicdns"`
-	}
-	json.Unmarshal(rec.Body.Bytes(), &out)
-	if out.MagicDNS != "http://custom-host.tailnet.ts.net:8790" {
-		t.Fatalf("magicdns = %q, want http://custom-host.tailnet.ts.net:8790", out.MagicDNS)
-	}
-}
