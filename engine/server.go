@@ -13,7 +13,6 @@ import (
 	"log"
 	"mime"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -459,10 +458,7 @@ func serve() {
 	gate := newOwnerGate()
 	ps := servePlayer(pl, gate)
 	srv := &Server{e: e, p: pl, assets: loadAssets()}
-	addr := Listen
-	if v := os.Getenv("MEDIA_CORE_LISTEN"); v != "" {
-		addr = v
-	}
+	addr := listenAddr()
 	hs := &http.Server{Addr: addr, Handler: gate.wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-shutdownSignal()

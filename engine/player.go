@@ -467,10 +467,7 @@ func servePlayer(p *Player, gate *ownerGate) *http.Server {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Write([]byte("Media Core Engine player API. Get the TV/phone app: /api/v1/app.apk\n"))
 	})
-	addr := PlayerListen
-	if v := os.Getenv("MEDIA_CORE_PLAYER_LISTEN"); v != "" {
-		addr = v
-	}
+	addr := playerAddr()
 	hs := &http.Server{Addr: addr, Handler: gate.wrap(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("player API listening on %s", addr)
