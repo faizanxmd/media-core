@@ -717,7 +717,7 @@ func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 			}
 		} `json:"content_ratings"`
 	}
-	q := url.Values{"append_to_response": {"credits,images,content_ratings"}, "include_image_language": {"en,null"}}
+	q := url.Values{"append_to_response": {"credits,aggregate_credits,images,content_ratings"}, "include_image_language": {"en,null"}}
 	if err := t.get(ctx, "/tv/"+strconv.Itoa(id), q, &r); err != nil {
 		return err
 	}

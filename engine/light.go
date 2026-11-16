@@ -66,10 +66,10 @@ func (e *Engine) waitForFilm(ctx context.Context, id string) error {
 		if !ok {
 			return errors.New("job removed")
 		}
-		busy, done, cancelled, failed, partialPath := e.filmJobState(j)
+		busy, _, cancelled, failed, _ := e.filmJobState(j)
 		if !busy {
 			mv := mainVideo(j.Plan.Into)
-			isPartial := mv != "" && (exists(mv+".aria2") || (!done && mv == partialPath))
+			isPartial := mv != "" && exists(mv+".aria2") // an unfinished download keeps its control file
 			if mv != "" && !isPartial {
 				return nil
 			}

@@ -358,7 +358,7 @@ func (s *Server) mountManager(mux *http.ServeMux) {
 			errJSON(w, 400, "no Light copy")
 			return
 		}
-		if s.busyFiles()[it.file] {
+		if busy := s.busyFiles(); busy[it.file] || busy[filepath.Dir(it.file)] || busy[it.Light.file] {
 			errJSON(w, 400, "a job is still working on this")
 			return
 		}

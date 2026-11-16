@@ -179,7 +179,7 @@ func (e *Engine) post(ctx context.Context, id string) error {
 		if !j.Plan.Light {
 			j.Placed = true
 		}
-		j.Files = videos
+		j.Files = append([]string(nil), videos...) // videos changes below; the store's copy must not
 	})
 
 	for i, v := range videos {
@@ -190,7 +190,7 @@ func (e *Engine) post(ctx context.Context, id string) error {
 				return err
 			}
 			videos[i] = v2
-			c.set(true, func(j *Job) { j.Files = videos })
+			c.set(true, func(j *Job) { j.Files = append([]string(nil), videos...) })
 		case prof > 0:
 			c.log(fmt.Sprintf("Dolby Vision profile %d: plays in DV on the TV", prof))
 		}

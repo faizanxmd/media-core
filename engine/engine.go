@@ -287,7 +287,8 @@ func (e *Engine) submitAria(ctx context.Context, j Job, resubmit bool) (gid, pat
 	if resubmit || exists(path+".aria2") {
 		opts["continue"] = "true"
 		opts["auto-file-renaming"] = "false"
-		if resubmit && !exists(path+".aria2") && exists(path) && (j.GID != "" || j.Started > 0 || j.DoneBytes > 0) {
+		// only a file this job itself wrote may be restarted from zero (a GID alone proves nothing)
+		if resubmit && !exists(path+".aria2") && exists(path) && (j.Started > 0 || j.DoneBytes > 0) {
 			opts["allow-overwrite"] = "true"
 		}
 	}
@@ -343,6 +344,13 @@ func (e *Engine) NewJob(p Probe, plan Plan) (Job, error) {
 	}
 	if p.URL == "" {
 		return Job{}, errors.New("missing link")
+	}
+	// aria2 runs with continue=true: a download aimed at a file that's already
+	// there would be appended to it. Refuse instead of touching the library.
+	if dir, fn, _, err := planPaths(plan); err == nil && fn != "" && plan.Kind != "convert" {
+		if exists(filepath.Join(dir, fn)) {
+			return Job{}, fmt.Errorf("%s is already in the library: delete it first to download it again", fn)
+		}
 	}
 	var sz int64
 	if p.Size != nil {
