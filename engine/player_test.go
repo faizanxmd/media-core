@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"html"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -60,5 +61,50 @@ func TestMagicDNSAndHelloInfo(t *testing.T) {
 	info := helloInfo()
 	if info["magicdns"] != "http://home.example.com:9790" {
 		t.Fatalf("helloInfo magicdns = %v, want http://home.example.com:9790", info["magicdns"])
+	}
+}
+
+func TestConnectPageDeepLink(t *testing.T) {
+	info := map[string]any{
+		"name":      "living-room",
+		"lan":       []string{"http://192.168.1.10:8790", "http://10.0.0.5:8790"},
+		"tailscale": []string{"http://100.64.0.10:8790"},
+		"magicdns":  "http://box.example.com:8790",
+	}
+	wantLink := "mediacore://connect?" +
+		"u=http%3A%2F%2F192.168.1.10%3A8790" +
+		"&u=http%3A%2F%2F10.0.0.5%3A8790" +
+		"&u=http%3A%2F%2F100.64.0.10%3A8790" +
+		"&u=http%3A%2F%2Fbox.example.com%3A8790"
+
+	if got := connectDeepLink(info); got != wantLink {
+		t.Fatalf("connectDeepLink = %q, want %q", got, wantLink)
+	}
+
+	page := string(renderConnectPage(info))
+	unescaped := html.UnescapeString(page)
+	for _, want := range []string{
+		"<title>Media Core</title>",
+		"living-room",
+		`href="/api/v1/app.apk"`,
+		"Download the TV app",
+		`href="/api/v1/phone-app.apk"`,
+		"Download the phone app",
+		"Open in Media Core",
+		`href="` + wantLink + `"`,
+		"Install the app first, then tap this to connect it to living-room.",
+	} {
+		if !strings.Contains(unescaped, want) {
+			t.Fatalf("connect page missing %q\npage:\n%s", want, page)
+		}
+	}
+
+	// Without magicdns, no trailing empty u= parameter.
+	noMDNS := map[string]any{
+		"name": "den",
+		"lan":  []string{"http://192.168.1.10:8790"},
+	}
+	if got := connectDeepLink(noMDNS); got != "mediacore://connect?u=http%3A%2F%2F192.168.1.10%3A8790" {
+		t.Fatalf("connectDeepLink without magicdns = %q", got)
 	}
 }
