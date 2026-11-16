@@ -30,25 +30,56 @@ type Device struct {
 	ips    []string
 }
 
+type devCall struct {
+	done chan struct{}
+	list []Device
+}
+
 var (
-	devMu   sync.Mutex
-	devAt   time.Time
-	devList []Device
+	devMu     sync.Mutex
+	devAt     time.Time
+	devList   []Device
+	devFlight *devCall
+
+	fetchDevices = readTailscaleDevices
 )
 
 // devices lists the other machines on the owner's Tailscale, from tailscaled (kept for 10 s).
 func devices() []Device {
 	devMu.Lock()
-	defer devMu.Unlock()
-	if time.Since(devAt) < 10*time.Second {
-		return devList
+	if !devAt.IsZero() && time.Since(devAt) < 10*time.Second {
+		list := devList
+		devMu.Unlock()
+		return list
 	}
+	if c := devFlight; c != nil {
+		devMu.Unlock()
+		<-c.done
+		return c.list
+	}
+	c := &devCall{done: make(chan struct{})}
+	devFlight = c
+	devMu.Unlock()
+
+	list := fetchDevices()
+
+	devMu.Lock()
 	devAt = time.Now()
+	devList = list
+	c.list = list
+	if devFlight == c {
+		devFlight = nil
+	}
+	close(c.done)
+	devMu.Unlock()
+	return list
+}
+
+func readTailscaleDevices() []Device {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "tailscale", "status", "--json").Output()
 	if err != nil {
-		devList = nil
 		return nil
 	}
 	var r struct {
@@ -63,7 +94,6 @@ func devices() []Device {
 		}
 	}
 	if json.Unmarshal(out, &r) != nil {
-		devList = nil
 		return nil
 	}
 	var list []Device
@@ -71,7 +101,6 @@ func devices() []Device {
 		list = append(list, Device{Name: p.HostName, OS: p.OS, Online: p.Online, Active: p.Active, Direct: p.CurAddr != "", Relay: p.Relay, ips: p.TailscaleIPs})
 	}
 	sort.Slice(list, func(a, b int) bool { return list[a].Name < list[b].Name })
-	devList = list
 	return list
 }
 
