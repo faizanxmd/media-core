@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -28,8 +30,11 @@ import (
 const (
 	roleAdmin  = "admin"
 	rolePlayer = "player"
-	cookieName = "mc_session"
 )
+
+// cookieName: one per server (by its site port; both its ports share it), so a second server on the same
+// computer, a temporary one say, doesn't overwrite this one's sign-in. Cookies don't keep ports apart.
+func cookieName() string { return "mc_session_" + sitePort() }
 
 type device struct {
 	ID      string `json:"id"`
@@ -54,11 +59,19 @@ type devFile struct {
 	Devices []*device `json:"devices"`
 }
 
-func loadDevices(path string) *devStore {
+// loadDevices reads devices.json. A file that's there but can't be read is an error: treating it as empty
+// would make the server look unclaimed and the next save would overwrite it.
+func loadDevices(path string) (*devStore, error) {
 	s := &devStore{path: path, byHash: map[string]*device{}}
 	var f devFile
-	if b, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(b, &f)
+	b, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err == nil {
+		if err := json.Unmarshal(b, &f); err != nil {
+			return nil, fmt.Errorf("%s is damaged (%v). Fix it or move it away (every device then pairs again)", path, err)
+		}
 	}
 	for _, d := range f.Devices {
 		if d.Hash != "" && d.ID != "" {
@@ -66,7 +79,7 @@ func loadDevices(path string) *devStore {
 			s.byHash[d.Hash] = d
 		}
 	}
-	return s
+	return s, nil
 }
 
 func hashToken(tok string) string {
@@ -165,6 +178,49 @@ func (s *devStore) removeKind(kind string) {
 	s.saveLocked()
 }
 
+// lastAdmin: id is the only admin besides the command line (removing it would leave nobody to manage the server).
+func (s *devStore) lastAdmin(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	admins, isAdmin := 0, false
+	for _, d := range s.list {
+		if d.Role == roleAdmin && d.Kind != "cli" {
+			admins++
+			if d.ID == id {
+				isAdmin = true
+			}
+		}
+	}
+	return isAdmin && admins == 1
+}
+
+// prove lets an app check that it's talking to its own server before it sends its key: the app sends a
+// random nonce and the start of its key's hash (k, 16 hex), and the server answers HMAC-SHA256 of the nonce
+// keyed by the whole hash, which only the real server (and the app) can work out. The key itself never travels.
+func (s *devStore) prove(w http.ResponseWriter, r *http.Request) {
+	k, n := r.URL.Query().Get("k"), r.URL.Query().Get("n")
+	if len(k) != 16 || len(n) < 16 || len(n) > 128 {
+		errJSON(w, 400, "k (16 hex) and n (a nonce) are needed")
+		return
+	}
+	s.mu.Lock()
+	var hash string
+	for _, d := range s.list {
+		if d.Kind != "cli" && strings.HasPrefix(d.Hash, k) {
+			hash = d.Hash
+			break
+		}
+	}
+	s.mu.Unlock()
+	if hash == "" {
+		writeJSON(w, 404, map[string]any{"ok": false, "error": "unknown"})
+		return
+	}
+	m := hmac.New(sha256.New, []byte(hash))
+	m.Write([]byte(n))
+	writeJSON(w, 200, map[string]any{"mac": hex.EncodeToString(m.Sum(nil))})
+}
+
 // claimed: someone has set the server up (an admin device other than the command line exists).
 func (s *devStore) claimed() bool {
 	s.mu.Lock()
@@ -237,7 +293,7 @@ func requestToken(r *http.Request) string {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimSpace(h[len("Bearer "):])
 	}
-	if c, err := r.Cookie(cookieName); err == nil {
+	if c, err := r.Cookie(cookieName()); err == nil {
 		return c.Value
 	}
 	return ""
@@ -249,7 +305,7 @@ func requestToken(r *http.Request) string {
 func openRoute(r *http.Request) bool {
 	p := r.URL.Path
 	switch p {
-	case "/api/v1/hello", "/api/v1/pair/start", "/api/v1/pair/poll",
+	case "/api/v1/hello", "/api/v1/pair/start", "/api/v1/pair/poll", "/api/v1/prove",
 		"/api/v1/app", "/api/v1/phone-app", "/api/v1/app.apk", "/api/v1/phone-app.apk",
 		"/api/setup/state", "/api/setup/claim":
 		return true
@@ -323,7 +379,7 @@ func (a *authGate) nameOf(host string) string {
 }
 
 func setSessionCookie(w http.ResponseWriter, tok string) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", HttpOnly: true,
+	http.SetCookie(w, &http.Cookie{Name: cookieName(), Value: tok, Path: "/", HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, MaxAge: 400 * 24 * 3600})
 }
 

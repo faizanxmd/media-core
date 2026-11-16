@@ -23,7 +23,8 @@ import (
 
 const (
 	pairTTL        = 10 * time.Minute
-	pairMaxPending = 5
+	pairMaxPending = 20 // waiting at once, from every address together
+	pairMaxPerAddr = 3  // waiting at once from one address, so one device can't fill the list
 	pairStartsPerM = 10
 	codeAlphabet   = "23456789ABCDEFGHJKMNPQRSTUVWXYZ" // 31 letters: no 0/O, 1/I/L
 )
@@ -36,8 +37,7 @@ type pendingPair struct {
 	IP      string
 	Created time.Time
 	state   string // pending, approved, denied
-	token   string // set on approval, handed over once
-	role    string
+	role    string // set on approval; the key itself is made when the device collects it
 }
 
 type pairing struct {
@@ -149,7 +149,13 @@ func (p *pairing) start(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 429, "Too many codes asked for. Wait a minute.")
 		return
 	}
-	if len(p.byCode) >= pairMaxPending {
+	mine := 0
+	for _, v := range p.byCode {
+		if v.IP == ip {
+			mine++
+		}
+	}
+	if len(p.byCode) >= pairMaxPending || mine >= pairMaxPerAddr {
 		errJSON(w, 429, "Too many devices are waiting to pair. Approve or wait for one, then try again.")
 		return
 	}
@@ -189,17 +195,32 @@ func (p *pairing) poll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]any{"state": "expired"})
 		return
 	}
-	state, tok, role, name, kind := pp.state, pp.token, pp.role, pp.Name, pp.Kind
+	state, role, name, kind := pp.state, pp.role, pp.Name, pp.Kind
+	var tok string
+	if state == "approved" {
+		// the key is made only now, when the device that asked collects it: an approval nobody collects
+		// leaves no key behind
+		t, _, err := p.dev.add(name, kind, role)
+		if err != nil {
+			p.mu.Unlock()
+			errJSON(w, 500, err.Error())
+			return
+		}
+		tok = t
+	}
 	if state != "pending" {
 		delete(p.byCode, pp.Code) // the answer is given once
 	}
 	p.mu.Unlock()
 	switch state {
 	case "approved":
+		out := map[string]any{"state": "approved", "role": role, "name": name}
 		if kind == "web" {
-			setSessionCookie(w, tok)
+			setSessionCookie(w, tok) // a browser keeps it where page scripts can't read it
+		} else {
+			out["token"] = tok
 		}
-		writeJSON(w, 200, map[string]any{"state": "approved", "token": tok, "role": role, "name": name})
+		writeJSON(w, 200, out)
 	default:
 		writeJSON(w, 200, map[string]any{"state": state})
 	}
@@ -233,11 +254,7 @@ func (p *pairing) approve(code, name, role, by string) (*pendingPair, error) {
 	if role != roleAdmin {
 		role = rolePlayer
 	}
-	tok, _, err := p.dev.add(cleanName(name, pp.Name), pp.Kind, role)
-	if err != nil {
-		return nil, err
-	}
-	pp.state, pp.token, pp.role = "approved", tok, role
+	pp.state, pp.role = "approved", role
 	pp.Name = cleanName(name, pp.Name)
 	log.Printf("devices: %s paired (%s, %s), approved by %s", pp.Name, pp.Kind, role, by)
 	c := *pp
@@ -335,6 +352,7 @@ func (p *pairing) claim(w http.ResponseWriter, r *http.Request) {
 func (p *pairing) mount(mux *http.ServeMux, admin bool) {
 	mux.HandleFunc("POST /api/v1/pair/start", p.start)
 	mux.HandleFunc("POST /api/v1/pair/poll", p.poll)
+	mux.HandleFunc("GET /api/v1/prove", p.dev.prove)
 	// me: which device this is, and what it may do (a home device let in by MEDIA_CORE_OPEN_HOME counts as admin)
 	mux.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) {
 		d := deviceFrom(r)
@@ -390,6 +408,10 @@ func (p *pairing) mount(mux *http.ServeMux, admin bool) {
 		writeJSON(w, 200, map[string]any{"devices": p.dev.views(me), "waiting": waiting})
 	})
 	mux.HandleFunc("POST /api/devices/{id}/revoke", func(w http.ResponseWriter, r *http.Request) {
+		if p.dev.lastAdmin(r.PathValue("id")) {
+			errJSON(w, 409, "This is the only admin. Make another device an admin first, or the server can't be managed.")
+			return
+		}
 		if !p.dev.revoke(r.PathValue("id")) {
 			errJSON(w, 404, "no such device")
 			return

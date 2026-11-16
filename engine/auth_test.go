@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +21,10 @@ import (
 func newTestAuth(t *testing.T) (*devStore, *authGate, *pairing) {
 	t.Helper()
 	dir := t.TempDir()
-	dev := loadDevices(filepath.Join(dir, "devices.json"))
+	dev, err := loadDevices(filepath.Join(dir, "devices.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	ag := &authGate{dev: dev}
 	pr := newPairing(dev, ag)
 	pr.setupPath = filepath.Join(dir, "setup.code")
@@ -186,7 +193,7 @@ func TestPairing(t *testing.T) {
 	if strings.Contains(string(raw), adminTok) {
 		t.Fatal("devices.json holds a key in plain text")
 	}
-	if loadDevices(dev.path).lookup(adminTok) == nil {
+	if d2, _ := loadDevices(dev.path); d2.lookup(adminTok) == nil {
 		t.Fatal("admin key lost on reload")
 	}
 }
@@ -219,12 +226,25 @@ func TestPairingDenyExpireAndLimits(t *testing.T) {
 	if _, err := pr.approve(st["code"].(string), "", "", "test"); err == nil {
 		t.Fatal("an expired code was approved")
 	}
-	// at most 5 waiting
-	for i := 0; i < pairMaxPending; i++ {
-		start("192.168.1.4" + string(rune('0'+i)))
+	// at most pairMaxPerAddr waiting from one address
+	pr.mu.Lock()
+	pr.byCode = map[string]*pendingPair{}
+	pr.mu.Unlock()
+	for i := 0; i < pairMaxPerAddr; i++ {
+		start("192.168.1.60")
 	}
-	if code, _ := start("192.168.1.50"); code != 429 {
-		t.Fatalf("6th waiting device: %d, want 429", code)
+	if code, _ := start("192.168.1.60"); code != 429 {
+		t.Fatalf("one address over its limit: %d, want 429", code)
+	}
+	// at most pairMaxPending from everyone
+	pr.mu.Lock()
+	pr.byCode = map[string]*pendingPair{}
+	pr.mu.Unlock()
+	for i := 0; i < pairMaxPending; i++ {
+		start(fmt.Sprintf("10.0.0.%d", i+1))
+	}
+	if code, _ := start("10.0.0.200"); code != 429 {
+		t.Fatalf("one more waiting device than allowed: %d, want 429", code)
 	}
 	// at most 10 a minute from one address
 	pr.mu.Lock()
@@ -268,7 +288,7 @@ func TestSetupClaim(t *testing.T) {
 	pr.lockUntil = time.Time{}
 	pr.mu.Unlock()
 	rec := claim(strings.ToLower(strings.ReplaceAll(code, "-", " ")))
-	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Set-Cookie"), cookieName+"=mc_") {
+	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Set-Cookie"), cookieName()+"=mc_") {
 		t.Fatalf("claim: %d %s %q", rec.Code, rec.Body, rec.Header().Get("Set-Cookie"))
 	}
 	if !dev.claimed() {
@@ -324,3 +344,84 @@ type fakeRemote struct{}
 
 func (fakeRemote) Trusted(r *http.Request, ip net.IP) bool { return ip.String() == "203.0.113.9" }
 func (fakeRemote) Addrs() []string                         { return []string{"https://away.example.com"} }
+
+// An app checks its server knows its key before sending it: the answer is HMAC(nonce) keyed by the key's hash.
+func TestProve(t *testing.T) {
+	dev, _, _ := newTestAuth(t)
+	tok, _, _ := dev.add("TV", "tv", rolePlayer)
+	h := hashToken(tok)
+	ask := func(k, n string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		dev.prove(rec, httptest.NewRequest("GET", "/api/v1/prove?k="+k+"&n="+n, nil))
+		return rec
+	}
+	nonce := "0123456789abcdef0123"
+	rec := ask(h[:16], nonce)
+	m := hmac.New(sha256.New, []byte(h))
+	m.Write([]byte(nonce))
+	if want := hex.EncodeToString(m.Sum(nil)); !strings.Contains(rec.Body.String(), want) {
+		t.Fatalf("proof: %d %s", rec.Code, rec.Body)
+	}
+	if rec := ask("0000000000000000", nonce); rec.Code != 404 {
+		t.Fatalf("unknown key: %d", rec.Code)
+	}
+	if rec := ask(h[:16], "short"); rec.Code != 400 {
+		t.Fatalf("short nonce: %d", rec.Code)
+	}
+}
+
+// The only admin can't be removed: nobody could manage the server, and it would have no setup code.
+func TestLastAdminStays(t *testing.T) {
+	dev, ag, pr := newTestAuth(t)
+	adminTok, a, _ := dev.add("Mac", "web", roleAdmin)
+	mux := http.NewServeMux()
+	pr.mount(mux, true)
+	h := ag.wrap(mux)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, jsonReq("POST", "/api/devices/"+a.ID+"/revoke", nil, adminTok))
+	if rec.Code != 409 {
+		t.Fatalf("last admin revoked: %d", rec.Code)
+	}
+	_, b, _ := dev.add("Phone", "phone", roleAdmin)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, jsonReq("POST", "/api/devices/"+b.ID+"/revoke", nil, adminTok))
+	if rec.Code != 200 {
+		t.Fatalf("second admin: %d", rec.Code)
+	}
+}
+
+// A browser's key arrives only as its HttpOnly cookie; an app's in the answer. The key is made when collected.
+func TestPairKeyMadeOnCollect(t *testing.T) {
+	dev, _, pr := newTestAuth(t)
+	for _, kind := range []string{"web", "tv"} {
+		rec := httptest.NewRecorder()
+		pr.start(rec, jsonReq("POST", "/api/v1/pair/start", map[string]string{"kind": kind}, ""))
+		var st map[string]any
+		json.Unmarshal(rec.Body.Bytes(), &st)
+		before := len(dev.views(""))
+		if _, err := pr.approve(st["code"].(string), "", "", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if len(dev.views("")) != before {
+			t.Fatal("a key was made before the device collected it")
+		}
+		rec = httptest.NewRecorder()
+		pr.poll(rec, jsonReq("POST", "/api/v1/pair/poll", map[string]string{"poll": st["poll"].(string)}, ""))
+		hasTok := strings.Contains(rec.Body.String(), `"token"`)
+		hasCookie := strings.Contains(rec.Header().Get("Set-Cookie"), cookieName()+"=mc_")
+		if kind == "web" && (hasTok || !hasCookie) || kind == "tv" && (!hasTok || hasCookie) {
+			t.Fatalf("%s: token in body %v, cookie %v", kind, hasTok, hasCookie)
+		}
+		if len(dev.views("")) != before+1 {
+			t.Fatalf("%s: no device after collecting", kind)
+		}
+	}
+}
+
+// A setting with a line break would add lines of its own to engine.env.
+func TestSetEnvLineRefusesLineBreaks(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "engine.env")
+	if err := setEnvLine(p, "MEDIA_CORE_LIBRARY", "/x\nMEDIA_CORE_OPEN_HOME=1"); err == nil {
+		t.Fatal("a value with a line break was written")
+	}
+}

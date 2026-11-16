@@ -31,19 +31,28 @@ import java.util.concurrent.TimeUnit
  * Reaching the server away from home isn't supported yet.
  */
 object Api {
-    /** Every request the app makes. It carries this device's key to the server, and only to the server. */
-    val http: OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor { chain ->
-            val req = chain.request()
-            val tok = token
-            if (tok.isEmpty() || !isServer(req.url.scheme + "://" + req.url.host + ":" + req.url.port)) chain.proceed(req)
-            else chain.proceed(req.newBuilder().header("Authorization", "Bearer $tok").build())
-        }
+    private val plain: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val probe = http.newBuilder()
+    /**
+     * Every request the app makes. It carries this device's key to the server, and only once that server has
+     * shown it knows the key ([proven]): another box answering on the same address (a different Wi-Fi, say)
+     * never sees it.
+     */
+    val http: OkHttpClient = plain.newBuilder()
+        .addInterceptor { chain ->
+            val req = chain.request()
+            val tok = token
+            val o = origin(req.url)
+            if (tok.isEmpty() || !isServer(o) || proven(o, tok) != Proof.OK) chain.proceed(req)
+            else chain.proceed(req.newBuilder().header("Authorization", "Bearer $tok").build())
+        }
+        .build()
+
+    // without the key: finding the server and the proof itself
+    private val probe = plain.newBuilder()
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
         .readTimeout(2500, TimeUnit.MILLISECONDS)
         .callTimeout(4, TimeUnit.SECONDS) // also bounds DNS (a typed name that doesn't resolve)
@@ -95,6 +104,52 @@ object Api {
     /** The server is reached by an address outside the home network (a typed name, say): treat it as a thin link. */
     val away: Boolean get() = !isLan(base)
 
+    private fun origin(u: okhttp3.HttpUrl) = "${u.scheme}://${u.host}:${u.port}"
+    private fun origin(u: String) = u.toHttpUrlOrNull()?.let(::origin) ?: u
+
+    // ---------- the server proves it knows this device's key before the key is sent ----------
+
+    enum class Proof { OK, UNKNOWN, FAILED } // UNKNOWN: it answered, but doesn't know this key (revoked, or another server)
+
+    private class Proved(val proof: Proof, val at: Long)
+    private val proofs = java.util.concurrent.ConcurrentHashMap<String, Proved>()
+
+    /**
+     * Whether the server at origin [o] knows [tok]. The answer is kept a few minutes (half a minute when it
+     * couldn't be asked), then asked again, so moving to another network with the same addresses is noticed.
+     */
+    private fun proven(o: String, tok: String): Proof {
+        fun fresh(p: Proved?) = p != null &&
+            android.os.SystemClock.elapsedRealtime() - p.at < if (p.proof == Proof.FAILED) 30_000L else 300_000L
+        proofs[o]?.let { if (fresh(it)) return it.proof }
+        synchronized(proofs) {
+            proofs[o]?.let { if (fresh(it)) return it.proof }
+            val p = prove(o, tok)
+            proofs[o] = Proved(p, android.os.SystemClock.elapsedRealtime())
+            return p
+        }
+    }
+
+    /** Sends a random nonce and the start of the key's hash; the server answers HMAC-SHA256(nonce) keyed by the hash. */
+    private fun prove(o: String, tok: String): Proof = try {
+        val h = sha256Hex(tok)
+        val n = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        probe.newCall(Request.Builder().url("$o/api/v1/prove?k=${h.take(16)}&n=$n").build()).execute().use { r ->
+            if (r.code == 404) return Proof.UNKNOWN
+            if (!r.isSuccessful) return Proof.FAILED
+            val mac = JSONObject(r.body!!.string()).optString("mac")
+            val m = javax.crypto.Mac.getInstance("HmacSHA256")
+            m.init(javax.crypto.spec.SecretKeySpec(h.toByteArray(), "HmacSHA256"))
+            val want = m.doFinal(n.toByteArray()).joinToString("") { "%02x".format(it) }
+            if (java.security.MessageDigest.isEqual(want.toByteArray(), mac.toByteArray())) Proof.OK else Proof.FAILED
+        }
+    } catch (e: Exception) {
+        Proof.FAILED
+    }
+
+    private fun sha256Hex(s: String): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+
     /** Whether an address (scheme://host:port) is the server's: its current address or one it listed. */
     private fun isServer(u: String): Boolean {
         val b = base
@@ -108,8 +163,15 @@ object Api {
         return x.scheme == y.scheme && x.host == y.host && x.port == y.port
     }
 
-    /** The key, for a download the system makes on the app's behalf (it can't go through [http]). */
-    fun authHeader(): String? = token.takeIf { it.isNotEmpty() }?.let { "Bearer $it" }
+    /**
+     * The key, for a download the system makes on the app's behalf (it can't go through [http]); null unless the
+     * server has proven itself. Not on the main thread: it may ask the server.
+     */
+    fun authHeader(): String? {
+        val tok = token
+        if (tok.isEmpty() || base.isEmpty() || proven(origin(base), tok) != Proof.OK) return null
+        return "Bearer $tok"
+    }
 
     /** The host of an address like "http://192.168.1.5:8790"; empty if it carries a user part ("a@b"). */
     private fun hostOf(u: String): String {
@@ -185,23 +247,27 @@ object Api {
         if (known.isEmpty()) return null
         return withContext(Dispatchers.IO) {
             coroutineScope {
-                val ch = Channel<String?>(known.size)
-                known.forEach { u -> launch { ch.send(if (hello(u)) u else null) } }
-                var fallback: String? = null
-                var fallbackAt = 0L
-                var pick: String? = null
+                val ch = Channel<Pair<String, Int>>(known.size)
+                known.forEach { u -> launch { ch.send(u to hello(u)) } }
+                // best: one that knows this device's key, then one on the home network
+                val top = if (token.isEmpty()) 2 else 4
+                var best: String? = null
+                var bestScore = 0
+                var deadline = System.currentTimeMillis() + 6000
                 var left = known.size
-                while (left > 0 && pick == null) {
-                    val wait = if (fallback != null) maxOf(1L, 1000 - (System.currentTimeMillis() - fallbackAt)) else 6000L
-                    val got = withTimeoutOrNull(wait) { listOf(ch.receive()) }
-                        ?: break // waited long enough (for the LAN, or for anyone)
+                while (left > 0 && bestScore < top) {
+                    val wait = deadline - System.currentTimeMillis()
+                    if (wait <= 0) break
+                    val (u, answer) = withTimeoutOrNull(wait) { ch.receive() } ?: break
                     left--
-                    val r = got[0] ?: continue
-                    if (isLan(r)) pick = r
-                    else if (fallback == null) { fallback = r; fallbackAt = System.currentTimeMillis() }
+                    if (answer == 0) continue
+                    val score = (answer - 1) * 2 + (if (isLan(u)) 1 else 0) + 1
+                    if (score > bestScore) { best = u; bestScore = score }
+                    // something answered: give the rest about a second to do better
+                    deadline = minOf(deadline, System.currentTimeMillis() + 1000)
                 }
                 coroutineContext.cancelChildren()
-                pick ?: fallback
+                best
             }
         }
     }
@@ -282,14 +348,21 @@ object Api {
         e.apply()
     }
 
-    private fun hello(u: String): Boolean = try {
+    /**
+     * Asks an address for /hello: 0 no answer, 1 an answer, 2 an answer from a server that knows this device's key.
+     * Only a server that knows the key (or any, before this device has one) may add to the addresses kept.
+     */
+    private fun hello(u: String): Int = try {
         probe.newCall(Request.Builder().url("$u/api/v1/hello").build()).execute().use { r ->
-            if (!r.isSuccessful) return false
-            learn(JSONObject(r.body!!.string()))
-            true
+            if (!r.isSuccessful) return 0
+            val j = JSONObject(r.body!!.string())
+            val tok = token
+            val mine = tok.isNotEmpty() && proven(origin(u), tok) == Proof.OK
+            if (tok.isEmpty() || mine) learn(j)
+            if (mine) 2 else 1
         }
     } catch (e: Exception) {
-        false
+        0
     }
 
     /** GET with one rediscovery + retry when the current address stopped answering (left home, etc.). */
@@ -324,8 +397,7 @@ object Api {
             if (!r.isSuccessful) {
                 val j = runCatching { JSONObject(s) }.getOrNull()
                 val code = j?.optString("error").orEmpty()
-                // no key, a revoked one, or a server nobody has set up yet: this device has to pair
-                if ((r.code == 401 && code == "pair") || (r.code == 403 && code == "setup")) unpaired()
+                if ((r.code == 401 && code == "pair") || (r.code == 403 && code == "setup")) refused(r)
                 val msg = j?.optString("message").orEmpty().ifEmpty { code }
                 throw ServerError(msg.ifEmpty { "HTTP ${r.code}" })
             }
@@ -333,10 +405,27 @@ object Api {
         }
     }
 
-    private fun unpaired() {
-        token = ""
-        prefs.edit().remove("token").apply()
-        needsPair = true
+    /**
+     * The server wants a key. If this request carried the current key, the server turned it down (revoked): it's
+     * dropped and the app pairs again. If it carried none because this server couldn't prove it knows the key,
+     * pair only when it answered that it doesn't (a server that lost its devices, or another one); if it couldn't
+     * be asked, treat it as not reachable for now. The key stays until a new one replaces it.
+     */
+    private fun refused(r: okhttp3.Response) {
+        val tok = token
+        val sent = r.request.header("Authorization")
+        when {
+            tok.isEmpty() -> needsPair = true
+            sent == "Bearer $tok" -> { setToken(""); needsPair = true }
+            proofs[origin(r.request.url)]?.proof == Proof.UNKNOWN -> needsPair = true
+            else -> { proofs.remove(origin(r.request.url)); throw IOException(unreachable) }
+        }
+    }
+
+    private fun setToken(tok: String) {
+        token = tok
+        proofs.clear()
+        prefs.edit().apply { if (tok.isEmpty()) remove("token") else putString("token", tok) }.apply()
     }
 
     // ---------- pairing: the app shows a code, someone approves it on the server's website ----------
@@ -365,8 +454,7 @@ object Api {
                 val state = j.optString("state", if (r.code == 404) "expired" else "pending")
                 val tok = j.optString("token")
                 if (state == "approved" && tok.startsWith("mc_")) {
-                    token = tok
-                    prefs.edit().putString("token", tok).apply()
+                    setToken(tok)
                     needsPair = false
                 }
                 state

@@ -3,6 +3,8 @@ package main
 import (
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 )
 
@@ -88,6 +90,52 @@ func (g *homeGate) wrap(h http.Handler) http.Handler {
 			http.Error(w, "This server is only open to its home network", http.StatusForbidden)
 			return
 		}
+		if !homeHost(r.Host) {
+			http.Error(w, "Open this server by its address or its name on the home network", http.StatusMisdirectedRequest)
+			return
+		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// homeHost: the name a request was sent to is one a home network uses (an IP address, a one-word name, or a
+// local suffix such as .local or .lan), or one listed in MEDIA_CORE_HOSTS. A web page on the internet can point
+// its own name at a home address (DNS rebinding) to reach this server from someone's browser; its name is
+// refused here. A remote-access add-on adds the names it serves on.
+func homeHost(host string) bool {
+	h := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		h = hh
+	}
+	h = strings.ToLower(strings.TrimSuffix(strings.Trim(h, "[]"), "."))
+	if h == "" || net.ParseIP(h) != nil || !strings.Contains(h, ".") {
+		return true
+	}
+	for _, suf := range []string{".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain", ".localhost"} {
+		if strings.HasSuffix(h, suf) {
+			return true
+		}
+	}
+	for _, x := range strings.Fields(strings.ReplaceAll(envOr("MEDIA_CORE_HOSTS", ""), ",", " ")) {
+		if strings.EqualFold(strings.TrimSuffix(x, "."), h) {
+			return true
+		}
+	}
+	for _, x := range remoteHosts() {
+		if strings.EqualFold(x, h) {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteHosts: the host names in the remote add-on's addresses.
+func remoteHosts() []string {
+	var out []string
+	for _, a := range remoteAddrs() {
+		if u, err := url.Parse(a); err == nil && u.Hostname() != "" {
+			out = append(out, u.Hostname())
+		}
+	}
+	return out
 }

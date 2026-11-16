@@ -61,6 +61,9 @@ func currentConfig(temp bool) serverConfig {
 // setEnvLine sets KEY=value in an engine.env file, keeping every other line (and comments) as they were.
 // An empty value removes the line.
 func setEnvLine(path, key, value string) error {
+	if strings.ContainsAny(value, "\r\n\x00") {
+		return fmt.Errorf("a setting can't contain a line break")
+	}
 	var lines []string
 	if b, err := os.ReadFile(path); err == nil {
 		lines = strings.Split(strings.TrimRight(string(b), "\n"), "\n")
@@ -108,7 +111,7 @@ var checkTMDBKey = func(key string) error {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("couldn't reach TMDB to check the key (%v)", err)
+		return fmt.Errorf("couldn't reach TMDB to check the key. Is the server online?") // err holds the URL, key and all
 	}
 	resp.Body.Close()
 	if resp.StatusCode == 401 {
@@ -167,6 +170,10 @@ func (s *setupAPI) mount(mux *http.ServeMux) {
 		restart := false
 		lib := Media
 		if b.Library != nil {
+			if strings.IndexFunc(*b.Library, func(c rune) bool { return c < 0x20 || c == 0x7f }) >= 0 {
+				errJSON(w, 400, "The folder's path can't contain line breaks or control characters")
+				return
+			}
 			want := filepath.Clean(strings.TrimSpace(*b.Library))
 			if strings.HasPrefix(want, "~/") {
 				want = filepath.Join(homeDir(), want[2:])
@@ -180,11 +187,16 @@ func (s *setupAPI) mount(mux *http.ServeMux) {
 					errJSON(w, 400, "A temporary server's folder is fixed. Start it again with another --library.")
 					return
 				}
-				if what := s.busy(); what != "" {
-					errJSON(w, 409, "Wait until "+what+", then move the library.")
-					return
-				}
 				lib = want
+			}
+		}
+		// saving restarts the engine, which would cut off a stream or a download being finished
+		changing := lib != Media || (b.TMDBKey != nil && strings.TrimSpace(*b.TMDBKey) != "") ||
+			(b.Name != nil && cleanName(*b.Name, "") != serverName())
+		if changing {
+			if what := s.busy(); what != "" {
+				errJSON(w, 409, "Saving restarts the server. Wait until "+what+", then save.")
+				return
 			}
 		}
 		if b.MakeFolders {

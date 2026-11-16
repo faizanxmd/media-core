@@ -485,7 +485,10 @@ func serve(o serveOpts) {
 	go e.Run()
 	pl := &Player{c: cat, w: watch, t: tm, e: e}
 	gate := newHomeGate()
-	dev := loadDevices(filepath.Join(ConfDir, "devices.json"))
+	dev, err := loadDevices(filepath.Join(ConfDir, "devices.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	dev.cliToken(cliTokenPath())
 	ag := &authGate{dev: dev, openHome: envOr("MEDIA_CORE_OPEN_HOME", "") == "1"}
 	activeAuth = ag
