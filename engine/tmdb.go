@@ -379,33 +379,6 @@ func (t *TMDB) setMatch(folder string, id int, manual bool) {
 	t.mu.Unlock()
 }
 
-// Rematch points a movie/show folder at a different TMDB id (the app's
-// "wrong poster? fix match").
-func (t *TMDB) Rematch(it *Item, id int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	switch it.Type {
-	case "movie":
-		if err := t.fetchMovie(ctx, id); err != nil {
-			return err
-		}
-	case "show":
-		if err := t.fetchShow(ctx, id); err != nil {
-			return err
-		}
-		for _, sn := range it.Seasons {
-			t.fetchSeason(ctx, id, sn.Season)
-		}
-	default:
-		return errors.New("only films and shows can be re-matched")
-	}
-	t.setMatch(it.folder, id, true)
-	t.mu.Lock()
-	t.save()
-	t.mu.Unlock()
-	return nil
-}
-
 type tmdbResult struct {
 	ID       int     `json:"id"`
 	Title    string  `json:"title"`

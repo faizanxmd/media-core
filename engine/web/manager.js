@@ -86,7 +86,7 @@ const Manager = (() => {
     es.onerror = () => { online = false; changed(); };
   }
   async function poll() {
-    const r = await api("/api/status");
+    const r = await api("/api/jobs");
     if (!r.error) { S = r; online = true; } else online = false;
     changed();
     clearTimeout(pollT); pollT = setTimeout(poll, 3000);

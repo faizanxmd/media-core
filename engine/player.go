@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"log"
@@ -90,8 +89,6 @@ func (p *Player) mount(mux *http.ServeMux) {
 		http.ServeFile(w, r, f)
 	})
 	mux.HandleFunc("GET /api/v1/img/{size}/{file}", p.t.serveImage)
-	mux.HandleFunc("GET /api/v1/match/{id}", p.matchSearch)
-	mux.HandleFunc("POST /api/v1/match", p.rematch)
 	mux.HandleFunc("GET /api/v1/speedtest", speedTest)
 	mux.HandleFunc("GET /api/v1/app", appInfo("media-core"))
 	mux.HandleFunc("GET /api/v1/app.apk", serveAPK("media-core"))
@@ -388,49 +385,6 @@ func (p *Player) sub(w http.ResponseWriter, r *http.Request) {
 	s := it.Subs[n]
 	w.Header().Set("Content-Type", s.Mime+"; charset=utf-8")
 	http.ServeFile(w, r, s.file)
-}
-
-func (p *Player) matchSearch(w http.ResponseWriter, r *http.Request) {
-	it := p.c.Get(r.PathValue("id"))
-	if it == nil || it.Type != "movie" && it.Type != "show" {
-		errJSON(w, 404, "only films and shows can be re-matched")
-		return
-	}
-	q := r.URL.Query().Get("q")
-	year := 0
-	if q == "" {
-		q, year = it.Title, it.Year
-	}
-	kind := map[string]string{"movie": "movie", "show": "tv"}[it.Type]
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	res, err := p.t.Search(ctx, kind, q, year)
-	if err != nil {
-		errJSON(w, 502, err.Error())
-		return
-	}
-	writeJSON(w, 200, map[string]any{"results": res})
-}
-
-func (p *Player) rematch(w http.ResponseWriter, r *http.Request) {
-	var b struct {
-		ID   string `json:"id"`
-		TMDB int    `json:"tmdb"`
-	}
-	if !readJSON(w, r, &b) {
-		return
-	}
-	it := p.c.Get(b.ID)
-	if it == nil || b.TMDB <= 0 {
-		errJSON(w, 400, "need an item id and a TMDB id")
-		return
-	}
-	if err := p.t.Rematch(it, b.TMDB); err != nil {
-		errJSON(w, 502, err.Error())
-		return
-	}
-	p.c.Refresh()
-	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // AppInfo is written next to the APK by android/build.sh.

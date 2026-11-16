@@ -170,7 +170,6 @@ func (s *Server) routes() http.Handler {
 		w.WriteHeader(204)
 	})
 	mux.HandleFunc("GET /api/jobs", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.status()) })
-	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.status()) })
 	mux.HandleFunc("GET /api/events", s.events)
 
 	mux.HandleFunc("POST /api/probe", func(w http.ResponseWriter, r *http.Request) {
@@ -336,9 +335,6 @@ func (s *Server) routes() http.Handler {
 	s.p.mount(mux) // the app's API is reachable here too (Tailscale)
 	mountWebCopies(mux, s.p)
 	s.mountManager(mux)
-	mux.HandleFunc("GET /api/settings", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, s.e.settings.get())
-	})
 	mux.HandleFunc("POST /api/settings", func(w http.ResponseWriter, r *http.Request) {
 		var b map[string]json.RawMessage
 		if !readJSON(w, r, &b) {

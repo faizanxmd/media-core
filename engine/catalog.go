@@ -66,7 +66,6 @@ type Catalog struct {
 	items   map[string]*Item
 	movies  []*Item
 	shows   []*Item
-	at      time.Time
 	refresh chan struct{}
 	tmdb    *TMDB
 	intros  *Intros
@@ -307,7 +306,7 @@ func (c *Catalog) scan() {
 	c.tmdb.Attach(movies, shows) // cached metadata now; missing matches are fetched in the background
 
 	c.mu.Lock()
-	c.items, c.movies, c.shows, c.at = items, movies, shows, time.Now()
+	c.items, c.movies, c.shows = items, movies, shows
 	c.mu.Unlock()
 	log.Printf("catalog: %d movies, %d shows, %d items in %s", len(movies), len(shows), len(items),
 		time.Since(start).Round(time.Millisecond))

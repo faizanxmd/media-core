@@ -25,7 +25,6 @@ type mFile struct {
 	Browser bool                `json:"browser"` // plays in the browser that asked, one way or another
 	Play    string              `json:"play"`    // how: direct | repack | light | none (play.go)
 	On      map[string]OnDevice `json:"on"`      // this browser ("here"), the TV and the phone: plays or not, and why
-	CanMP4  bool                `json:"can_mp4"`
 	Heavy   bool                `json:"heavy"`
 	Busy    bool                `json:"busy,omitempty"` // a job is working on it
 }
@@ -79,7 +78,7 @@ func slim(m *MInfo) *MInfo {
 
 func fileOf(it *Item, busy map[string]bool, c Caps) mFile {
 	f := mFile{ID: it.ID, Path: rel(it.file), Size: it.Size, Info: slim(it.Info), Light: it.Light,
-		CanMP4: canMP4(it.Info), Heavy: heavy(it.Info)}
+		Heavy: heavy(it.Info)}
 	p, _, _ := webPlay(it, c)
 	f.Play = p.How
 	if p.Light && p.How != "none" {
@@ -146,33 +145,6 @@ func (s *Server) titles(c Caps) []mTitle {
 		out = append(out, mt)
 	}
 	return out
-}
-
-// convertJob makes an MP4 of a file already in the library, through the same
-// queue as downloads (one heavy job at a time).
-func (s *Server) convertJob(it *Item) (Job, error) {
-	if it == nil || it.file == "" {
-		return Job{}, errors.New("not a film or an episode")
-	}
-	if !canMP4(it.Info) {
-		return Job{}, errors.New("an MP4 wouldn't make this play in browsers")
-	}
-	if s.busyFiles()[it.file] {
-		return Job{}, errors.New("a job is already working on this")
-	}
-	title := it.Title
-	if it.Type == "episode" {
-		title = it.Show + " · " + "S" + pad2(it.Season) + "E" + pad2(it.Episode)
-	} else if it.Meta != nil && it.Meta.Title != "" {
-		title = it.Meta.Title
-	}
-	j := &Job{ID: newID(), Created: now(), State: Processing, Filename: filepath.Base(it.file),
-		Plan:       Plan{Kind: "convert", Path: rel(it.file), Title: title, Ext: ext(it.file)},
-		Downloaded: true, Placed: true, Files: []string{it.file}, TotalBytes: it.Size, Log: []string{}}
-	logLine(j, "Make MP4 of "+rel(it.file))
-	s.e.store.Add(j)
-	s.e.startPost(j.ID)
-	return *j, nil
 }
 
 func pad2(n int) string {
@@ -320,18 +292,6 @@ func (s *Server) mountManager(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"titles": s.titles(capsOf(r))})
 	})
 	mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.system()) })
-	mux.HandleFunc("POST /api/manager/mp4", func(w http.ResponseWriter, r *http.Request) {
-		var b struct{ ID string }
-		if !readJSON(w, r, &b) {
-			return
-		}
-		j, err := s.convertJob(s.p.c.Get(b.ID))
-		if err != nil {
-			errJSON(w, 400, err.Error())
-			return
-		}
-		writeJSON(w, 200, j)
-	})
 	// a Light copy for a title already in the library: the link was checked first (/api/probe)
 	mux.HandleFunc("POST /api/manager/light", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
