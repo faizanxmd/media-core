@@ -53,17 +53,6 @@ import okhttp3.Request
 /** One setting: its name, the values it steps through, and where it's kept. */
 private class Setting(val key: String, val name: String, val values: List<String>, val default: String, val onChange: (String) -> Unit = {})
 
-private val Watching = listOf(
-    Setting("audio", "Audio language", listOf("Original", "English", "Hindi"), "English"),
-    Setting("subs", "Subtitles", listOf("Off", "English", "Forced only"), "Off"),
-    Setting("autoplay", "Autoplay next episode", listOf("On", "Off"), "On"),
-    Setting("credits", "Skip credits", listOf("On", "Off"), "On"),
-)
-private val PictureSound = listOf(
-    Setting("rate", "Match frame rate", listOf("On", "Off"), "On"),
-    Setting("range", "Match dynamic range", listOf("On", "Off"), "On"),
-    Setting("passthrough", "Audio passthrough", listOf("On", "Off"), "On"),
-)
 private val Look = listOf(
     Setting("accent", "Accent colour", AccentColor.entries.map { it.name }, AccentColor.Blue.name) { v -> Pal.accent = AccentColor.valueOf(v) },
 )
@@ -78,7 +67,7 @@ fun loadAccent(ctx: Context) {
  * Settings (board 12): one list. Up and Down move, Left and Right change the value in place. On the right, read-only,
  * how well mint reaches this TV, measured when the screen opens.
  *
- * The values are kept in "settings"; the player doesn't read them yet (it stays as it is for now).
+ * The values are kept in "settings". Only real settings belong here: one the app doesn't act on is not shown.
  */
 @Composable
 fun SettingsScreen(nav: Nav) {
@@ -91,7 +80,7 @@ fun SettingsScreen(nav: Nav) {
         val pic = h?.let { nav.home?.shows?.firstOrNull { s -> s.id == h.showId } ?: h }?.meta?.backdrop?.let { b -> app.mediacore.core.Api.img(b, "w780") }
         art.show(ArtSpec(pic, ArtStyle.Blurred), Move.Screen)
     }
-    val all = Watching + PictureSound + Look
+    val all = Look
     val requesters = remember { all.associate { it.key to FocusRequester() } }
     LaunchedEffect(Unit) { withFrameNanos { }; runCatching { requesters.getValue(all.first().key).requestFocus() } }
     LaunchedEffect(nav.offline) {
@@ -102,11 +91,7 @@ fun SettingsScreen(nav: Nav) {
         Text("Settings", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 110.px))
         // the rows' words line up with the edge; a focused row's white reaches 24 px out from them
         Column(Modifier.offset((EDGE - 24).px, 210.px).width(940.px)) {
-            Section("Watching", top = 0)
-            Watching.forEachIndexed { i, s -> SettingRow(s, prefs, requesters.getValue(s.key), up = all.getOrNull(all.indexOf(s) - 1)?.let { requesters[it.key] }) }
-            Section("Picture and sound", top = 24)
-            PictureSound.forEach { s -> SettingRow(s, prefs, requesters.getValue(s.key), up = null) }
-            Section("Look", top = 24)
+            Section("Look", top = 0)
             Look.forEach { s -> SettingRow(s, prefs, requesters.getValue(s.key), up = null) }
         }
         Connection(nav, Modifier.offset(1180.px, 210.px).width(660.px))
