@@ -39,6 +39,9 @@ func NewAria2() (*Aria2, error) {
 			port = v
 		}
 	}
+	if ariaPort > 0 {
+		port = strconv.Itoa(ariaPort)
+	}
 	a.endpoint = "http://127.0.0.1:" + port + "/jsonrpc"
 	return a, nil
 }

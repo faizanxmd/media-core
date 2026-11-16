@@ -11,7 +11,7 @@ func fileAlloc(dir string) string {
 	if syscall.Statfs(dir, &st) != nil {
 		return "none"
 	}
-	switch st.Type {
+	switch uint32(st.Type) { // int32 on 32-bit systems
 	case 0xEF53, 0x58465342, 0x9123683E: // ext2/3/4, xfs, btrfs
 		return "falloc"
 	}

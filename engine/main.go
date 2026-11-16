@@ -24,9 +24,15 @@ import (
 	"time"
 )
 
-func shutdownSignal() <-chan os.Signal {
+// shutdownSignal: the signals that stop the server. A temporary server also stops when its terminal closes
+// (SIGHUP), so its temp folder still goes.
+func shutdownSignal(temp bool) <-chan os.Signal {
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
+	sigs := []os.Signal{syscall.SIGTERM, syscall.SIGINT}
+	if temp {
+		sigs = append(sigs, syscall.SIGHUP)
+	}
+	signal.Notify(ch, sigs...)
 	return ch
 }
 
@@ -56,10 +62,13 @@ func serveFlags(args []string) serveOpts {
 	removeState := fs.Bool("remove-state", false, "") // set by a restart: the state folder is temporary
 	fs.Parse(args)
 	if *lib == "" {
-		if *state != "" {
-			fail("--state goes with --library")
+		if *state != "" || *port != 0 {
+			fail("--state and --port go with --library")
 		}
 		return serveOpts{}
+	}
+	if *port != 0 && (*port < 1 || *port+10 > 65535) {
+		fail("--port must be between 1 and 65525 (the apps use it plus 10)")
 	}
 	abs, err := filepath.Abs(*lib)
 	if err != nil {

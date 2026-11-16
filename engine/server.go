@@ -456,11 +456,17 @@ type serveOpts struct {
 
 func serve(o serveOpts) {
 	log.SetFlags(0)
+	stop := shutdownSignal(o.temp) // first, so a Ctrl-C while starting still cleans up
 	if o.temp {
 		startAria2 = startAria2Child
-		if err := ensureAria2Conf(freePort()); err != nil {
+		p, err := freePort()
+		if err != nil {
 			log.Fatal(err)
 		}
+		ariaPort = p // a fresh port every start: one kept from last time may be taken by now
+	}
+	if err := ensureAria2Conf(6800); err != nil { // only writes it when missing (a first start without the installer)
+		log.Fatal(err)
 	}
 	store := NewStore()
 	aria, err := NewAria2()
@@ -502,11 +508,11 @@ func serve(o serveOpts) {
 	dc := serveDiscover(discoverAddr(playerAddr()))
 	srv := &Server{e: e, p: pl, assets: loadAssets(), pr: pr, setup: &setupAPI{temp: o.temp,
 		busy:  func() string { return busyWith(store) },
-		flush: func() { store.Flush(); watch.Flush(); dev.flushSeen(); stopAria2Child() }}}
+		flush: func() { store.Flush(); watch.Flush(); dev.flushSeen(); stopAria2Child(5 * time.Second) }}}
 	addr := listenAddr()
 	hs := &http.Server{Addr: addr, Handler: wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		<-shutdownSignal()
+		<-stop
 		log.Print("stopping")
 		store.Flush()
 		watch.Flush()
@@ -520,11 +526,13 @@ func serve(o serveOpts) {
 		hs.Shutdown(ctx)
 	}()
 	cleanup := func() {
-		stopAria2Child()
+		stopAria2Child(5 * time.Second) // waits for it, so nothing is still writing in the folder
 		if o.removeAt != "" {
-			time.Sleep(300 * time.Millisecond) // let aria2 let go of its session file
-			os.RemoveAll(o.removeAt)
-			log.Printf("removed %s", o.removeAt)
+			if err := os.RemoveAll(o.removeAt); err != nil {
+				log.Printf("couldn't remove %s: %v", o.removeAt, err)
+			} else {
+				log.Printf("removed %s", o.removeAt)
+			}
 		}
 	}
 	defer cleanup()

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // The downloader (aria2) runs as its own systemd user unit on an installed server, so downloads survive an
@@ -58,24 +60,49 @@ func ensureAria2Conf(port int) error {
 }
 
 var (
-	ariaChildMu sync.Mutex
-	ariaChild   *exec.Cmd
+	ariaChildMu   sync.Mutex
+	ariaChildProc *os.Process
+	ariaChildDone chan struct{} // closed when the child has exited
+	ariaStopping  bool          // the engine is stopping: no new child
+	// ariaPort, when set, is the RPC port a child aria2 is told on its command line (a temporary server picks a
+	// free one each start); NewAria2 uses it too. 0: whatever aria2.conf says.
+	ariaPort int
 )
 
 // startAria2 brings the downloader up: its systemd unit when there is one, else a child process.
-// It's called when the RPC doesn't answer, at most every 30 s.
+// It's called when the RPC doesn't answer, at most every 30 s. A unit that exists but won't start is left
+// to systemd: a second aria2 next to it would fight it for the port.
 var startAria2 = func() {
-	if err := exec.Command("systemctl", "--user", "start", "media-core-aria2.service").Run(); err == nil {
+	err := exec.Command("systemctl", "--user", "start", "media-core-aria2.service").Run()
+	if err == nil {
+		return
+	}
+	var ee *exec.ExitError
+	noUnit := errors.Is(err, exec.ErrNotFound) || (errors.As(err, &ee) && ee.ExitCode() == 5)
+	if !noUnit {
+		log.Printf("aria2: its service won't start (%v); see: systemctl --user status media-core-aria2", err)
 		return
 	}
 	startAria2Child()
 }
 
+func childRunning() bool {
+	if ariaChildDone == nil {
+		return false
+	}
+	select {
+	case <-ariaChildDone:
+		return false
+	default:
+		return true
+	}
+}
+
 func startAria2Child() {
 	ariaChildMu.Lock()
 	defer ariaChildMu.Unlock()
-	if ariaChild != nil && ariaChild.ProcessState == nil {
-		return // still running (or just started): give it time
+	if ariaStopping || childRunning() {
+		return // stopping, or still running (or just started): give it time
 	}
 	bin, err := exec.LookPath("aria2c")
 	if err != nil {
@@ -86,23 +113,39 @@ func startAria2Child() {
 		log.Printf("aria2: %v", err)
 		return
 	}
-	cmd := exec.Command(bin, "--conf-path="+Aria2Conf)
+	// --stop-with-process: aria2 ends with the engine even if the engine is killed or crashes
+	args := []string{"--conf-path=" + Aria2Conf, "--stop-with-process=" + strconv.Itoa(os.Getpid())}
+	if ariaPort > 0 {
+		args = append(args, "--rpc-listen-port="+strconv.Itoa(ariaPort))
+	}
+	cmd := exec.Command(bin, args...)
 	cmd.Dir = DataDir
 	if err := cmd.Start(); err != nil {
 		log.Printf("aria2: %v", err)
 		return
 	}
-	ariaChild = cmd
+	done := make(chan struct{})
+	ariaChildProc, ariaChildDone = cmd.Process, done
 	log.Printf("aria2: started (pid %d)", cmd.Process.Pid)
-	go func() { cmd.Wait() }()
+	go func() { cmd.Wait(); close(done) }()
 }
 
-// stopAria2Child ends a downloader the engine started itself (a unit's aria2 is left alone).
-func stopAria2Child() {
+// stopAria2Child ends a downloader the engine started itself (a unit's aria2 is left alone) and waits up to
+// [wait] for it to exit (it saves its session first), killing it after that. No new child starts afterwards.
+func stopAria2Child(wait time.Duration) {
 	ariaChildMu.Lock()
-	defer ariaChildMu.Unlock()
-	if ariaChild != nil && ariaChild.Process != nil && ariaChild.ProcessState == nil {
-		ariaChild.Process.Signal(os.Interrupt) // aria2 saves its session on SIGINT
+	ariaStopping = true
+	p, done := ariaChildProc, ariaChildDone
+	ariaChildMu.Unlock()
+	if p == nil {
+		return
+	}
+	p.Signal(os.Interrupt) // aria2 saves its session on SIGINT
+	select {
+	case <-done:
+	case <-time.After(wait):
+		p.Kill()
+		<-done
 	}
 }
 
@@ -110,11 +153,11 @@ func describeAria2(err error) string { return fmt.Sprintf("aria2 unreachable (%v
 
 // freePort asks the system for a free localhost TCP port (a temporary server's aria2 must not meet the
 // installed server's on 6800).
-func freePort() int {
+func freePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return 6801
+		return 0, err
 	}
 	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return l.Addr().(*net.TCPAddr).Port, nil
 }
