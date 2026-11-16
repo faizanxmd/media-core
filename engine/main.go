@@ -53,6 +53,7 @@ func serveFlags(args []string) serveOpts {
 	lib := fs.String("library", "", "library folder for a temporary server")
 	state := fs.String("state", "", "keep the temporary server's settings and progress here")
 	port := fs.Int("port", 0, "site port (the apps' port is this plus 10); default 8780")
+	removeState := fs.Bool("remove-state", false, "") // set by a restart: the state folder is temporary
 	fs.Parse(args)
 	if *lib == "" {
 		if *state != "" {
@@ -80,7 +81,17 @@ func serveFlags(args []string) serveOpts {
 		o.removeAt = dir
 	} else if dir, err = filepath.Abs(dir); err != nil {
 		fail(err.Error())
+	} else if *removeState {
+		o.removeAt = dir
 	}
+	again := []string{os.Args[0], "serve", "--library", abs, "--state", dir}
+	if o.removeAt != "" {
+		again = append(again, "--remove-state")
+	}
+	if *port > 0 {
+		again = append(again, "--port", strconv.Itoa(*port))
+	}
+	restartArgs = func() []string { return again }
 	setPaths(filepath.Join(dir, "conf"), filepath.Join(dir, "data"), trimSlash(abs))
 	// a key the installed server uses works here too, so titles get posters
 	if _, err := os.Stat(filepath.Join(ConfDir, "tmdb.key")); err != nil {

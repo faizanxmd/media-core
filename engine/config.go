@@ -45,6 +45,9 @@ var (
 // (serve --library), so the package-level defaults above are only defaults.
 func setPaths(conf, data, media string) {
 	ConfDir, DataDir, Media = conf, data, media
+	// settings come from this ConfDir's engine.env from now on (a temporary server never reads the installed one's)
+	envOnce, envFile = sync.Once{}, nil
+	DoviTool = envOr("MEDIA_CORE_DOVI_TOOL", defaultDoviTool())
 	JobsDir = filepath.Join(DataDir, "jobs")
 	Aria2Conf = filepath.Join(ConfDir, "aria2.conf")
 	introsPath = filepath.Join(DataDir, "intros.json")

@@ -87,6 +87,7 @@ type Server struct {
 	p      *Player
 	assets map[string]*asset
 	pr     *pairing
+	setup  *setupAPI
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -144,6 +145,9 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	if s.pr != nil {
 		s.pr.mount(mux, true)
+	}
+	if s.setup != nil {
+		s.setup.mount(mux)
 	}
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if a := s.assets[r.URL.Path]; a != nil {
@@ -496,7 +500,9 @@ func serve(o serveOpts) {
 	wrap := func(h http.Handler) http.Handler { return gate.wrap(ag.wrap(h)) }
 	ps := servePlayer(pl, wrap, pr)
 	dc := serveDiscover(discoverAddr(playerAddr()))
-	srv := &Server{e: e, p: pl, assets: loadAssets(), pr: pr}
+	srv := &Server{e: e, p: pl, assets: loadAssets(), pr: pr, setup: &setupAPI{temp: o.temp,
+		busy:  func() string { return busyWith(store) },
+		flush: func() { store.Flush(); watch.Flush(); dev.flushSeen(); stopAria2Child() }}}
 	addr := listenAddr()
 	hs := &http.Server{Addr: addr, Handler: wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

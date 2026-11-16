@@ -574,3 +574,10 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 .addcode { display: flex; gap: 1.2rem; align-items: center; flex: none; }
 .addcode .field { width: 16rem; height: 4rem; font-size: 1.8rem; }
 @media (max-width: 600px) { .paircode { font-size: 5.2rem; line-height: 6rem; } .setline .addcode { flex-wrap: wrap; } }
+.field.wide { width: min(36rem, 50vw); height: 4rem; font-size: 1.5rem; flex: none; }
+.field:disabled { color: var(--muted); }
+code.cmd { font-family: ui-monospace, Menlo, monospace; font-size: 1.3rem; color: var(--ink); background: var(--overlay); border-radius: .4rem; padding: .6rem .8rem; white-space: nowrap; overflow-x: auto; max-width: 36rem; }
+.savebar { display: flex; align-items: center; gap: 1.6rem; margin-top: 2.4rem; }
+.setline input[type=checkbox] { width: 2rem; height: 2rem; accent-color: var(--bar); flex: none; }
+.setline a { color: var(--ink); }
+@media (max-width: 600px) { .field.wide { width: 100%; } .setline:has(.field.wide), .setline:has(code.cmd) { flex-wrap: wrap; } }

@@ -268,7 +268,8 @@ function settings() {
         <div class="seg swatches" id="accent">${Object.keys(ACCENTS).map(n => `<button class="${n === cur ? "on" : ""}" data-a="${n}"><i style="background:${ACCENTS[n][2]}"></i>${n}</button>`).join("")}</div></div></section>
     ${isAdmin() ? `<section><h2 class="sech">Library</h2>
       <a class="setline go" href="#/manager"><div><div class="label">Manager</div><small>Add links, follow downloads, look after the files and ${esc(serverName)}</small></div>${icon("ExpandMore")}</a>
-      <a class="setline go" href="#/devices"><div><div class="label">Devices</div><small>Pair a TV, phone or browser, or remove one</small></div>${icon("ExpandMore")}</a></section>` : ""}
+      <a class="setline go" href="#/devices"><div><div class="label">Devices</div><small>Pair a TV, phone or browser, or remove one</small></div>${icon("ExpandMore")}</a>
+      <a class="setline go" href="#/server"><div><div class="label">Server</div><small>Library folder, TMDB key, name and tools</small></div>${icon("ExpandMore")}</a></section>` : ""}
     <section><h2 class="sech">This browser</h2>
       <div class="setline"><div><div class="label">${esc(me?.name || "This browser")}</div><small>${isAdmin() ? "Can watch and manage" : "Can watch"}</small></div></div></section>
     <p class="tmdb">Film and show information from TMDB. This app is not endorsed or certified by TMDB.</p></div>`);
@@ -497,7 +498,7 @@ async function setupPage() {
   $("#claim").onsubmit = async e => {
     e.preventDefault();
     const r = await api("/api/setup/claim", { code: $("#code").value, name: $("#name").value });
-    if (r.ok) { await boot(); location.replace("#/"); } else $("#err").textContent = r.error;
+    if (r.ok) { await boot(); location.replace("#/server"); } else $("#err").textContent = r.error;
   };
 }
 
@@ -579,6 +580,58 @@ async function devicesPage() {
   };
 }
 
+// Settings, Server: the library folder, the TMDB key, the name, and the tools the server uses.
+// Saving restarts the engine (about a second), then the page comes back.
+async function serverPage() {
+  if (!isAdmin()) { location.replace("#/settings"); return; }
+  tabs("Settings");
+  const [c, t] = await Promise.all([api("/api/setup/config"), api("/api/tools")]);
+  if (c.error || t.error) { errorPage(serverPage); return; }
+  const missing = Object.entries(c.folders).filter(([, ok]) => !ok).map(([f]) => f);
+  const toolLine = x => `<div class="setline"><div><div class="label">${esc(x.id)}</div><small>${esc(x.feature)}${x.note ? ` · ${esc(x.note)}` : ""}</small></div>
+    ${x.found ? `<span class="mut">Installed</span>` : `<span class="addcode"><code class="cmd">${esc(x.install)}</code><button class="word" data-copy="${esc(x.install)}">Copy</button></span>`}</div>`;
+  const libNote = c.temporary ? "Fixed for a temporary server" : c.library_problem ? esc(c.library_problem)
+    : missing.length ? `${esc(missing.join(", "))} ${missing.length > 1 ? "aren't" : "isn't"} there yet` : "Movies, TV Shows and Music are there";
+  show(tabs("Settings") + `<div class="plain setpage"><h1 class="ptitle">Server</h1>
+    <form id="cfg">
+    <section><h2 class="sech">Library</h2>
+      <div class="setline"><div><div class="label">Folder</div><small>${libNote}</small></div>
+        <input class="field wide" id="lib" value="${esc(c.library)}" spellcheck="false" aria-label="Library folder" ${c.temporary ? "disabled" : ""}></div>
+      ${missing.length && !c.temporary ? `<label class="setline"><div><div class="label">Make the missing folders</div><small>${esc(missing.join(", "))}</small></div><input type="checkbox" id="mk" checked></label>` : ""}</section>
+    <section><h2 class="sech">Posters and details</h2>
+      <div class="setline"><div><div class="label">TMDB key</div><small>${c.tmdb ? "Saved. Paste a new one to replace it." : `Free at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org</a>. Without it, titles have no posters.`}</small></div>
+        <input class="field wide" id="key" placeholder="${c.tmdb ? "Saved" : "API key"}" spellcheck="false" autocomplete="off" aria-label="TMDB key"></div></section>
+    <section><h2 class="sech">Name</h2>
+      <div class="setline"><div><div class="label">Server name</div><small>What the apps call it</small></div>
+        <input class="field wide" id="sname" value="${esc(c.name)}" maxlength="60" aria-label="Server name"></div></section>
+    <div class="savebar"><button class="play" type="submit">Save</button><span class="mut keyerr" id="err" role="alert"></span></div>
+    </form>
+    <section><h2 class="sech">Tools</h2>${t.tools.map(toolLine).join("")}
+      <div class="setline"><div><small>Install what's missing on the server, then check again.</small></div><button class="word" id="recheck">Check again</button></div></section>
+    <section><h2 class="sech">Devices</h2>
+      <a class="setline go" href="#/devices"><div><div class="label">Pair a TV, phone or browser</div><small>Open Media Core on it and enter the code it shows</small></div>${icon("ExpandMore")}</a></section></div>`);
+  $("#recheck").onclick = serverPage;
+  for (const b of $$("[data-copy]")) b.onclick = () => navigator.clipboard?.writeText(b.dataset.copy).then(() => note("Copied"), () => note("Select the command and copy it", true));
+  $("#cfg").onsubmit = async e => {
+    e.preventDefault();
+    const body = { name: $("#sname").value, make_folders: !!$("#mk")?.checked };
+    if (!c.temporary) body.library = $("#lib").value;
+    if ($("#key").value.trim()) body.tmdb_key = $("#key").value.trim();
+    $("#err").textContent = "Saving…";
+    const r = await api("/api/setup/config", body);
+    if (r.error) { $("#err").textContent = r.error; return; }
+    if (!r.restart) { $("#err").textContent = ""; note("Saved"); serverPage(); return; }
+    $("#err").textContent = "Restarting the server…";
+    await new Promise(ok => setTimeout(ok, 1200));
+    for (let i = 0; i < 30; i++) {
+      const h = await fetch("/api/v1/hello").then(x => x.ok ? x.json() : null).catch(() => null);
+      if (h) { if (h.name) serverName = h.name; note("Saved"); serverPage(); return; }
+      await new Promise(ok => setTimeout(ok, 500));
+    }
+    $("#err").textContent = "The server hasn't come back. On the server, check: systemctl --user status media-core-engine";
+  };
+}
+
 // who this browser is; then the page. Manager's live updates only for an admin.
 async function boot() {
   const r = await api("/api/v1/me");
@@ -616,6 +669,7 @@ function route() {
     case "join": route.key = "join"; if (me && !me.open) location.replace("#/"); else joinPage(); break;
     case "pair": route.key = "pair" + parts[1]; approvePage(parts[1] || ""); break;
     case "devices": route.key = "devices"; devicesPage(); break;
+    case "server": route.key = "server"; serverPage(); break;
     case "add": location.replace("#/manager"); break;
     default: location.hash = "#/";
   }
