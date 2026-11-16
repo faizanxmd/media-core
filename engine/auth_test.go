@@ -284,8 +284,14 @@ func TestSetupClaim(t *testing.T) {
 	if rec := claim(code); rec.Code != 429 {
 		t.Fatalf("right code while locked: %d, want 429", rec.Code)
 	}
+	// another address isn't locked out by this one's wrong codes
+	other := jsonReq("POST", "/api/setup/claim", map[string]string{"code": "AAAA-AAAA"}, "")
+	other.RemoteAddr = "192.168.1.77:5000"
+	if rec := httptest.NewRecorder(); func() int { pr.claim(rec, other); return rec.Code }() != 403 {
+		t.Fatal("one address's wrong codes locked another out")
+	}
 	pr.mu.Lock()
-	pr.lockUntil = time.Time{}
+	pr.lockUntil = map[string]time.Time{}
 	pr.mu.Unlock()
 	rec := claim(strings.ToLower(strings.ReplaceAll(code, "-", " ")))
 	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Set-Cookie"), cookieName()+"=mc_") {
@@ -423,5 +429,34 @@ func TestSetEnvLineRefusesLineBreaks(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "engine.env")
 	if err := setEnvLine(p, "MEDIA_CORE_LIBRARY", "/x\nMEDIA_CORE_OPEN_HOME=1"); err == nil {
 		t.Fatal("a value with a line break was written")
+	}
+}
+
+// Removing a device ends the requests it still has running (a stream, the events feed).
+func TestRevokeEndsRunningRequests(t *testing.T) {
+	dev, ag, pr := newTestAuth(t)
+	adminTok, _, _ := dev.add("Mac", "web", roleAdmin)
+	tvTok, tv, _ := dev.add("TV", "tv", rolePlayer)
+	ended := make(chan struct{})
+	started := make(chan struct{})
+	mux := http.NewServeMux()
+	pr.mount(mux, true)
+	mux.HandleFunc("GET /api/v1/stream/x", func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(ended)
+	})
+	h := ag.wrap(mux)
+	go h.ServeHTTP(httptest.NewRecorder(), jsonReq("GET", "/api/v1/stream/x", nil, tvTok))
+	<-started
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, jsonReq("POST", "/api/devices/"+tv.ID+"/revoke", nil, adminTok))
+	if rec.Code != 200 {
+		t.Fatalf("revoke: %d", rec.Code)
+	}
+	select {
+	case <-ended:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the removed device's stream kept running")
 	}
 }

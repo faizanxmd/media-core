@@ -327,6 +327,42 @@ type authGate struct {
 	// before pairing existed). MEDIA_CORE_OPEN_HOME=1; removed before the first public release.
 	openHome bool
 	names    sync.Map // client IP -> device name, for "Playing now"
+
+	liveMu sync.Mutex
+	live   map[string]map[*int]context.CancelFunc // device ID -> its requests still running (streams, events)
+}
+
+// endSessions cuts off every request a device still has running: removing a device ends its stream now,
+// not when it next asks for something.
+func (a *authGate) endSessions(id string) {
+	a.liveMu.Lock()
+	defer a.liveMu.Unlock()
+	for _, cancel := range a.live[id] {
+		cancel()
+	}
+	delete(a.live, id)
+}
+
+func (a *authGate) track(id string, cancel context.CancelFunc) func() {
+	k := new(int)
+	a.liveMu.Lock()
+	if a.live == nil {
+		a.live = map[string]map[*int]context.CancelFunc{}
+	}
+	if a.live[id] == nil {
+		a.live[id] = map[*int]context.CancelFunc{}
+	}
+	a.live[id][k] = cancel
+	a.liveMu.Unlock()
+	return func() {
+		a.liveMu.Lock()
+		delete(a.live[id], k)
+		if len(a.live[id]) == 0 {
+			delete(a.live, id)
+		}
+		a.liveMu.Unlock()
+		cancel()
+	}
 }
 
 func (a *authGate) wrap(h http.Handler) http.Handler {
@@ -358,7 +394,10 @@ func (a *authGate) wrap(h http.Handler) http.Handler {
 		if ip := clientIP(r); ip != nil {
 			a.names.Store(ip.String(), d.Name)
 		}
-		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, d)))
+		ctx, cancel := context.WithCancel(context.WithValue(r.Context(), ctxKey{}, d))
+		done := a.track(d.ID, cancel)
+		defer done()
+		h.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

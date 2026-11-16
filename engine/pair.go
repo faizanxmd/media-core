@@ -48,13 +48,14 @@ type pairing struct {
 	auth   *authGate
 
 	setupPath string
-	tries     int
-	lockUntil time.Time
+	tries     map[string]int       // wrong setup codes per address
+	lockUntil map[string]time.Time // an address locked out after setupTries wrong codes
+	wrongAt   []time.Time          // every wrong code lately, for the lock on everyone
 }
 
 func newPairing(dev *devStore, a *authGate) *pairing {
 	return &pairing{byCode: map[string]*pendingPair{}, starts: map[string][]time.Time{}, dev: dev, auth: a,
-		setupPath: filepath.Join(ConfDir, "setup.code")}
+		setupPath: filepath.Join(ConfDir, "setup.code"), tries: map[string]int{}, lockUntil: map[string]time.Time{}}
 }
 
 // randCode is n letters from codeAlphabet, each equally likely (bytes past the last whole multiple are skipped).
@@ -274,6 +275,32 @@ func (p *pairing) deny(code string) bool {
 
 // ---------- the setup code ----------
 
+const (
+	setupTries    = 10               // wrong codes from one address before it's locked out
+	setupLock     = 15 * time.Minute // for this long
+	setupAllTries = 100              // wrong codes from everyone within setupLock before setup locks for all
+)
+
+// lockedLocked: until when ip may not try a setup code (zero time: it may). One address is locked after
+// setupTries wrong codes; everyone after setupAllTries wrong codes in setupLock, so many addresses together
+// can't guess through it either (the code has 31^8 possibilities).
+func (p *pairing) lockedLocked(ip string) time.Time {
+	recent := p.wrongAt[:0]
+	for _, t := range p.wrongAt {
+		if time.Since(t) < setupLock {
+			recent = append(recent, t)
+		}
+	}
+	p.wrongAt = recent
+	until := p.lockUntil[ip]
+	if len(recent) >= setupAllTries {
+		if all := recent[len(recent)-setupAllTries].Add(setupLock); all.After(until) {
+			until = all
+		}
+	}
+	return until
+}
+
 type setupFile struct {
 	Hash    string `json:"hash"`
 	Expires int64  `json:"expires"`
@@ -294,7 +321,7 @@ func newSetupCode(path string) (string, error) {
 
 func (p *pairing) setupState(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
-	locked := time.Until(p.lockUntil)
+	locked := time.Until(p.lockedLocked(clientIP(r).String()))
 	p.mu.Unlock()
 	out := map[string]any{"claimed": p.dev.claimed(), "name": serverName()}
 	if locked > 0 {
@@ -315,8 +342,9 @@ func (p *pairing) claim(w http.ResponseWriter, r *http.Request) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if time.Now().Before(p.lockUntil) {
-		errJSON(w, 429, fmt.Sprintf("Too many wrong codes. Try again in %d minutes.", int(time.Until(p.lockUntil).Minutes())+1))
+	ip := clientIP(r).String()
+	if until := p.lockedLocked(ip); time.Now().Before(until) {
+		errJSON(w, 429, fmt.Sprintf("Too many wrong codes. Try again in %d minutes.", int(time.Until(until).Minutes())+1))
 		return
 	}
 	var f setupFile
@@ -327,9 +355,10 @@ func (p *pairing) claim(w http.ResponseWriter, r *http.Request) {
 	ok := err == nil && time.Now().Unix() < f.Expires &&
 		subtle.ConstantTimeCompare([]byte(f.Hash), []byte(hashToken(normCode(b.Code)))) == 1
 	if !ok {
-		p.tries++
-		if p.tries >= 10 {
-			p.tries, p.lockUntil = 0, time.Now().Add(15*time.Minute)
+		p.tries[ip]++
+		p.wrongAt = append(p.wrongAt, time.Now())
+		if p.tries[ip] >= setupTries {
+			p.tries[ip], p.lockUntil[ip] = 0, time.Now().Add(setupLock)
 		}
 		errJSON(w, 403, "That code doesn't match. On the server, run: media-core-engine setup-code")
 		return
@@ -340,7 +369,7 @@ func (p *pairing) claim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	os.Remove(p.setupPath)
-	p.tries = 0
+	p.tries, p.lockUntil, p.wrongAt = map[string]int{}, map[string]time.Time{}, nil
 	log.Printf("devices: set up; %s is the first admin", d.Name)
 	setSessionCookie(w, tok)
 	writeJSON(w, 200, map[string]any{"ok": true, "name": d.Name})
@@ -415,6 +444,9 @@ func (p *pairing) mount(mux *http.ServeMux, admin bool) {
 		if !p.dev.revoke(r.PathValue("id")) {
 			errJSON(w, 404, "no such device")
 			return
+		}
+		if p.auth != nil {
+			p.auth.endSessions(r.PathValue("id"))
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 	})
