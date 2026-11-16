@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,21 +18,21 @@ import (
 // MInfo is the short picture/sound summary the Library tab shows for a video:
 // "4K · Dolby Vision 8.1 · 53 Mb/s · DTS-HD MA 5.1".
 type MInfo struct {
-	Res      string    `json:"res,omitempty"`    // 4K, 1080p, 720p…
-	HDR      string    `json:"hdr,omitempty"`    // Dolby Vision 8.1, HDR10, HLG
-	Mbps     float64   `json:"mbps,omitempty"`   // overall bitrate
-	Audio    string    `json:"audio,omitempty"`  // default audio track: TrueHD Atmos 7.1
+	Res         string    `json:"res,omitempty"`    // 4K, 1080p, 720p…
+	HDR         string    `json:"hdr,omitempty"`    // Dolby Vision 8.1, HDR10, HLG
+	Mbps        float64   `json:"mbps,omitempty"`   // overall bitrate
+	Audio       string    `json:"audio,omitempty"`  // default audio track: TrueHD Atmos 7.1
 	VCodec      string    `json:"vcodec,omitempty"` // HEVC Main 10
 	Tracks      []string  `json:"tracks,omitempty"` // every audio track, with language
 	TrackTitles []string  `json:"track_titles,omitempty"`
-	Subs        []string  `json:"subs,omitempty"`   // embedded subtitle languages
-	Bits     int       `json:"bits,omitempty"`   // music: bit depth
-	Rate     int       `json:"rate,omitempty"`   // music: sample rate (Hz)
-	Dur      float64   `json:"dur,omitempty"`    // seconds
-	FPS      float64   `json:"fps,omitempty"`    // video frame rate, for the TV's refresh-rate switch
-	Width    int       `json:"w,omitempty"`
-	Chapters []Chapter `json:"chapters,omitempty"`
-	Height   int       `json:"h,omitempty"`
+	Subs        []string  `json:"subs,omitempty"` // embedded subtitle languages
+	Bits        int       `json:"bits,omitempty"` // music: bit depth
+	Rate        int       `json:"rate,omitempty"` // music: sample rate (Hz)
+	Dur         float64   `json:"dur,omitempty"`  // seconds
+	FPS         float64   `json:"fps,omitempty"`  // video frame rate, for the TV's refresh-rate switch
+	Width       int       `json:"w,omitempty"`
+	Chapters    []Chapter `json:"chapters,omitempty"`
+	Height      int       `json:"h,omitempty"`
 	// What Manager needs to say where a file plays: the container, the first
 	// audio track's codec (a browser plays the first one), the video's bit depth
 	// and whether any subtitles are pictures (PGS), which MP4 can't hold.
@@ -121,8 +122,9 @@ func saveMediaInfo(seen map[string]bool) {
 	miMu.Lock()
 	defer miMu.Unlock()
 	loadMediaInfoLocked()
+	music := filepath.Join(Media, "Music") + string(filepath.Separator)
 	for p := range miCache {
-		if !seen[p] {
+		if !seen[p] && !strings.HasPrefix(p, music) { // Music is only looked at by /api/library
 			delete(miCache, p)
 		}
 	}
@@ -297,6 +299,8 @@ func probeMediaCtx(ctx context.Context, path string) *MInfo {
 			switch {
 			case hdr10Plus:
 				m.HDR = "HDR10+"
+			case v.Transfer == "smpte2084" && frameHasHDR10Plus(ctx, path, pre):
+				m.HDR = "HDR10+"
 			case v.Transfer == "smpte2084":
 				m.HDR = "HDR10"
 			case v.Transfer == "arib-std-b67":
@@ -391,4 +395,12 @@ func langName(code string) string {
 		return langs[base]
 	}
 	return ""
+}
+
+// frameHasHDR10Plus reads the first video frame: HDR10+ metadata rides on the
+// frames, so the stream-level side data (read above) never shows it.
+func frameHasHDR10Plus(ctx context.Context, path string, pre []string) bool {
+	out, err := exec.CommandContext(ctx, "ffprobe", append(pre, "-select_streams", "v:0", "-read_intervals", "%+#1",
+		"-show_entries", "frame=side_data_list", "-of", "json", path)...).Output()
+	return err == nil && (bytes.Contains(out, []byte("SMPTE2094-40")) || bytes.Contains(out, []byte("HDR10+")))
 }

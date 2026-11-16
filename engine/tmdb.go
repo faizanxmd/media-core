@@ -694,19 +694,19 @@ cert:
 
 func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 	var r struct {
-		ID       int       `json:"id"`
-		Name     string    `json:"name"`
-		Overview string    `json:"overview"`
-		Tagline  string    `json:"tagline"`
-		Poster   string    `json:"poster_path"`
-		Backdrop string    `json:"backdrop_path"`
-		Vote     float64   `json:"vote_average"`
-		Date     string    `json:"first_air_date"`
-		Status   string    `json:"status"`
-		Runtime  []int     `json:"episode_run_time"`
-		Genres           namedList      `json:"genres"`
-		Networks         namedList      `json:"networks"`
-		CreatedBy        namedList      `json:"created_by"`
+		ID               int       `json:"id"`
+		Name             string    `json:"name"`
+		Overview         string    `json:"overview"`
+		Tagline          string    `json:"tagline"`
+		Poster           string    `json:"poster_path"`
+		Backdrop         string    `json:"backdrop_path"`
+		Vote             float64   `json:"vote_average"`
+		Date             string    `json:"first_air_date"`
+		Status           string    `json:"status"`
+		Runtime          []int     `json:"episode_run_time"`
+		Genres           namedList `json:"genres"`
+		Networks         namedList `json:"networks"`
+		CreatedBy        namedList `json:"created_by"`
 		Credits          tmdbCredits
 		AggregateCredits tmdbAggCredits `json:"aggregate_credits"`
 		Images           tmdbImages

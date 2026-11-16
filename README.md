@@ -174,7 +174,7 @@ Adding a download takes two calls. `POST /api/probe {url}` says what a link is, 
 
 `GET /api/jobs` lists the downloads, `GET /api/system` reports mint's disk and health, and `/api/events` sends live events.
 
-Manager uses `GET /api/manager/titles`, `POST /api/manager/mp4 {id}` and `POST /api/manager/light {id,probe}`.
+Manager uses `GET /api/manager/titles` and `POST /api/manager/light {id,probe}`.
 
 There is a small command line too:
 

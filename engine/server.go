@@ -356,7 +356,11 @@ func (s *Server) routes() http.Handler {
 			errJSON(w, 400, "bad settings: "+err.Error())
 			return
 		}
-		writeJSON(w, 200, s.e.SetSettings(func(st *Settings) { *st = next }))
+		writeJSON(w, 200, s.e.SetSettings(func(st *Settings) {
+			avg := st.AvgBps // learned by the engine meanwhile; never set from here
+			*st = next
+			st.AvgBps = avg
+		}))
 	})
 	return logRequests(mux)
 }
