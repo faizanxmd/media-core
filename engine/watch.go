@@ -110,6 +110,7 @@ func (w *Watch) Progress(id string, pos, dur int64, ended bool, at float64) *WSt
 	if at <= 0 {
 		at = now()
 	}
+	pos = max(pos, 0) // a bad report can't store a negative position
 	s.Dur = max(dur, s.Dur)
 	switch {
 	case ended || s.Dur > 0 && pos >= s.Dur*9/10:

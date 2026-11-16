@@ -150,3 +150,12 @@ func TestRepairHandlesNull(t *testing.T) {
 		t.Fatal("dirty is false after deleting nil entry")
 	}
 }
+
+func TestNegativePositionIsNotStored(t *testing.T) {
+	w := newTestWatch()
+	w.Progress("m", 30*60_000, testDur, false, 0)
+	w.Progress("m", -5000, testDur, false, 0)
+	if s := w.Get("m"); s.Pos < 0 {
+		t.Fatalf("negative position kept: %+v", s)
+	}
+}
