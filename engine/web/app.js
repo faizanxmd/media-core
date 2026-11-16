@@ -7,6 +7,10 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const icon = n => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const img = (path, size) => path ? `/api/v1/img/${size}${path}` : "";
 
+let serverName = "the server";
+const serverLabel = () => serverName === "the server" ? "The server" : serverName;
+fetch("/api/v1/hello").then(r => r.ok ? r.json() : null).then(d => { if (d?.name) serverName = d.name; }).catch(() => {});
+
 async function api(path, body, opts = {}) {
   try {
     const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), ...opts });
@@ -14,7 +18,7 @@ async function api(path, body, opts = {}) {
     if (!r.ok && !j.error) j.error = `HTTP ${r.status}`;
     return j;
   } catch (e) {
-    return { error: "Can't reach mint", offline: true };
+    return { error: `Can't reach ${serverName}`, offline: true };
   }
 }
 const store = {
@@ -152,8 +156,8 @@ function loadingPage() {
   page().innerHTML = `<div class="centre ring-later"><div class="loading"></div></div>`;
 }
 function errorPage(retry) {
-  show(`<div class="centre"><div class="title">Can't reach mint</div>
-    <p class="mut" style="margin:1.2rem 0 2.4rem">At home: check that mint is on.<br>Away from home: open Tailscale and connect.</p>
+  show(`<div class="centre"><div class="title">Can't reach ${esc(serverName)}</div>
+    <p class="mut" style="margin:1.2rem 0 2.4rem">At home: check that ${esc(serverName)} is on.<br>Away from home: open Tailscale and connect.</p>
     <button class="tool" id="retry" aria-label="Try again" title="Try again">${icon("Refresh")}</button></div>`);
   $("#retry").onclick = retry;
 }
@@ -384,7 +388,7 @@ async function details(it, main) {
   };
   addEventListener("keydown", onKey, true);
   scrim.onclick = close; $(".tool", s).onclick = close;
-  // the sheet opens at once; where it plays is asked of mint and arrives a moment later
+  // the sheet opens at once; where it plays is asked of the server and arrives a moment later
   if (it.id && (it.type === "movie" || it.type === "episode")) {
     const on = (await webAPI(`/api/v1/web/${it.id}`)).on, box = $("#dPlays", s);
     if (on && box) box.outerHTML = group("Plays on", [["This device", on.here], ["TV", on.tv], ["Phone", on.phone]].filter(r => r[1]).map(([k, d]) => [k, how(d)]));

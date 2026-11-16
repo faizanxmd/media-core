@@ -15,7 +15,7 @@ import (
 
 // Manager (the site's Manager tab): the library's files with where each one
 // plays, the MP4 step and Light copies for titles already in the library, and
-// how mint is doing. All of it is on the Tailscale-only admin port.
+// how the server is doing. All of it is on the Tailscale-only admin port.
 
 type mFile struct {
 	ID      string              `json:"id"`
@@ -187,7 +187,7 @@ func lightPlanFor(it *Item, lp Probe) Plan {
 	return p
 }
 
-// ---------- mint ----------
+// ---------- the server ----------
 
 func meminfo() (avail, total int64) {
 	f, err := os.Open("/proc/meminfo")
@@ -299,7 +299,7 @@ func (s *Server) system() map[string]any {
 	return map[string]any{
 		"load": load, "cores": cores,
 		"now":     now,  // what's playing, and on what
-		"devices": devs, // the owner's other machines, and whether each reaches mint directly
+		"devices": devs, // the owner's other machines, and whether each reaches the server directly
 		"library": map[string]any{"free": free, "total": total,
 			"films": films, "shows": shows,
 			"music": music, "light": light},

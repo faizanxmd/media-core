@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"html"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -106,5 +107,26 @@ func TestConnectPageDeepLink(t *testing.T) {
 	}
 	if got := connectDeepLink(noMDNS); got != "mediacore://connect?u=http%3A%2F%2F192.168.1.10%3A8790" {
 		t.Fatalf("connectDeepLink without magicdns = %q", got)
+	}
+}
+
+func TestNeutralServerStrings(t *testing.T) {
+	t.Setenv("MEDIA_CORE_NAME", "Studio")
+	if got, relayed := deviceOf("127.0.0.1"); got != "Studio itself" || relayed {
+		t.Fatalf("deviceOf(127.0.0.1) = (%q, %v), want (%q, false)", got, relayed, "Studio itself")
+	}
+
+	oldT, oldO := tsLogin, ownerLogin
+	tsLogin = func(string) string { return "other@github" }
+	ownerLogin = func() string { return "me@github" }
+	defer func() { tsLogin, ownerLogin = oldT, oldO }()
+
+	h := newOwnerGate().wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	req := httptest.NewRequest("GET", "/api/v1/home", nil)
+	req.RemoteAddr = "100.64.0.20:4000"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 403 || strings.TrimSpace(rec.Body.String()) != "This server is only open to its owner's devices" {
+		t.Fatalf("403 response = (%d, %q)", rec.Code, rec.Body.String())
 	}
 }

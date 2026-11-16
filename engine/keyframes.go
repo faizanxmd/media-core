@@ -22,7 +22,7 @@ import (
 //
 // The times come from the file's own index, which is a couple of small reads:
 // an MKV's Cues, an MP4's sample tables. A file with neither is read through
-// once with ffprobe, which takes minutes on mint's disk, so that answer is kept
+// once with ffprobe, which takes minutes on the server's disk, so that answer is kept
 // in DataDir/keys.
 
 const maxKeyCache = 2000

@@ -146,7 +146,7 @@ func (s *Server) routes() http.Handler {
 		http.NotFound(w, r)
 	})
 	// what the web player saw in the browser (player.js, wlog): errors, refused plays, what it can decode.
-	// Lands in the engine's journal, so a problem in Safari can be read here on mint.
+	// Lands in the engine's journal, so a problem in Safari can be read here on the server.
 	mux.HandleFunc("POST /api/weblog", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			UA     string   `json:"ua"`

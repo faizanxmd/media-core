@@ -220,7 +220,7 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 .query input::placeholder { color: var(--muted); opacity: 1; }
 input[type=search]::-webkit-search-cancel-button { display: none; }
 
-/* Manager: links, downloads, the library's files, mint */
+/* Manager: links, downloads, the library's files, the server */
 /* one column, capped and centred under the bar: on a wide window a row's label and its control stay within reach of each other */
 .addpage { padding: 8rem var(--side) 8rem; max-width: calc(104rem + 2 * var(--side)); }
 .mfacts { display: flex; flex-wrap: wrap; gap: 1.2rem 3.2rem; margin-top: 1.6rem; }
@@ -242,7 +242,7 @@ input[type=search]::-webkit-search-cancel-button { display: none; }
 .mwide:hover .meta, .mwide:focus-visible .meta { color: inherit; }
 .mrow { width: 100%; text-align: left; cursor: pointer; }
 .mrow:hover .name, .mrow:focus-visible .name { text-decoration: underline; text-underline-offset: .3rem; }
-/* System: no boxes. The disk in one figure and one bar, mint in five figures, then the few things to set or fetch. */
+/* System: no boxes. The disk in one figure and one bar, the server in five figures, then the few things to set or fetch. */
 .sys section { margin-top: 4rem; min-width: 0; }
 .sys h3 { font-size: 1.8rem; line-height: 2.2rem; font-weight: 600; margin-bottom: 1.2rem; }
 .sbig { display: flex; align-items: baseline; gap: 1.2rem; }

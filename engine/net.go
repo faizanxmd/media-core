@@ -14,9 +14,9 @@ import (
 	"time"
 )
 
-// How the owner's devices reach mint, as Tailscale sees it. Away from home a
-// device either reaches mint directly or falls back to Tailscale's relay
-// (the nearest is Mumbai), which carries about 10 Mb/s: enough to browse, not
+// How the owner's devices reach the server, as Tailscale sees it. Away from home a
+// device either reaches the server directly or falls back to Tailscale's relay,
+// which carries about 10 Mb/s: enough to browse, not
 // to play a film. That fallback is silent, so System shows it and the journal
 // records it when a device is playing through the relay.
 
@@ -24,8 +24,8 @@ type Device struct {
 	Name   string `json:"name"`
 	OS     string `json:"os,omitempty"`
 	Online bool   `json:"online"`
-	Active bool   `json:"active"`          // talking to mint right now
-	Direct bool   `json:"direct"`          // reaches mint itself, not by the relay
+	Active bool   `json:"active"`          // talking to the server right now
+	Direct bool   `json:"direct"`          // reaches the server itself, not by the relay
 	Relay  string `json:"relay,omitempty"` // the relay it would use, or is using
 	ips    []string
 }
@@ -114,7 +114,7 @@ func deviceOf(host string) (name string, relayed bool) {
 		}
 	}
 	if host == "127.0.0.1" || host == "::1" {
-		return "mint itself", false
+		return serverName() + " itself", false
 	}
 	return "Home network (" + host + ")", false
 }
@@ -166,7 +166,7 @@ func (p *Player) watchRelay() {
 			if pl.Relayed {
 				now[pl.Device] = true
 				if !said[pl.Device] {
-					log.Printf("network: %s is playing through Tailscale's relay, not directly: expect stalls above about 10 Mb/s (see SERVER-NOTES, direct path)", pl.Device)
+					log.Printf("network: %s is playing through Tailscale's relay, not directly: expect stalls above about 10 Mb/s", pl.Device)
 				}
 			}
 		}
@@ -174,7 +174,7 @@ func (p *Player) watchRelay() {
 	}
 }
 
-// loadAvg: mint's one-minute load and how many cores it has to carry it.
+// loadAvg: the server's one-minute load and how many cores it has to carry it.
 func loadAvg() (float64, int) {
 	b, err := os.ReadFile("/proc/loadavg")
 	if err != nil {

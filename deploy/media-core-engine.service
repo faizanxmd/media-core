@@ -1,5 +1,5 @@
 [Unit]
-Description=Media Core Engine - downloads into the library + streams to the TV app (http://mint:8780, Tailscale only)
+Description=Media Core engine: downloads into the library and serves the site and the apps
 After=network-online.target media-core-aria2.service
 Wants=media-core-aria2.service
 

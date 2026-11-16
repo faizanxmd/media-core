@@ -3,7 +3,7 @@ package main
 import "strings"
 
 // How a browser gets a title, cheapest first. The file is never rewritten and
-// the picture is never converted while it plays (mint's CPU can't):
+// the picture is never converted while it plays (the server's CPU can't):
 //
 //	direct  the file as it is, with byte ranges
 //	repack  the picture copied untouched into a stream made while it plays,

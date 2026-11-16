@@ -136,7 +136,7 @@ func probeStreams(ctx context.Context, p string) ([]probeStream, error) {
 }
 
 // probeStreamsKept: the same, remembered until the file changes. Opening a
-// title asks for its tracks every time, and ffprobe is a disk seek on mint.
+// title asks for its tracks every time, and ffprobe is a disk seek on the server.
 var (
 	probeKeptMu sync.Mutex
 	probeKept   = map[string]keptProbe{}
