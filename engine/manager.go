@@ -100,7 +100,7 @@ func fileOf(it *Item, busy map[string]bool, c Caps) mFile {
 	if it.Light != nil {
 		f.Size += it.Light.Size
 	}
-	f.Busy = busy[it.file] || busy[filepath.Dir(it.file)]
+	f.Busy = busy[it.file] || (filepath.Dir(it.file) != filepath.Join(Media, "Movies") && busy[filepath.Dir(it.file)])
 	return f
 }
 
@@ -124,7 +124,9 @@ func (s *Server) titles(c Caps) []mTitle {
 	for _, m := range movies {
 		t, y, p := name(m)
 		mt := mTitle{mFile: fileOf(m, busy, c), Type: "movie", Title: t, Year: y, Poster: p, Added: m.Added}
-		mt.Path = filepath.Dir(rel(m.file))
+		if dir := filepath.Dir(rel(m.file)); dir != "Movies" {
+			mt.Path = dir
+		}
 		out = append(out, mt)
 	}
 	for _, sh := range shows {
