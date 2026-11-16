@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,13 +16,29 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+)
+
+var (
+	unpackTimeout   = 2 * time.Hour
+	convertTimeout  = 6 * time.Hour
+	probeCmdTimeout = 30 * time.Second
 )
 
 // Heavy tools run at low CPU and IO priority so playback from the same
 // HDD doesn't stutter.
 func lowPrio(ctx context.Context, name string, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, "ionice", append([]string{"-c2", "-n7", "nice", "-n", "10", name}, args...)...)
+	cmd := exec.CommandContext(ctx, "ionice", append([]string{"-c2", "-n7", "nice", "-n", "10", name}, args...)...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
+	cmd.WaitDelay = 5 * time.Second
+	return cmd
 }
 
 func (e *Engine) startPost(id string) {
@@ -198,7 +213,9 @@ func (e *Engine) post(ctx context.Context, id string) error {
 				c.log(filepath.Base(v) + ": kept as it is (an MP4 wouldn't help it play in browsers)")
 				continue
 			}
-			v2, err := e.toMP4(ctx, c, v)
+			mctx, mcancel := context.WithTimeout(ctx, convertTimeout)
+			v2, err := e.toMP4(mctx, c, v)
+			mcancel()
 			if err != nil {
 				return err
 			}
@@ -230,21 +247,45 @@ var (
 	reSubLang = regexp.MustCompile(`[._ -]([a-zA-Z]{2,3}|forced|sdh)\.[a-z]{3}$`)
 )
 
+// scanChunks splits r on any byte in delims (capping stored line bytes at
+// maxLine) and keeps draining until EOF so an overlong line never blocks the child.
+func scanChunks(r io.Reader, delims string, maxLine int, fn func([]byte)) {
+	var cur []byte
+	buf := make([]byte, 32<<10)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			data := buf[:n]
+			for len(data) > 0 {
+				i := bytes.IndexAny(data, delims)
+				if i < 0 {
+					if len(cur) < maxLine {
+						take := min(len(data), maxLine-len(cur))
+						cur = append(cur, data[:take]...)
+					}
+					break
+				}
+				if len(cur) < maxLine {
+					take := min(i, maxLine-len(cur))
+					cur = append(cur, data[:take]...)
+				}
+				fn(cur)
+				cur = cur[:0]
+				data = data[i+1:]
+			}
+		}
+		if err != nil {
+			if len(cur) > 0 {
+				fn(cur)
+			}
+			return
+		}
+	}
+}
+
 // scanProgress feeds the last "NN%" seen in r (split on \r, \n and \b) to fn.
 func scanProgress(r io.Reader, re *regexp.Regexp, fn func(int), tail *bytes.Buffer) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64<<10), 1<<20)
-	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
-		if i := bytes.IndexAny(data, "\r\n\b"); i >= 0 {
-			return i + 1, data[:i], nil
-		}
-		if atEOF && len(data) > 0 {
-			return len(data), data, nil
-		}
-		return 0, nil, nil
-	})
-	for sc.Scan() {
-		line := sc.Bytes()
+	scanChunks(r, "\r\n\b", 64<<10, func(line []byte) {
 		if m := re.FindSubmatch(line); m != nil {
 			n, _ := strconv.Atoi(string(m[1]))
 			fn(n)
@@ -254,25 +295,31 @@ func scanProgress(r io.Reader, re *regexp.Regexp, fn func(int), tail *bytes.Buff
 				tail.Next(tail.Len() - 4096)
 			}
 		}
-	}
+	})
 }
 
 func unpack(ctx context.Context, c jobCtx, archive string) (string, error) {
+	uctx, cancel := context.WithTimeout(ctx, unpackTimeout)
+	defer cancel()
 	x := filepath.Join(filepath.Dir(archive), "x")
 	c.phase(Processing, "Unpacking")
 	c.log("Unpacking " + filepath.Base(archive))
 	// One pass: 7z checks CRCs while extracting, so a separate `7z t` would
 	// only read the whole archive from the HDD twice.
-	cmd := lowPrio(ctx, "7z", "x", "-y", "-p", "-bsp1", "-bso0", "-bse1", "-o"+x, archive)
-	out, _ := cmd.StdoutPipe()
+	cmd := lowPrio(uctx, "7z", "x", "-y", "-p", "-bsp1", "-bso0", "-bse1", "-o"+x, archive)
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
 	var tail bytes.Buffer
 	if err := cmd.Start(); err != nil {
+		out.Close()
 		return "", err
 	}
 	scanProgress(out, rePct, c.progressFn(), &tail)
 	if err := cmd.Wait(); err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
+		if uctx.Err() != nil {
+			return "", uctx.Err()
 		}
 		msg := strings.TrimSpace(tail.String())
 		if strings.Contains(msg, "Wrong password") || strings.Contains(msg, "encrypted") {
@@ -334,7 +381,9 @@ func moveCtx(ctx context.Context, src, dst string) error {
 	if _, err := os.Lstat(dst); err == nil {
 		return fmt.Errorf("%s already exists", filepath.Base(dst))
 	}
-	cmd := exec.CommandContext(ctx, "mv", "-n", "--", src, dst) // across filesystems
+	mctx, mcancel := context.WithTimeout(ctx, unpackTimeout)
+	defer mcancel()
+	cmd := exec.CommandContext(mctx, "mv", "-n", "--", src, dst) // across filesystems
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("move %s: %s", filepath.Base(src), out)
 	}
@@ -509,7 +558,9 @@ func firstOf(xs ...string) string {
 }
 
 func audioTags(p string) map[string]string {
-	out, _ := exec.Command("ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json", p).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), probeCmdTimeout)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json", p).Output()
 	var r struct {
 		Format struct {
 			Tags map[string]string `json:"tags"`
@@ -526,7 +577,9 @@ func audioTags(p string) map[string]string {
 // ---------- Dolby Vision ----------
 
 func ffprobe(ctx context.Context, p string, args ...string) string {
-	out, _ := exec.CommandContext(ctx, "ffprobe", append(append([]string{"-v", "error"}, args...), "-of", "default=nw=1:nk=1", p)...).Output()
+	pctx, cancel := context.WithTimeout(ctx, probeCmdTimeout)
+	defer cancel()
+	out, _ := exec.CommandContext(pctx, "ffprobe", append(append([]string{"-v", "error"}, args...), "-of", "default=nw=1:nk=1", p)...).Output()
 	return strings.TrimSpace(string(out))
 }
 
@@ -544,6 +597,10 @@ var reOutTime = regexp.MustCompile(`^out_time_us=(\d+)`)
 // dvConvert rewrites Dolby Vision profile 7 as 8.1 (video copied, no re-encode)
 // so the Android TV plays it in DV instead of HDR10.
 func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
+	dctx, dcancel := context.WithTimeout(ctx, convertTimeout)
+	defer dcancel()
+	ctx = dctx
+
 	work := filepath.Join(filepath.Dir(path), ".convert")
 	os.RemoveAll(work)
 	os.MkdirAll(work, 0o2775)
@@ -591,7 +648,9 @@ func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
 	if err := dv.Start(); err != nil {
 		pw.Close()
 		pr.Close()
-		if ff.Process != nil {
+		if ff.Cancel != nil {
+			ff.Cancel()
+		} else if ff.Process != nil {
 			ff.Process.Kill()
 		}
 		ff.Wait()
@@ -601,15 +660,15 @@ func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
 	pr.Close()
 	prog := c.progressFn()
 	var ffTail bytes.Buffer
-	sc := bufio.NewScanner(ffErrPipe)
-	for sc.Scan() {
-		if m := reOutTime.FindStringSubmatch(sc.Text()); m != nil && durUS > 0 {
+	scanChunks(ffErrPipe, "\r\n", 64<<10, func(line []byte) {
+		text := string(line)
+		if m := reOutTime.FindStringSubmatch(text); m != nil && durUS > 0 {
 			us, _ := strconv.ParseFloat(m[1], 64)
 			prog(int(us / durUS * 100))
-		} else if !strings.Contains(sc.Text(), "=") {
-			ffTail.WriteString(sc.Text() + "\n")
+		} else if !strings.Contains(text, "=") {
+			ffTail.WriteString(text + "\n")
 		}
-	}
+	})
 	ffErr := ff.Wait()
 	if err := dv.Wait(); err != nil || ffErr != nil {
 		if ctx.Err() != nil {

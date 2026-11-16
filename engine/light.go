@@ -139,7 +139,9 @@ func (e *Engine) acceptLight(ctx context.Context, c jobCtx, j Job, videos []stri
 		return fmt.Errorf("not the same cut: the Light copy runs %s, the film %s, so it was removed", dur(int64(a)), dur(int64(b)))
 	}
 	if j.Plan.MP4 && canMP4(probeMediaCtx(ctx, light)) {
-		v, err := e.toMP4(ctx, c, light)
+		mctx, mcancel := context.WithTimeout(ctx, convertTimeout)
+		v, err := e.toMP4(mctx, c, light)
+		mcancel()
 		if err != nil {
 			return err
 		}
