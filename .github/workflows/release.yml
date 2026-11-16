@@ -60,3 +60,47 @@ jobs:
           case "$TAG" in *-*) pre="--prerelease" ;; esac
           notes=$(awk -v v="${TAG#v}" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} /^## / && on {exit} on' CHANGELOG.md)
           gh release create "$TAG" dist/* $pre --title "Media Core $TAG" --notes "${notes:-See CHANGELOG.md}"
+
+  # The TV and phone apps, signed, added to the same release with APPS.SHA256SUMS. The engine's install and
+  # upgrade fetch them (media-core-engine apps), and the server hands them to TVs and phones.
+  apps:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TZ: ${{ vars.MEDIA_CORE_TZ || 'UTC' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Restore the signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.MEDIA_CORE_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.MEDIA_CORE_KS_PASS }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "no signing key: set MEDIA_CORE_KEYSTORE_B64 and MEDIA_CORE_KS_PASS"; exit 1; }
+          umask 077
+          mkdir -p ~/.config/media-core
+          printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.config/media-core/app.jks
+          printf '%s' "$KS_PASS" > ~/.config/media-core/app.jks.pass
+      - name: Build
+        env:
+          MEDIA_CORE_APK_DIR: ${{ runner.temp }}/apks
+        run: |
+          android/build.sh
+          android/build.sh --phone
+          cd "$MEDIA_CORE_APK_DIR" && sha256sum media-core.apk media-core.json media-core-phone.apk media-core-phone.json > APPS.SHA256SUMS && cat APPS.SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/apks/*.apk
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" ${{ runner.temp }}/apks/* --clobber

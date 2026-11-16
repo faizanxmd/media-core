@@ -44,6 +44,7 @@ const usage = `usage: media-core-engine [command]
                                  change those settings later
   upgrade [--version vX.Y.Z] [--force]
                                  install a release; puts the old one back if the new one doesn't start
+  apps [--version vX.Y.Z]        fetch the TV and phone apps from a release, for the server to hand out
   uninstall [--purge] [--yes]    remove the services and binary (--purge: settings and progress too;
                                  the library is never touched)
   serve                          run the server (what the installed service does)
@@ -158,6 +159,8 @@ func main() {
 		upgradeCmd(os.Args[2:])
 	case "uninstall":
 		uninstallCmd(os.Args[2:])
+	case "apps":
+		appsCmd(os.Args[2:])
 	case "add":
 		if len(os.Args) < 3 {
 			fail("usage: media-core-engine add <url> [movie|tv|music] [title]")

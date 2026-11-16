@@ -304,6 +304,13 @@ func installCmd(o installOpts) {
 		}
 	}
 
+	if v := releaseVersion(); v != "" && readAppInfo("media-core") == nil {
+		if err := fetchApps(v); err != nil {
+			fmt.Println("The apps couldn't be fetched (" + err.Error() + "); later: media-core-engine apps")
+		} else {
+			fmt.Println("Fetched the TV and phone apps")
+		}
+	}
 	if !managed {
 		fmt.Printf("\nSettings are saved. There's no systemd here to run it as a service: start it with\n  %s serve\nthen run media-core-engine setup-code and open %s/#/setup\n", exe, siteURLs())
 		return
@@ -430,6 +437,9 @@ func setupCmd(o installOpts) {
 // ---------- upgrade ----------
 
 func releaseBase(ver string) string {
+	if u := envOr("MEDIA_CORE_BASE_URL", ""); u != "" {
+		return strings.TrimRight(u, "/") // a copy of a release's files somewhere else (tests, mirrors)
+	}
 	repo := envOr("MEDIA_CORE_REPO", defaultRepo)
 	if ver == "" || ver == "latest" {
 		return "https://github.com/" + repo + "/releases/latest/download"
@@ -538,6 +548,9 @@ func upgradeCmd(args []string) {
 		cmd := exec.Command(dst, "install", "--yes")
 		cmd.Stdout, cmd.Stderr = io.Discard, os.Stderr
 		cmd.Run()
+		cmd = exec.Command(dst, "apps")
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		cmd.Run()
 		return
 	}
 	fmt.Fprintln(os.Stderr, "The new version didn't come up; putting", version, "back.")
@@ -593,4 +606,86 @@ func uninstallCmd(args []string) {
 		return
 	}
 	fmt.Printf("Removed Media Core. Settings and progress are still in %s and %s (uninstall --purge removes them).\nYour library is untouched: %s\n", ConfDir, DataDir, Media)
+}
+
+// ---------- the apps ----------
+
+// appFiles: what a release carries for the apps, checked against its APPS.SHA256SUMS.
+var appFiles = []string{"media-core.apk", "media-core.json", "media-core-phone.apk", "media-core-phone.json"}
+
+// fetchApps puts the TV and phone apps from release ver into the data folder, where the server hands them to
+// devices (and they offer the update). The .json goes in last, so a device never sees a version whose APK
+// isn't there yet.
+func fetchApps(ver string) error {
+	base := releaseBase(ver)
+	sums, err := download(base+"/APPS.SHA256SUMS", 1<<20)
+	if err != nil {
+		return fmt.Errorf("this release has no apps (%v)", err)
+	}
+	dir := filepath.Join(DataDir, "app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	got := map[string][]byte{}
+	for _, f := range appFiles {
+		want := sumFor(string(sums), f)
+		if want == "" {
+			return fmt.Errorf("APPS.SHA256SUMS has no %s", f)
+		}
+		b, err := download(base+"/"+f, 300<<20)
+		if err != nil {
+			return err
+		}
+		h := sha256.Sum256(b)
+		if hex.EncodeToString(h[:]) != want {
+			return fmt.Errorf("%s doesn't match APPS.SHA256SUMS", f)
+		}
+		got[f] = b
+	}
+	for _, f := range appFiles { // APKs first, then their .json
+		if !strings.HasSuffix(f, ".apk") {
+			continue
+		}
+		if err := writeAtomic(filepath.Join(dir, f), got[f]); err != nil {
+			return err
+		}
+	}
+	for _, f := range appFiles {
+		if strings.HasSuffix(f, ".json") {
+			if err := writeAtomic(filepath.Join(dir, f), got[f]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeAtomic(path string, b []byte) error {
+	if err := os.WriteFile(path+".tmp", b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(path+".tmp", path)
+}
+
+// releaseVersion: the release this binary came from ("v1.2.3"), or "" for a build from source.
+func releaseVersion() string {
+	v := version
+	if v == "" || v == "dev" || strings.HasPrefix(v, "dev-") || strings.Contains(v, "test") || !strings.ContainsAny(v[:1], "0123456789") {
+		return ""
+	}
+	return "v" + v
+}
+
+func appsCmd(args []string) {
+	fs := flag.NewFlagSet("apps", flag.ExitOnError)
+	ver := fs.String("version", "", "the release to take the apps from (default: this engine's own, else the latest)")
+	fs.Parse(args)
+	v := *ver
+	if v == "" {
+		v = releaseVersion()
+	}
+	if err := fetchApps(v); err != nil {
+		fail("apps: " + err.Error())
+	}
+	fmt.Println("The TV and phone apps are ready: devices offer the update, and the server's apps page has them.")
 }
