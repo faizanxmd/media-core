@@ -9,6 +9,11 @@ What changed for people using Media Core, newest first. The format follows [Keep
 - `backup list` and `restore FILE`. Backups now carry a manifest with each file's checksum, and `restore` refuses damaged or unexpected files.
 - The data folder has a schema number (`state.json`). An upgrade that changes stored data backs it up first, and an older version refuses newer data instead of damaging it.
 
+### Changed
+
+- App versions follow the release tag (`1.2.3`, code 10203000) instead of the build time. Apps installed before 1.0.0 need one uninstall and reinstall.
+- A release is one draft-then-published GitHub release with every file under a single `SHA256SUMS`; signing the apps needs the owner's approval in the `release` environment.
+
 ## [1.0.0]
 
 The first public release.

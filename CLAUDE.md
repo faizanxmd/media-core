@@ -7,7 +7,7 @@ Build the apps only when asked. Never run `scripts/ci-build.sh`, `android/build.
 
 Builds run on GitHub Actions: `scripts/ci-build.sh [both|tv|phone]` starts one, waits, and publishes the APKs where the engine serves them, so both apps offer the update. Run it as its own systemd unit. Keep `android/build.sh` for when GitHub can't be used.
 
-Make the change, commit it, and list it in `notes/PENDING.md` (personal notes, kept out of git). When a batch is ready, the owner asks for the build, tests it and reports back. After that build, clear the list and tag the commit with the build's version name (`tv-YYYY.MM.DD-HHMM` / `phone-...`).
+Make the change, commit it, and list it in `notes/PENDING.md` (personal notes, kept out of git). When a batch is ready, the owner asks for the build, tests it and reports back. After that build, clear the list. Releases are tagged `vX.Y.Z` (the release workflow builds the apps, so a tag needs the owner's OK); app versions come from that tag.
 
 Engine changes go live with `deploy/install.sh`, which builds, tests and restarts the service. Check that nothing is playing or downloading first.
 

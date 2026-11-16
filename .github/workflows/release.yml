@@ -1,56 +1,106 @@
-# A release of the engine, on a version tag (v1.2.3, or v1.2.3-rc.1 for a pre-release).
-# Static binaries for Linux and macOS on amd64 and arm64, their SHA256SUMS, build attestations, and install.sh,
-# which the one-line install downloads and checks against SHA256SUMS.
+# A release, on a version tag vX.Y.Z (or vX.Y.Z-rc.N, published as a pre-release).
+# verify -> engine (static binaries) and apps (signed APKs, through build.yml) -> publish: one release with
+# every file, a single SHA256SUMS over all of them, and build attestations. The release is made as a draft and
+# published only once complete, so releases/latest/download/... never points at a release with half its files.
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
 
 permissions:
   contents: read
 
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: CHANGELOG has this version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          v=${TAG#v}; v=${v%%-*}
+          grep -q "^## \[$v\]" CHANGELOG.md || { echo "CHANGELOG.md has no '## [$v]' heading"; exit 1; }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: engine/go.mod
+      - name: Vet and test
+        working-directory: engine
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -count=1 -race ./...
+
+  engine:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: engine/go.mod
+      - name: Build
+        working-directory: engine
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p ../dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*} arch=${target#*/}
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -buildvcs=false \
+              -ldflags "-s -w -X main.version=${TAG#v}" \
+              -o "../dist/media-core-engine-$os-$arch" .
+          done
+          got=$(../dist/media-core-engine-linux-amd64 version)
+          test "$got" = "media-core-engine ${TAG#v}" || { echo "version printed: $got"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: engine
+          path: dist
+          if-no-files-found: error
+
+  apps:
+    needs: verify
+    uses: ./.github/workflows/build.yml
+    with:
+      what: both
+    secrets: inherit
+
+  publish:
+    needs: [engine, apps]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write # the release
       id-token: write # attestations
       attestations: write
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          go-version-file: engine/go.mod
-
-      - name: Test
-        working-directory: engine
-        run: |
-          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
-          go vet ./...
-          go test -count=1 ./...
-
-      - name: Build
-        working-directory: engine
+          path: assets
+          merge-multiple: true
+      - name: Checksums and notes
         env:
-          VERSION: ${{ github.ref_name }}
+          TAG: ${{ github.ref_name }}
         run: |
-          mkdir -p ../dist
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
-            os=${target%/*} arch=${target#*/}
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-              -ldflags "-s -w -X main.version=${VERSION#v}" \
-              -o "../dist/media-core-engine-$os-$arch" .
+          cp install.sh assets/
+          cd assets
+          ls -l
+          for f in media-core-engine-linux-amd64 media-core-engine-linux-arm64 media-core-engine-darwin-amd64 \
+                   media-core-engine-darwin-arm64 install.sh media-core.apk media-core.json media-core-phone.apk media-core-phone.json; do
+            test -s "$f" || { echo "missing $f"; exit 1; }
           done
-          cp ../install.sh ../dist/install.sh
-          cd ../dist && sha256sum media-core-engine-* install.sh > SHA256SUMS && cat SHA256SUMS
-
-      - uses: actions/attest-build-provenance@v2
+          sha256sum -- * > ../SHA256SUMS && mv ../SHA256SUMS . && cat SHA256SUMS
+          v=${TAG#v}; v=${v%%-*}
+          awk -v v="$v" 'index($0, "## [" v "]") == 1 {on=1; next} /^## \[/ && on {exit} on' ../CHANGELOG.md > ../notes.md
+          test -s ../notes.md || echo "See CHANGELOG.md" > ../notes.md
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/*
-
+          subject-path: assets/*
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,49 +108,9 @@ jobs:
         run: |
           pre=""
           case "$TAG" in *-*) pre="--prerelease" ;; esac
-          notes=$(awk -v v="${TAG#v}" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} /^## / && on {exit} on' CHANGELOG.md)
-          gh release create "$TAG" dist/* $pre --title "Media Core $TAG" --notes "${notes:-See CHANGELOG.md}"
-
-  # The TV and phone apps, signed, added to the same release with APPS.SHA256SUMS. The engine's install and
-  # upgrade fetch them (media-core-engine apps), and the server hands them to TVs and phones.
-  apps:
-    needs: release
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    env:
-      TZ: ${{ vars.MEDIA_CORE_TZ || 'UTC' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-      - name: Restore the signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.MEDIA_CORE_KEYSTORE_B64 }}
-          KS_PASS: ${{ secrets.MEDIA_CORE_KS_PASS }}
-        run: |
-          test -n "$KEYSTORE_B64" || { echo "no signing key: set MEDIA_CORE_KEYSTORE_B64 and MEDIA_CORE_KS_PASS"; exit 1; }
-          umask 077
-          mkdir -p ~/.config/media-core
-          printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.config/media-core/app.jks
-          printf '%s' "$KS_PASS" > ~/.config/media-core/app.jks.pass
-      - name: Build
-        env:
-          MEDIA_CORE_APK_DIR: ${{ runner.temp }}/apks
-        run: |
-          android/build.sh
-          android/build.sh --phone
-          cd "$MEDIA_CORE_APK_DIR" && sha256sum media-core.apk media-core.json media-core-phone.apk media-core-phone.json > APPS.SHA256SUMS && cat APPS.SHA256SUMS
-      - uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: ${{ runner.temp }}/apks/*.apk
-      - name: Upload
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" ${{ runner.temp }}/apks/* --clobber
+          gh release create "$TAG" assets/* --draft $pre --title "Media Core $TAG" --notes-file notes.md
+          if [ -z "$pre" ]; then
+            gh release edit "$TAG" --draft=false --latest
+          else
+            gh release edit "$TAG" --draft=false
+          fi

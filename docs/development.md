@@ -50,7 +50,9 @@ scripts/ci-build.sh tv              # or just one: tv | phone
 scripts/ci-build.sh --latest        # publish the newest build started from the GitHub site or app
 ```
 
-The workflow signs with two repo secrets, `MEDIA_CORE_KEYSTORE_B64` (base64 of `app.jks`) and `MEDIA_CORE_KS_PASS`. GitHub never gives secrets back, so they are not a backup of the key. The repo variable `MEDIA_CORE_TZ` sets the time zone of the version names (UTC if unset).
+The workflow signs with two secrets in the repo's `release` environment, `MEDIA_CORE_KEYSTORE_B64` (base64 of `app.jks`) and `MEDIA_CORE_KS_PASS`. Limit that environment to `v*` tags and `main`, with the owner as required reviewer, so a pull request or another branch can't reach the key and every signed build waits for one approval. GitHub never gives secrets back, so they are not a backup of the key: keep `app.jks` and its password somewhere safe. Every build prints the certificate's fingerprint (`apksigner verify --print-certs`) in its log.
+
+App versions follow the release tag: `vX.Y.Z` gives the name `X.Y.Z` and the code `X*10000000 + Y*100000 + Z*1000`. A build between releases adds the number of commits since the tag to the code (at most 999) and `-dev.N` to the name.
 
 You can also build locally, though it is slow on a small machine:
 
@@ -64,13 +66,13 @@ Set `MEDIA_CORE_APK_DIR` to send the build output somewhere else. The engine ser
 
 ## Releases
 
-Tag `vX.Y.Z` on `main` and push the tag. [release.yml](../.github/workflows/release.yml) tests, builds the server for Linux and macOS (amd64, arm64), builds and signs both apps, and publishes them with `SHA256SUMS`, `APPS.SHA256SUMS`, build attestations and the notes from `CHANGELOG.md`. A tag with a suffix (`v1.1.0-rc.1`) makes a pre-release.
+Tag `vX.Y.Z` on `main` and push the tag. [release.yml](../.github/workflows/release.yml) tests, builds the server for Linux and macOS (amd64, arm64), builds and signs both apps (through build.yml, so it waits for the `release` environment's approval), and publishes everything with one `SHA256SUMS`, build attestations and the notes from `CHANGELOG.md`. The tag needs a `## [X.Y.Z]` heading in `CHANGELOG.md` or the release stops before building. The release is made as a draft and published only when every file is there. A tag with a suffix (`v1.1.0-rc.1`) makes a pre-release.
 
 `scripts/ci-build.sh` is for trying app builds on your own server between releases.
 
 ## Checks
 
-The [Check workflow](../.github/workflows/check.yml) runs on every push: gofmt, vet (also for macOS and 32-bit ARM) and the engine tests; a compile of both apps; shellcheck and the one-line install on Debian, Fedora and Arch; `scripts/check-private.sh --all` with a denylist from the `MEDIA_CORE_DENYLIST` secret; and gitleaks over the whole history.
+The [Check workflow](../.github/workflows/check.yml) runs on every push: gofmt, vet (also for macOS and 32-bit ARM) and the engine tests with the race detector; actionlint on the workflows and a syntax check of `install.sh` under dash and busybox; a compile of both apps; shellcheck and the one-line install on Debian, Fedora and Arch; `scripts/check-private.sh --all` with a denylist from the `MEDIA_CORE_DENYLIST` secret; and gitleaks over the whole history.
 
 ## Design
 

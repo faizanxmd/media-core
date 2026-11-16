@@ -46,8 +46,17 @@ if [ ! -f "$MEDIA_CORE_KEYSTORE" ] || [ ! -f "$CONF/app.jks.pass" ]; then
 fi
 export MEDIA_CORE_KS_PASS="$(cat "$CONF/app.jks.pass")"
 
-VCODE=$(date +%s)   # seconds: fits an int and rises on every build, so the app always offers a new one
-VNAME=$(date +%Y.%m.%d-%H%M)
+# Versions follow the engine's release tag vX.Y.Z: versionName X.Y.Z and versionCode
+# X*10000000 + Y*100000 + Z*1000 + N. N is 0 on the tag itself; a build after it has N = commits since
+# the tag (at most 999) and the name X.Y.Z-dev.N. The release workflow sets VCODE and VNAME itself.
+if [ -z "${VCODE:-}" ] || [ -z "${VNAME:-}" ]; then
+  desc=$(git describe --tags --match 'v[0-9]*' --long 2>/dev/null || echo v0.0.0-$(git rev-list --count HEAD 2>/dev/null || echo 0)-g0)
+  tag=${desc%-*-g*}; n=${desc%-g*}; n=${n##*-}
+  IFS=. read -r X Y Z <<< "${tag#v}"; Z=${Z%%-*}
+  [ "$n" -gt 999 ] && n=999
+  VCODE=$(( X*10000000 + Y*100000 + Z*1000 + n ))
+  VNAME="$X.$Y.$Z"; [ "$n" -gt 0 ] && VNAME="$VNAME-dev.$n"
+fi
 OUT="${MEDIA_CORE_APK_DIR:-$HOME/.local/share/media-core/app}"   # the engine serves the TV APK from here
 mkdir -p "$OUT"
 

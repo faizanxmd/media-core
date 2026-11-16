@@ -1,6 +1,7 @@
 #!/bin/bash
-# Build the apps on GitHub Actions, then publish them where the engine serves
-# them, so the TV and phone offer the update.
+# For the maintainer's own testing: build the apps from main on GitHub Actions (build.yml), wait, then put
+# them where this server hands them out, so its TV and phone offer the update. Released apps don't need this:
+# media-core-engine upgrade --apps fetches them from the release.
 # Usage: scripts/ci-build.sh [both|tv|phone]   build origin/main, wait, publish
 #        scripts/ci-build.sh --latest          publish the newest finished build
 #                                              (one started from the GitHub site or app)
