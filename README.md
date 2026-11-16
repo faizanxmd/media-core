@@ -8,27 +8,31 @@ Your own library, downloader and player, for your TV, phone and browser.
 
 </div>
 
-## What it is
-
-Media Core turns a computer at home into your own streaming service. Paste a link, and it downloads the file, names it and files it into your library, with posters and details from TMDB. The TV app, the phone app and the website then play that library, with watch progress shared between them.
-
-Files play as they are. The server never re-encodes while you watch, so a 4K Dolby Vision file reaches the TV untouched.
-
 ## Install
 
-On a Linux computer (or a Mac) at home:
+On a Linux computer with systemd, at home:
 
 ```sh
 curl -fsSL https://github.com/faizanxmd/media-core/releases/latest/download/install.sh | sh
 ```
 
-It ends with a link and a setup code: open the link in a browser at home and enter the code. Then install the apps from `http://<server>:8790/` and pair each with the code it shows. [docs/setup.md](docs/setup.md) has every step, and [AGENTS.md](AGENTS.md) is the same for an AI agent doing it for you.
+It asks for nothing as root, and prints the two or three sudo lines it would like you to run. It ends with a link and a setup code: open the link in a browser at home and enter the code. Then install the apps from `http://<server>:8790/` and pair each with the code it shows. [docs/setup.md](docs/setup.md) has every step, and [AGENTS.md](AGENTS.md) is the same for an AI agent doing it for you.
 
-`media-core-engine doctor` checks everything and says how to fix what isn't right. `media-core-engine upgrade` moves to the newest release and puts the old one back if anything goes wrong.
+## What it does
+
+- Paste a link and it lands in your library, named, filed and with artwork from TMDB.
+- Files play as they are, 4K Dolby Vision included: the server never re-encodes while you watch.
+- One watch history across the TV, the phone and the browser.
+- Every device pairs once with a code that an admin approves.
+- Runs on any Linux box with systemd. No Docker, no database.
+
+## What it isn't
+
+It doesn't transcode the picture, has no accounts or sharing outside the home, and in version 1 doesn't work away from home.
 
 ## Downloads
 
-Each [release](https://github.com/faizanxmd/media-core/releases/latest) has the server for Linux and macOS (amd64 and arm64) and the TV and phone apps, with checksums and build attestations. The server hands the apps out itself, and they update from it.
+Each [release](https://github.com/faizanxmd/media-core/releases/latest) has the server for Linux and macOS (amd64 and arm64; on a Mac you start it yourself) and the TV and phone apps, with checksums and build attestations. The server hands the apps out itself, and they update from it.
 
 ## The parts
 
@@ -37,17 +41,15 @@ Each [release](https://github.com/faizanxmd/media-core/releases/latest) has the 
 - [`android/phone`](android/phone): the phone app, with downloads for offline.
 - [`android/core`](android/core): what both apps use to talk to the server.
 
-[docs/architecture.md](docs/architecture.md) explains how they fit together, [docs/api.md](docs/api.md) lists the API, and [SECURITY.md](SECURITY.md) explains who can reach what.
+## Docs
 
-## Contributing
-
-[CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing and sending changes, and [docs/development.md](docs/development.md) the details.
+[Setup](docs/setup.md) · [How it works](docs/architecture.md) · [API](docs/api.md) · [Away from home](docs/remote.md) · [Development](docs/development.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [For AI agents](AGENTS.md)
 
 ## Credits
 
 - [TMDB](https://www.themoviedb.org) for titles, posters and details. This product uses the TMDB API but is not endorsed or certified by TMDB.
 - [aria2](https://aria2.github.io), [FFmpeg](https://ffmpeg.org), [MKVToolNix](https://mkvtoolnix.download), [7-Zip](https://www.7-zip.org) and [dovi_tool](https://github.com/quietvoid/dovi_tool) do the downloading and file work.
-- [AndroidX Media3](https://developer.android.com/media/media3) plays everything in the apps, and [hls.js](https://github.com/video-dev/hls.js) in the browser.
+- [AndroidX Media3](https://developer.android.com/media/media3) plays everything in the apps, and [hls.js](https://github.com/video-dev/hls.js) in the browser. [ZXing](https://github.com/zxing/zxing) draws the TV's pairing QR code.
 - Fonts, icons and their licences are listed in [android/brand/README.md](android/brand/README.md).
 
 ## License
