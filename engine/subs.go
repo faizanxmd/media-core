@@ -292,6 +292,10 @@ func fillSubs(items map[string]*Item) {
 		return
 	}
 	defer subsFill.Unlock()
+	fillSubsLocked(items)
+}
+
+func fillSubsLocked(items map[string]*Item) {
 	subsMu.Lock()
 	subsExtracted = map[string]bool{}
 	subsMu.Unlock()

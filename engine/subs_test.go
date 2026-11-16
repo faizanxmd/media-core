@@ -81,15 +81,19 @@ func TestSubsUnsettledNoFailedMarker(t *testing.T) {
 
 func TestSubsFillRecomputesKeep(t *testing.T) {
 	oldData, oldMedia := DataDir, Media
+	oldRun, oldProbe := subsRunFFmpeg, subsProbe
 	DataDir, Media = t.TempDir(), t.TempDir()
-	defer func() { DataDir, Media = oldData, oldMedia }()
+	defer func() {
+		DataDir, Media = oldData, oldMedia
+		subsRunFFmpeg, subsProbe = oldRun, oldProbe
+	}()
 
 	vid1 := filepath.Join(Media, "Movies", "Old (2020)", "Old (2020).mkv")
 	vid2 := filepath.Join(Media, "Movies", "New (2025)", "New (2025).mkv")
 	os.MkdirAll(filepath.Dir(vid1), 0o755)
 	os.MkdirAll(filepath.Dir(vid2), 0o755)
-	makeMKVWithTwoSubs(t, vid1)
-	makeMKVWithTwoSubs(t, vid2)
+	os.WriteFile(vid1, []byte("v1"), 0o644)
+	os.WriteFile(vid2, []byte("v2"), 0o644)
 	old := time.Now().Add(-time.Hour)
 	os.Chtimes(vid1, old, old)
 	os.Chtimes(vid2, old, old)
@@ -101,6 +105,22 @@ func TestSubsFillRecomputesKeep(t *testing.T) {
 	os.MkdirAll(staleDir, 0o755)
 	os.WriteFile(filepath.Join(staleDir, "list"), []byte(""), 0o644)
 
+	inVid1 := make(chan struct{})
+	releaseVid1 := make(chan struct{})
+	subsProbe = func(ctx context.Context, p string) ([]probeStream, error) {
+		if p == vid1 {
+			close(inVid1)
+			<-releaseVid1
+		}
+		s := probeStream{Index: 1, Type: "subtitle", Codec: "subrip"}
+		s.Tags.Language = "eng"
+		return []probeStream{s}, nil
+	}
+	subsRunFFmpeg = func(args []string) (string, error) {
+		os.WriteFile(args[len(args)-1], []byte("WEBVTT\n"), 0o644)
+		return "", nil
+	}
+
 	items1 := map[string]*Item{"1": it1}
 	items2 := map[string]*Item{"1": it1, "2": it2}
 
@@ -108,21 +128,21 @@ func TestSubsFillRecomputesKeep(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fillSubs(items1)
+		if subsFill.TryLock() {
+			defer subsFill.Unlock()
+		}
+		subsMu.Lock()
+		subsLatest = items1
+		subsMu.Unlock()
+		fillSubsLocked(items1)
 	}()
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if !subsFill.TryLock() {
-			break
-		}
-		subsFill.Unlock()
-		time.Sleep(5 * time.Millisecond)
-	}
+	<-inVid1
 	fillSubs(items2)
 	dir2 := subsDir(vid2)
 	os.MkdirAll(dir2, 0o755)
 	os.WriteFile(filepath.Join(dir2, "list"), []byte("1\tvtt\teng\t0\t\n"), 0o644)
+	close(releaseVid1)
 
 	wg.Wait()
 
