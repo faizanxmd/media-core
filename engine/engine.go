@@ -347,7 +347,7 @@ func (e *Engine) NewJob(p Probe, plan Plan) (Job, error) {
 	}
 	// aria2 runs with continue=true: a download aimed at a file that's already
 	// there would be appended to it. Refuse instead of touching the library.
-	if dir, fn, _, err := planPaths(plan); err == nil && fn != "" && plan.Kind != "convert" {
+	if dir, fn, _, err := planPaths(plan); err == nil && fn != "" {
 		if exists(filepath.Join(dir, fn)) {
 			return Job{}, fmt.Errorf("%s is already in the library: delete it first to download it again", fn)
 		}

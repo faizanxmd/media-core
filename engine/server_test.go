@@ -38,35 +38,6 @@ func defaultAriaOK(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func TestPostJobsLightRejectsConvert(t *testing.T) {
-	oldM, oldJ := Media, JobsDir
-	Media, JobsDir = t.TempDir(), t.TempDir()
-	defer func() { Media, JobsDir = oldM, oldJ }()
-
-	srv, _ := testServer(t, defaultAriaOK)
-	h := srv.routes()
-
-	body, _ := json.Marshal(map[string]any{
-		"Probe": Probe{URL: "http://example.com/a.mkv", Filename: "Film.2020.mkv", Connections: 1},
-		"Plan":  Plan{Kind: "convert", Path: "Movies/Film (2020)/Film (2020).mkv", Title: "Film", Ext: "mkv"},
-		"Light": Probe{
-			URL: "http://example.com/light.mp4", Filename: "light.mp4", Connections: 1,
-			Plan: &Plan{Kind: "movie", Title: "Film", Ext: "mp4"},
-		},
-	})
-	req := httptest.NewRequest("POST", "/api/jobs", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != 400 {
-		t.Fatalf("expected 400 for convert+Light, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if jobs := srv.e.store.List(); len(jobs) != 0 {
-		t.Fatalf("expected 0 jobs queued, got %d", len(jobs))
-	}
-}
-
 func TestPostJobsLightChecksCombinedDiskSpace(t *testing.T) {
 	oldM, oldJ := Media, JobsDir
 	Media, JobsDir = t.TempDir(), t.TempDir()

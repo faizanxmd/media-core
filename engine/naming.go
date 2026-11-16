@@ -43,8 +43,7 @@ type Plan struct {
 	Archive bool   `json:"archive"`
 	// Manager's choices. MP4: make an MP4 after downloading (video untouched).
 	// Light: this download is the Light copy of the file or film folder at Into
-	// (a library path). Kind "convert" makes an MP4 of the library file at Path,
-	// with nothing to download.
+	// (a library path).
 	MP4   bool   `json:"mp4,omitempty"`
 	Light bool   `json:"light,omitempty"`
 	Into  string `json:"into,omitempty"`
@@ -147,14 +146,6 @@ func planPaths(p Plan) (dir, file, final string, err error) {
 			return base
 		}
 		return base + "." + cleanExt
-	}
-	if p.Kind == "convert" {
-		relPath := filepath.Clean("/" + p.Path)[1:]
-		if relPath == "" {
-			return "", "", "", errors.New("no file to convert")
-		}
-		f := filepath.Join(Media, relPath)
-		return filepath.Dir(f), filepath.Base(f), f, nil
 	}
 	if p.Light {
 		relInto := filepath.Clean("/" + p.Into)[1:]

@@ -47,14 +47,6 @@ func TestLightAndConvertPaths(t *testing.T) {
 	if _, _, _, err := planPaths(Plan{Kind: "movie", Light: true, Into: "Movies/X", Archive: true}); err == nil {
 		t.Fatal("an archive can't be a Light copy")
 	}
-	_, _, final, _ = planPaths(Plan{Kind: "convert", Path: "Movies/X (2020)/X (2020).mkv"})
-	if final != "/lib/Movies/X (2020)/X (2020).mkv" {
-		t.Fatalf("convert: %q", final)
-	}
-	_, _, final, _ = planPaths(Plan{Kind: "convert", Path: "../../etc/passwd"})
-	if !strings.HasPrefix(final, "/lib/") {
-		t.Fatalf("convert escaped the library: %q", final)
-	}
 }
 
 func TestSrtToVTT(t *testing.T) {
@@ -159,7 +151,7 @@ func TestToMP4AndLight(t *testing.T) {
 	e := testEngine(t)
 	moved := ""
 	e.onMoved = func(a, b string) { moved = b }
-	j := &Job{ID: "t1", State: Processing, Plan: Plan{Kind: "convert", Path: rel(src)}, Files: []string{src}, Log: []string{}}
+	j := &Job{ID: "t1", State: Processing, Plan: Plan{Kind: "movie", Title: "Clip", Year: "2020", Ext: "mkv", MP4: true}, Files: []string{src}, Log: []string{}}
 	e.store.jobs[j.ID] = j
 	ctx := context.Background()
 	out, err := e.toMP4(ctx, jobCtx{e, j.ID}, src)

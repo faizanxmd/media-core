@@ -212,13 +212,10 @@ func (e *Engine) post(ctx context.Context, id string) error {
 		if err := e.acceptLight(ctx, c, j, videos); err != nil {
 			return err
 		}
-	case j.Plan.MP4 || j.Plan.Kind == "convert":
+	case j.Plan.MP4:
 		for i, v := range videos {
 			m := probeMediaCtx(ctx, v)
 			if !canMP4(m) {
-				if j.Plan.Kind == "convert" {
-					return errors.New("an MP4 wouldn't make this play in browsers (4K, HDR or an unusual video format)")
-				}
 				c.log(filepath.Base(v) + ": kept as it is (an MP4 wouldn't help it play in browsers)")
 				continue
 			}

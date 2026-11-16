@@ -173,17 +173,15 @@ const Manager = (() => {
   function planTitle(p, fallback) {
     p = p || {};
     let t = fallback || "Download";
-    if (p.kind === "convert") t = p.title || fallback;
-    else if (p.kind === "movie" && p.title) t = p.title + (p.year ? ` (${p.year})` : "");
+    if (p.kind === "movie" && p.title) t = p.title + (p.year ? ` (${p.year})` : "");
     else if (p.kind === "tv" && p.title) t = p.title + " · " + (p.episode !== "" && p.episode != null ? `S${pad2(p.season || 1)}E${pad2(p.episode)}` : `Season ${Number(p.season) || 1}`);
     else if (p.kind === "music") t = p.title || "Music";
     if (p.light) t += " · Light copy";
-    if (p.kind === "convert") t += " · Make MP4";
     return t;
   }
   function posterFor(j) {
     if (!TITLES) return "";
-    const dest = j.plan?.kind === "convert" ? j.plan.path : j.plan?.light ? j.plan.into : j.dest || "";
+    const dest = j.plan?.light ? j.plan.into : j.dest || "";
     const t = TITLES.find(t => t.poster && dest && (dest === t.path || dest.startsWith(t.path + "/")));
     return t ? img(t.poster, "w185") : "";
   }
