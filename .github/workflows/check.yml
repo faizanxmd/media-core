@@ -58,3 +58,24 @@ jobs:
           v=8.21.2
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz" | tar -xz gitleaks
           ./gitleaks git --redact --no-banner .
+
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+      - name: shellcheck
+        run: shellcheck -s sh install.sh deploy/install.sh scripts/test-install.sh
+      - name: Build
+        working-directory: engine
+        run: CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=0.0.0-test" -o ../media-core-engine-test .
+      - name: Install on Debian, Fedora and Arch
+        run: |
+          set -e
+          run() { docker run --rm -v "$PWD:/src:ro" "$1" sh -c "$2 && useradd -m t && su t -c 'sh /src/scripts/test-install.sh /src/media-core-engine-test'"; }
+          run debian:12 "apt-get update -qq && apt-get install -y -qq curl python3 aria2 ffmpeg >/dev/null"
+          run fedora:41 "dnf install -y -q curl python3 aria2 ffmpeg-free procps-ng >/dev/null"
+          run archlinux:latest "pacman -Sy --noconfirm --quiet curl python aria2 ffmpeg >/dev/null"

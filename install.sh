@@ -48,7 +48,9 @@ else
   die "needs sha256sum or shasum to check the download"
 fi
 
-if [ "$VERSION" = latest ]; then
+if [ -n "${MEDIA_CORE_BASE_URL:-}" ]; then
+  base="$MEDIA_CORE_BASE_URL" # a copy of a release's files somewhere else (tests, mirrors)
+elif [ "$VERSION" = latest ]; then
   base="https://github.com/$REPO/releases/latest/download"
 else
   base="https://github.com/$REPO/releases/download/$VERSION"
