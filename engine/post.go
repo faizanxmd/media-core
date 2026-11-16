@@ -159,7 +159,12 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	c.set(true, func(j *Job) { j.Placed, j.Files = true, videos })
+	c.set(true, func(j *Job) {
+		if !j.Plan.Light {
+			j.Placed = true
+		}
+		j.Files = videos
+	})
 
 	for i, v := range videos {
 		switch prof := dvProfile(ctx, v); {

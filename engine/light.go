@@ -54,6 +54,30 @@ func (e *Engine) waitForFilm(ctx context.Context, id string) error {
 	}
 }
 
+func removeLightSidecars(light string) {
+	os.Remove(light)
+	os.Remove(light + ".aria2")
+	dir := filepath.Dir(light)
+	base := baseName(light)
+	ents, _ := os.ReadDir(dir)
+	otherVideo := false
+	for _, en := range ents {
+		if !en.IsDir() && baseName(en.Name()) == base && VideoExt[ext(en.Name())] {
+			otherVideo = true
+			break
+		}
+	}
+	if !otherVideo {
+		for _, en := range ents {
+			n := en.Name()
+			if !en.IsDir() && (SubExt[ext(n)] || ext(n) == "sup") && strings.HasPrefix(n, base+".") {
+				os.Remove(filepath.Join(dir, n))
+			}
+		}
+	}
+	os.Remove(dir) // only succeeds if .light is now empty
+}
+
 // acceptLight keeps a downloaded Light copy only if it's the same cut as its
 // film, makes it an MP4 if that's what lets it play in browsers, and removes
 // any older Light copy of the same title.
@@ -64,13 +88,15 @@ func (e *Engine) acceptLight(ctx context.Context, c jobCtx, j Job, videos []stri
 	light := videos[0]
 	film := mainVideo(j.Plan.Into)
 	if film == "" {
-		os.Remove(light)
+		removeLightSidecars(light)
+		c.set(true, func(j *Job) { j.Placed, j.Downloaded, j.Files = false, false, nil })
 		return errors.New("its film isn't in the library")
 	}
 	c.phase(Processing, "Checking the Light copy")
 	a, b := duration(ctx, light), duration(ctx, film)
 	if !sameCut(a, b) {
-		os.Remove(light)
+		removeLightSidecars(light)
+		c.set(true, func(j *Job) { j.Placed, j.Downloaded, j.Files = false, false, nil })
 		return fmt.Errorf("not the same cut: the Light copy runs %s, the film %s, so it was removed", dur(int64(a)), dur(int64(b)))
 	}
 	if j.Plan.MP4 && canMP4(probeMediaCtx(ctx, light)) {
@@ -88,7 +114,7 @@ func (e *Engine) acceptLight(ctx context.Context, c jobCtx, j Job, videos []stri
 			os.Remove(p)
 		}
 	}
-	c.set(true, func(j *Job) { j.Files = []string{light} })
+	c.set(true, func(j *Job) { j.Placed, j.Files = true, []string{light} })
 	c.log("Light copy ready: plays in browsers and on slow connections")
 	return nil
 }

@@ -422,7 +422,8 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 		}
 		if j.Downloaded {
 			lp := legacyTargetPath(j)
-			if path, err := targetPath(j); j.Placed || (err == nil && exists(path)) || (lp != "" && exists(lp)) {
+			lightReady := !j.Plan.Light || (len(j.Files) > 0 && exists(j.Files[0]))
+			if path, err := targetPath(j); (j.Placed && lightReady) || (err == nil && exists(path)) || (lp != "" && exists(lp)) {
 				if d := e.cancelPost(id); d != nil {
 					<-d
 				}
