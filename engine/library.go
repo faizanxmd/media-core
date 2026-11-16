@@ -21,8 +21,7 @@ type LNode struct {
 	Files    int      `json:"files"`
 	Added    float64  `json:"added"` // newest file's modification time
 	Children []*LNode `json:"children,omitempty"`
-	Info     *MInfo   `json:"info,omitempty"`  // videos; album folders get their tracks' quality
-	Meta     *PMeta   `json:"meta,omitempty"`  // from the catalog
+	Info     *MInfo   `json:"info,omitempty"`  // album folders get their tracks' quality
 	Cover    string   `json:"cover,omitempty"` // a cover.jpg/folder.jpg inside this folder
 }
 
@@ -60,10 +59,10 @@ func scanTree(abs string) *LNode {
 	return n
 }
 
-func Library(p *Player) map[string]any {
+func Library() map[string]any {
 	out := map[string]any{}
 	type probe struct {
-		into *LNode // the video itself, or the album folder for music
+		into *LNode // the album folder for music
 		path string
 	}
 	var probes []probe
@@ -74,8 +73,6 @@ func Library(p *Player) map[string]any {
 			switch e := ext(c.Name); {
 			case c.Dir:
 				walk(c)
-			case VideoExt[e]:
-				probes = append(probes, probe{c, filepath.Join(Media, c.Path)})
 			case AudioExt[e] && !albumDone: // one track tells the album's quality
 				probes = append(probes, probe{n, filepath.Join(Media, c.Path)})
 				albumDone = true
@@ -84,11 +81,9 @@ func Library(p *Player) map[string]any {
 			}
 		}
 	}
-	for dir := range librarySections {
-		n := scanTree(filepath.Join(Media, dir))
-		walk(n)
-		out[dir] = n
-	}
+	n := scanTree(filepath.Join(Media, "Music"))
+	walk(n)
+	out["Music"] = n
 	// picture/sound details, a few files at a time (cached after the first look)
 	jobs := make(chan probe)
 	var wg sync.WaitGroup
@@ -110,52 +105,12 @@ func Library(p *Player) map[string]any {
 	wg.Wait()
 	flushMediaInfo()
 
-	idx := p.libraryIndex()
-	for dir := range librarySections {
-		attachMeta(out[dir].(*LNode), dir, idx)
-	}
 	free, total := disk()
 	out["disk_free"], out["disk_total"] = free, total
 	return out
 }
 
 var reCover = regexp.MustCompile(`(?i)^(cover|folder|front|album|poster)\.(jpe?g|png|webp)$`)
-
-// attachMeta hangs the catalog's metadata on the folders and files it
-// describes: the film folder gets the film, a show folder the show and a
-// season folder the season; episodes get their own. Music has none (covers
-// come from the album folder).
-func attachMeta(root *LNode, section string, idx *metaIdx) {
-	var walk func(n *LNode, chain []*LNode)
-	walk = func(n *LNode, chain []*LNode) {
-		chain = append(chain, n)
-		if !n.Dir {
-			ref, ok := idx.files[filepath.Join(Media, n.Path)]
-			if !ok {
-				return
-			}
-			set := func(depth int, key string) {
-				if depth < len(chain) && chain[depth].Meta == nil && idx.items[key] != nil {
-					chain[depth].Meta = idx.items[key]
-				}
-			}
-			if section == "Movies" {
-				set(1, ref.item) // chain[0] is the section folder
-			} else {
-				n.Meta = idx.items[ref.item]
-				set(1, ref.grand)
-				if len(chain) > 3 { // file sits inside a season / album folder
-					set(2, ref.parent)
-				}
-			}
-			return
-		}
-		for _, c := range n.Children {
-			walk(c, chain)
-		}
-	}
-	walk(root, nil)
-}
 
 // libraryTarget checks that p is something inside a library section that may
 // be deleted: never a section root, nothing outside /srv/data/media, no

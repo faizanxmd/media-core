@@ -310,7 +310,7 @@ func (s *Server) routes() http.Handler {
 		writeJSON(w, 200, map[string]any{"ok": true, "removed": s.e.ClearFinished()})
 	})
 	mux.HandleFunc("GET /api/library", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, Library(s.p))
+		writeJSON(w, 200, Library())
 	})
 	mux.HandleFunc("GET /api/cover", func(w http.ResponseWriter, r *http.Request) {
 		abs, _, err := libraryTarget(r.URL.Query().Get("p"))
