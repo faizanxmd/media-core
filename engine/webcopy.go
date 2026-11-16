@@ -211,6 +211,7 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 	mountStreams(mux, p)
 	// which items have a copy, for a title page's episodes and the player's queue
 	mux.HandleFunc("GET /api/v1/web", func(w http.ResponseWriter, r *http.Request) {
+		p.c.WaitReady(r.Context(), 5*time.Second)
 		c := capsOf(r)
 		ready := map[string]bool{}
 		blocked := map[string]string{} // what this browser can't play, and why
@@ -236,6 +237,7 @@ func mountWebCopies(mux *http.ServeMux, p *Player) {
 		writeJSON(w, 200, map[string]any{"ready": ready, "blocked": blocked})
 	})
 	mux.HandleFunc("GET /api/v1/web/{id}", func(w http.ResponseWriter, r *http.Request) {
+		p.c.WaitReady(r.Context(), 5*time.Second)
 		it := p.c.Get(r.PathValue("id"))
 		if it == nil {
 			errJSON(w, 404, "not in the library (rescanned?)")

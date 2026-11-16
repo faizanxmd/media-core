@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -334,21 +333,25 @@ func (e *Engine) toMP4(ctx context.Context, c jobCtx, path string) (string, erro
 	c.log("Making MP4: picture copied untouched")
 	srcDur := duration(ctx, path)
 	ff := lowPrio(ctx, "ffmpeg", args...)
-	stderr, _ := ff.StderrPipe()
+	stderr, err := ff.StderrPipe()
+	if err != nil {
+		return "", err
+	}
 	if err := ff.Start(); err != nil {
+		stderr.Close()
 		return "", err
 	}
 	prog := c.progressFn()
 	var tail strings.Builder
-	sc := bufio.NewScanner(stderr)
-	for sc.Scan() {
-		if m := reOutTime.FindStringSubmatch(sc.Text()); m != nil && srcDur > 0 {
+	scanChunks(stderr, "\r\n", 64<<10, func(line []byte) { // keeps draining: a long line can't stall ffmpeg
+		text := string(line)
+		if m := reOutTime.FindStringSubmatch(text); m != nil && srcDur > 0 {
 			us, _ := strconv.ParseFloat(m[1], 64)
 			prog(int(us / 1e6 / srcDur * 100))
-		} else if !strings.Contains(sc.Text(), "=") {
-			tail.WriteString(sc.Text() + "\n")
+		} else if !strings.Contains(text, "=") {
+			tail.WriteString(text + "\n")
 		}
-	}
+	})
 	if err := ff.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()

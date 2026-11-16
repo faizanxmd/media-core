@@ -147,10 +147,10 @@ func (e *Engine) syncLocked() bool {
 		}
 	}
 	active := false
-	jobs := e.store.List()
 	e.mu.Lock()
-	adding := e.adding
+	adding := e.adding // read before listing: NewJob adds the job before it lowers this
 	e.mu.Unlock()
+	jobs := e.store.List()
 	known := map[string]bool{}
 	for _, j := range jobs {
 		known[j.GID] = true
@@ -574,7 +574,12 @@ func (e *Engine) deletePartial(ctx context.Context, pd *pendingDelete, j Job, gi
 	if err != nil || j.Placed {
 		return
 	}
-	os.Remove(path)
+	// Only an unfinished download (its .aria2 control file is still there) or a
+	// file in this job's own .incoming folder is ours to delete: a file without
+	// one may be a film that was already in the library.
+	if exists(path+".aria2") || filepath.Base(filepath.Dir(filepath.Dir(path))) == ".incoming" {
+		os.Remove(path)
+	}
 	os.Remove(path + ".aria2")
 	startDir := filepath.Dir(path)
 	if filepath.Base(filepath.Dir(startDir)) == ".incoming" {
