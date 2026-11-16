@@ -10,12 +10,6 @@ import (
 	"time"
 )
 
-// filmBusy: another job is still bringing in the film a Light job belongs to.
-func (e *Engine) filmBusy(light Job) bool {
-	busy, _, _, _, _ := e.filmJobState(light)
-	return busy
-}
-
 func (e *Engine) filmJobState(light Job) (busy, done, cancelled, failed bool, partialPath string) {
 	want := strings.TrimSuffix(light.Plan.Into, filepath.Ext(light.Plan.Into))
 	for _, j := range e.store.List() {

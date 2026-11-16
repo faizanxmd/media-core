@@ -676,10 +676,6 @@ func firstOf(xs ...string) string {
 	return ""
 }
 
-func audioTags(p string) map[string]string {
-	return audioTagsCtx(context.Background(), p)
-}
-
 func audioTagsCtx(ctx context.Context, p string) map[string]string {
 	pctx, cancel := context.WithTimeout(ctx, probeCmdTimeout)
 	defer cancel()
