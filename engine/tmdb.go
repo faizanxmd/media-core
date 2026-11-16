@@ -36,12 +36,15 @@ type TMeta struct {
 	Cert     string   `json:"cert,omitempty"`    // U/A 16+, R, TV-MA…
 	Date     string   `json:"date,omitempty"`    // release / first air date
 	Studio   string   `json:"studio,omitempty"`
+	Director []string `json:"director,omitempty"`
+	Music    []string `json:"music,omitempty"`
+	Creator  []string `json:"creator,omitempty"`
 	Status   string   `json:"status,omitempty"` // shows: Returning Series, Ended
 	V        int      `json:"v,omitempty"`      // tmetaVersion it was fetched with
 }
 
 // Bump when what fetchMovie/fetchShow store changes, so cached entries are re-read.
-const tmetaVersion = 2
+const tmetaVersion = 3
 
 type Person struct {
 	Name  string `json:"name"`
@@ -553,6 +556,10 @@ type tmdbCredits struct {
 		Character string `json:"character"`
 		Profile   string `json:"profile_path"`
 	}
+	Crew []struct {
+		Name string `json:"name"`
+		Job  string `json:"job"`
+	}
 }
 
 func (c tmdbCredits) people(n int) []Person {
@@ -566,12 +573,67 @@ func (c tmdbCredits) people(n int) []Person {
 	return out
 }
 
+func (c tmdbCredits) crewByJob(job string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range c.Crew {
+		if p.Job == job && p.Name != "" && !seen[p.Name] {
+			seen[p.Name] = true
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+func (c tmdbCredits) music() []string {
+	if m := c.crewByJob("Original Music Composer"); len(m) > 0 {
+		return m
+	}
+	return c.crewByJob("Music")
+}
+
+type tmdbAggCredits struct {
+	Crew []struct {
+		Name string `json:"name"`
+		Jobs []struct {
+			Job string `json:"job"`
+		} `json:"jobs"`
+	} `json:"crew"`
+}
+
+func (c tmdbAggCredits) music() []string {
+	for _, want := range []string{"Original Music Composer", "Music"} {
+		var out []string
+		seen := map[string]bool{}
+		for _, p := range c.Crew {
+			if p.Name == "" || seen[p.Name] {
+				continue
+			}
+			for _, j := range p.Jobs {
+				if j.Job == want {
+					seen[p.Name] = true
+					out = append(out, p.Name)
+					break
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
+}
+
 type namedList []struct{ Name string }
 
 func (l namedList) names() []string {
 	var out []string
+	seen := map[string]bool{}
 	for _, g := range l {
-		out = append(out, g.Name)
+		if g.Name != "" && !seen[g.Name] {
+			seen[g.Name] = true
+			out = append(out, g.Name)
+		}
 	}
 	return out
 }
@@ -609,7 +671,8 @@ func (t *TMDB) fetchMovie(ctx context.Context, id int) error {
 	}
 	m := &TMeta{TMDB: r.ID, Title: r.Title, Overview: r.Overview, Tagline: r.Tagline, Poster: r.Poster,
 		Backdrop: r.Backdrop, Logo: r.Images.logo(), Rating: round1(r.Vote), Genres: r.Genres.names(),
-		Cast: r.Credits.people(12), Runtime: r.Runtime, Date: r.Date, Year: yearOf(r.Date), V: tmetaVersion}
+		Cast: r.Credits.people(12), Director: r.Credits.crewByJob("Director"), Music: r.Credits.music(),
+		Runtime: r.Runtime, Date: r.Date, Year: yearOf(r.Date), V: tmetaVersion}
 	if s := r.Studios.names(); len(s) > 0 {
 		m.Studio = s[0]
 	}
@@ -645,11 +708,13 @@ func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 		Date     string    `json:"first_air_date"`
 		Status   string    `json:"status"`
 		Runtime  []int     `json:"episode_run_time"`
-		Genres   namedList `json:"genres"`
-		Networks namedList `json:"networks"`
-		Credits  tmdbCredits
-		Images   tmdbImages
-		Ratings  struct {
+		Genres           namedList      `json:"genres"`
+		Networks         namedList      `json:"networks"`
+		CreatedBy        namedList      `json:"created_by"`
+		Credits          tmdbCredits
+		AggregateCredits tmdbAggCredits `json:"aggregate_credits"`
+		Images           tmdbImages
+		Ratings          struct {
 			Results []struct {
 				Country string `json:"iso_3166_1"`
 				Rating  string `json:"rating"`
@@ -660,9 +725,14 @@ func (t *TMDB) fetchShow(ctx context.Context, id int) error {
 	if err := t.get(ctx, "/tv/"+strconv.Itoa(id), q, &r); err != nil {
 		return err
 	}
+	music := r.Credits.music()
+	if len(music) == 0 {
+		music = r.AggregateCredits.music()
+	}
 	m := &TMeta{TMDB: r.ID, Title: r.Name, Overview: r.Overview, Tagline: r.Tagline, Poster: r.Poster,
 		Backdrop: r.Backdrop, Logo: r.Images.logo(), Rating: round1(r.Vote), Genres: r.Genres.names(),
-		Cast: r.Credits.people(12), Date: r.Date, Year: yearOf(r.Date), Status: r.Status, V: tmetaVersion}
+		Cast: r.Credits.people(12), Creator: r.CreatedBy.names(), Music: music,
+		Date: r.Date, Year: yearOf(r.Date), Status: r.Status, V: tmetaVersion}
 	if len(r.Runtime) > 0 {
 		m.Runtime = r.Runtime[0]
 	}
