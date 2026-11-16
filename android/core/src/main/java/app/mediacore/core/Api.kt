@@ -77,18 +77,31 @@ object Api {
 
     val viaTailscale: Boolean get() = !isLan(base)
 
+    /** The host of an address like "http://192.168.1.5:8790"; empty if it carries a user part ("a@b"). */
+    private fun hostOf(u: String): String {
+        val rest = u.substringAfter("://").substringBefore("/")
+        return if ('@' in rest) "" else rest.substringBefore(":")
+    }
+
+    /** The four numbers of an IPv4 address, or null if the host isn't one. */
+    private fun ipv4(host: String): List<Int>? {
+        val p = host.split(".")
+        if (p.size != 4) return null
+        val n = p.map { it.toIntOrNull() ?: return null }
+        return if (n.all { it in 0..255 }) n else null
+    }
+
     private fun isLan(u: String): Boolean {
-        val host = u.substringAfter("://").substringBefore(":").substringBefore("/")
-        return host.startsWith("192.168.") || host.startsWith("10.") ||
-            Regex("""^172\.(1[6-9]|2\d|3[01])\.""").containsMatchIn(host)
+        val p = ipv4(hostOf(u)) ?: return false
+        return p[0] == 10 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && p[1] in 16..31)
     }
 
     /** A Tailscale address or name (100.64.0.0/10, *.ts.net): reachable away from home. */
     private fun isTailscale(u: String): Boolean {
-        val host = u.substringAfter("://").substringBefore(":").substringBefore("/")
+        val host = hostOf(u)
         if (host.endsWith(".ts.net")) return true
-        val p = host.split(".").mapNotNull { it.toIntOrNull() }
-        return p.size == 4 && p[0] == 100 && p[1] in 64..127
+        val p = ipv4(host) ?: return false
+        return p[0] == 100 && p[1] in 64..127
     }
 
     /**
@@ -109,8 +122,11 @@ object Api {
         var u = text.trim().trimEnd('/')
         if (u.isEmpty()) return false
         if ("://" !in u) u = "http://$u"
-        val host = u.substringAfter("://")
-        if (':' !in host.substringBefore('/')) u = u.substringBefore("://") + "://" + host.substringBefore('/') + ":$PORT"
+        val scheme = u.substringBefore("://")
+        val host = u.substringAfter("://").substringBefore('/')
+        if (scheme != "http" && scheme != "https") return false
+        // a plain address means the apps' port; https keeps its own default
+        u = "$scheme://$host" + if (scheme == "http" && ':' !in host) ":$PORT" else ""
         forget(setOf(u))
         return true
     }
@@ -118,8 +134,12 @@ object Api {
     /** Starts over with just these addresses; the next request finds which one answers. */
     private fun forget(addresses: Set<String>) {
         base = ""
-        prefs.edit().putString("base", "").putStringSet("known", addresses).apply()
+        name = "the server" // it may be another server: its own /hello names it
+        prefs.edit().putString("base", "").putStringSet("known", addresses).remove("name").apply()
     }
+
+    /** True while a search for the server is running (the offline screen waits for it before trying again). */
+    val searching: Boolean get() = discoverLock.isLocked
 
     /** Finds a server address that answers; LAN wins if it replies within ~1 s of a Tailscale reply. */
     suspend fun discover(): String? = discoverLock.withLock {
@@ -127,7 +147,7 @@ object Api {
             (prefs.getStringSet("known", emptySet()) ?: emptySet()))
             .filter { it.isNotBlank() }.distinct()
         // nothing saved answers (or nothing saved yet): ask the home network
-        val found = race(known) ?: withContext(Dispatchers.IO) { broadcast() }.filter { it !in known }.let { race(it) }
+        val found = race(known) ?: withContext(Dispatchers.IO) { broadcast() }.let { race(it) }
         if (found != null) {
             base = found
             prefs.edit().putString("base", found).apply()
@@ -173,6 +193,8 @@ object Api {
             val caps = cm.getNetworkCapabilities(net) ?: continue
             if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
                 !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) continue
+            // a VPN (Tailscale) reports the Wi-Fi under it too; broadcasting into it finds nothing
+            if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) continue
             val lp = cm.getLinkProperties(net) ?: continue
             for (la in lp.linkAddresses) {
                 val a = la.address as? java.net.Inet4Address ?: continue
@@ -198,7 +220,7 @@ object Api {
                 val j = runCatching { JSONObject(String(p.data, 0, p.length)) }.getOrNull() ?: continue
                 out += "http://${p.address.hostAddress}:$PORT" // where it answered from comes first
                 out += addresses(j)
-                if (out.isNotEmpty() && sent >= 2) break
+                break // one answer is enough
             }
         }
     }
@@ -295,6 +317,7 @@ object Api {
     }
 
     fun progress(id: String, pos: Long, dur: Long, ended: Boolean) {
+        if (base.isEmpty()) return // no server yet: offline positions are kept and sent later (Offline.sync)
         val body = JSONObject().put("id", id).put("pos", pos).put("dur", dur).put("ended", ended)
         // fire-and-forget on OkHttp's own threads; works even while the activity is finishing
         sending.incrementAndGet()

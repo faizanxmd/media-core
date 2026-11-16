@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
@@ -117,15 +118,17 @@ private fun Black(nav: Nav) {
 @Composable
 private fun Offline(nav: Nav) {
     val a by animateFloatAsState(if (nav.offline) 1f else 0f, Move.fade(Move.Screen), label = "offline")
-    if (a == 0f) return
+    if (a == 0f && !nav.offline) return
     val fr = remember { FocusRequester() }
     var address by remember { mutableStateOf("") }
     // Back does nothing while it's up: it would otherwise leave screens, or ask to quit, hidden under it
     BackHandler(enabled = nav.offline) { }
-    LaunchedEffect(nav.offline) { if (nav.offline) { delay(16); runCatching { fr.requestFocus() } } }
+    LaunchedEffect(nav.offline) { if (nav.offline) { withFrameNanos { }; runCatching { fr.requestFocus() } } }
+    // try again every 5 s, but never cut short a search that's still running
     LaunchedEffect(nav.offline) {
         while (nav.offline) {
             delay(5000)
+            while (Api.searching) delay(250)
             runCatching { nav.refresh++ }
         }
     }
