@@ -364,7 +364,7 @@ func sidecarSubs(video string) []XSub {
 	for _, e := range ents {
 		n := e.Name()
 		mime := subMimes[ext(n)]
-		if e.IsDir() || mime == "" || !strings.HasPrefix(n, base) {
+		if e.IsDir() || mime == "" || !strings.HasPrefix(n, base+".") {
 			continue
 		}
 		s := XSub{Mime: mime, file: filepath.Join(dir, n)}

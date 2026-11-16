@@ -379,4 +379,16 @@ var langs = map[string]string{"en": "English", "eng": "English", "hi": "Hindi", 
 	"fi": "Finnish", "fin": "Finnish", "pl": "Polish", "pol": "Polish", "tr": "Turkish", "tur": "Turkish", "th": "Thai", "tha": "Thai",
 	"ml": "Malayalam", "mal": "Malayalam", "bn": "Bengali", "ben": "Bengali", "pa": "Punjabi", "pan": "Punjabi"}
 
-func langName(code string) string { return langs[strings.ToLower(code)] }
+func langName(code string) string {
+	c := strings.ToLower(code)
+	if n := langs[c]; n != "" {
+		return n
+	}
+	if base, _, ok := strings.Cut(c, "-"); ok {
+		return langs[base]
+	}
+	if base, _, ok := strings.Cut(c, "_"); ok {
+		return langs[base]
+	}
+	return ""
+}
