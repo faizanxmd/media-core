@@ -22,6 +22,7 @@ From two model reviews (Hydrogen, Argon), each checked against the code. Not com
 - Player: a show with hundreds of episodes plays (its queue was too big to hand to the player).
 - A downloading title's page closes when the download is cancelled, or finished under another name, instead of sitting empty.
 - Settings: the seven settings that did nothing (audio and subtitle language, autoplay, skip credits, match frame rate, match dynamic range, passthrough) are gone. Accent colour stays. Playback still matches frame rate and passes audio through as before.
+- Cleanup: unused TV screen pieces, 10 unused logo images and three unused helpers in core removed. Nothing should look different; the build will confirm it still compiles.
 
 ## A new Audio icon (TV and phone)
 
