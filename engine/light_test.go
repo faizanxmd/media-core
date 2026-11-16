@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestLightRetryAfterSameCutReject(t *testing.T) {
@@ -95,5 +96,102 @@ func TestLightRetryAfterSameCutReject(t *testing.T) {
 	}
 	if addCalls.Load() == 0 {
 		t.Fatalf("retry did not re-submit to aria2 (state=%s)", retried.State)
+	}
+}
+
+func TestWaitForFilmCancelledWithPartialReturnsError(t *testing.T) {
+	oldM, oldJ := Media, JobsDir
+	Media, JobsDir = t.TempDir(), t.TempDir()
+	defer func() { Media, JobsDir = oldM, oldJ }()
+
+	e := testEngine(t)
+	filmPlan := Plan{Kind: "movie", Title: "Film", Year: "2020", Ext: "mkv"}
+	filmJob := &Job{
+		ID:       "film1",
+		State:    Downloading,
+		Filename: "Film.2020.mkv",
+		Plan:     filmPlan,
+		Log:      []string{},
+	}
+	e.store.Add(filmJob)
+
+	tp, err := targetPath(*filmJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Dir(tp), 0o755)
+	os.WriteFile(tp, []byte("preallocated-partial"), 0o644)
+	os.WriteFile(tp+".aria2", []byte("ctrl"), 0o644)
+
+	lightJob := &Job{
+		ID:       "light1",
+		State:    Processing,
+		Filename: "light.mkv",
+		Plan:     Plan{Kind: "movie", Title: "Film", Year: "2020", Light: true, Into: "Movies/Film (2020)/Film (2020).mkv", Ext: "mkv"},
+		Log:      []string{},
+	}
+	e.store.Add(lightJob)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- e.waitForFilm(ctx, lightJob.ID)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	e.store.Update(filmJob.ID, true, func(j *Job) { j.State = Cancelled })
+
+	err = <-errCh
+	if err == nil {
+		t.Fatal("waitForFilm returned nil on cancelled film with partial file")
+	}
+	if err == context.DeadlineExceeded {
+		t.Fatalf("waitForFilm timed out instead of failing promptly when film was cancelled")
+	}
+}
+
+func TestWaitForFilmRemovedReturnsPromptError(t *testing.T) {
+	oldM, oldJ := Media, JobsDir
+	Media, JobsDir = t.TempDir(), t.TempDir()
+	defer func() { Media, JobsDir = oldM, oldJ }()
+
+	e := testEngine(t)
+	filmJob := &Job{
+		ID:       "film2",
+		State:    Downloading,
+		Filename: "Film.2020.zip",
+		Plan:     Plan{Kind: "movie", Title: "Film", Year: "2020", Archive: true},
+		Log:      []string{},
+	}
+	e.store.Add(filmJob)
+
+	lightJob := &Job{
+		ID:       "light2",
+		State:    Processing,
+		Filename: "light.mkv",
+		Plan:     Plan{Kind: "movie", Title: "Film", Year: "2020", Light: true, Into: "Movies/Film (2020)", Ext: "mkv"},
+		Log:      []string{},
+	}
+	e.store.Add(lightJob)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- e.waitForFilm(ctx, lightJob.ID)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	e.store.Remove(filmJob.ID)
+
+	err := <-errCh
+	if err == nil {
+		t.Fatal("waitForFilm returned nil when film job was removed")
+	}
+	if err == context.DeadlineExceeded {
+		t.Fatalf("waitForFilm timed out instead of failing promptly when film job was removed")
 	}
 }

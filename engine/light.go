@@ -12,19 +12,43 @@ import (
 
 // filmBusy: another job is still bringing in the film a Light job belongs to.
 func (e *Engine) filmBusy(light Job) bool {
+	busy, _, _, _, _ := e.filmJobState(light)
+	return busy
+}
+
+func (e *Engine) filmJobState(light Job) (busy, done, cancelled, failed bool, partialPath string) {
 	want := strings.TrimSuffix(light.Plan.Into, filepath.Ext(light.Plan.Into))
 	for _, j := range e.store.List() {
-		if j.ID == light.ID || !j.busy() || j.Plan.Light {
+		if j.ID == light.ID || j.Plan.Light {
 			continue
 		}
 		if _, _, final, err := planPaths(j.Plan); err == nil {
 			r := rel(final)
 			if r == light.Plan.Into || strings.TrimSuffix(r, filepath.Ext(r)) == want {
-				return true
+				switch {
+				case j.busy():
+					busy = true
+				case j.State == Done:
+					done = true
+				case j.State == Cancelled:
+					cancelled = true
+					if !j.Downloaded {
+						if tp, err := targetPath(j); err == nil {
+							partialPath = tp
+						}
+					}
+				case j.State == Failed:
+					failed = true
+					if !j.Downloaded {
+						if tp, err := targetPath(j); err == nil {
+							partialPath = tp
+						}
+					}
+				}
 			}
 		}
 	}
-	return false
+	return
 }
 
 // waitForFilm holds a Light job until its film is in the library (it may
@@ -35,12 +59,26 @@ func (e *Engine) waitForFilm(ctx context.Context, id string) error {
 		return nil
 	}
 	c := jobCtx{e, id}
+	ch := e.store.Subscribe()
+	defer e.store.Unsubscribe(ch)
 	for i := 0; ; i++ {
-		j, _ = e.store.Get(id)
-		if !e.filmBusy(j) && mainVideo(j.Plan.Into) != "" {
-			return nil
+		j, ok = e.store.Get(id)
+		if !ok {
+			return errors.New("job removed")
 		}
-		if !e.filmBusy(j) && i > 0 {
+		busy, done, cancelled, failed, partialPath := e.filmJobState(j)
+		if !busy {
+			mv := mainVideo(j.Plan.Into)
+			isPartial := mv != "" && (exists(mv+".aria2") || (!done && mv == partialPath))
+			if mv != "" && !isPartial {
+				return nil
+			}
+			if cancelled {
+				return errors.New("its film download was cancelled")
+			}
+			if failed {
+				return errors.New("its film download failed")
+			}
 			return errors.New("its film isn't in the library, so the Light copy has nothing to belong to")
 		}
 		if i == 0 {
@@ -49,6 +87,7 @@ func (e *Engine) waitForFilm(ctx context.Context, id string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-ch:
 		case <-time.After(20 * time.Second):
 		}
 	}
