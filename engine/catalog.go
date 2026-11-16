@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"log"
@@ -414,6 +415,20 @@ func (c *Catalog) Lists() (movies, shows []*Item) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.movies, c.shows
+}
+
+// WaitReady waits up to d for the first scan to finish (or ctx to end).
+func (c *Catalog) WaitReady(ctx context.Context, d time.Duration) {
+	if c.ready == nil {
+		return
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-c.ready:
+	case <-ctx.Done():
+	case <-t.C:
+	}
 }
 
 // episodesOf lists a show's or season's episodes in viewing order.

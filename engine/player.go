@@ -60,10 +60,12 @@ func (p *Player) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/hello", p.hello)
 	mux.HandleFunc("GET /api/v1/home", p.home)
 	mux.HandleFunc("GET /api/v1/movies", func(w http.ResponseWriter, r *http.Request) {
+		p.c.WaitReady(r.Context(), 5*time.Second)
 		movies, _ := p.c.Lists()
 		writeJSON(w, 200, map[string]any{"items": p.list(movies)})
 	})
 	mux.HandleFunc("GET /api/v1/shows", func(w http.ResponseWriter, r *http.Request) {
+		p.c.WaitReady(r.Context(), 5*time.Second)
 		_, shows := p.c.Lists()
 		writeJSON(w, 200, map[string]any{"items": p.list(shows)})
 	})
@@ -168,6 +170,7 @@ type dlRow struct {
 }
 
 func (p *Player) home(w http.ResponseWriter, r *http.Request) {
+	p.c.WaitReady(r.Context(), 5*time.Second)
 	movies, shows := p.c.Lists()
 	cont := p.w.continueRow(movies, shows)
 	contOut := make([]*Item, len(cont))
@@ -233,6 +236,7 @@ func (p *Player) withShow(it *Item) *Item {
 }
 
 func (p *Player) search(w http.ResponseWriter, r *http.Request) {
+	p.c.WaitReady(r.Context(), 5*time.Second)
 	q := normTitle(r.URL.Query().Get("q"))
 	movies, shows := p.c.Lists()
 	var out []*Item
@@ -254,6 +258,7 @@ func (p *Player) search(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Player) item(w http.ResponseWriter, r *http.Request) {
+	p.c.WaitReady(r.Context(), 5*time.Second)
 	it := p.c.Get(r.PathValue("id"))
 	if it == nil {
 		errJSON(w, 404, "not in the library (rescanned?)")
