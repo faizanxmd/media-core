@@ -136,8 +136,6 @@ func slimCast(it *Item) *Item {
 	return it
 }
 
-const defaultMagicDNS = "mint.tail25d09d.ts.net"
-
 var (
 	magicDNSMu   sync.Mutex
 	magicDNSAt   time.Time
@@ -145,6 +143,9 @@ var (
 )
 
 func magicDNS() string {
+	if v := strings.TrimSuffix(strings.TrimSpace(envOr("MEDIA_CORE_PUBLIC_HOST", "")), "."); v != "" {
+		return v
+	}
 	magicDNSMu.Lock()
 	defer magicDNSMu.Unlock()
 	if magicDNSName != "" && time.Since(magicDNSAt) < 5*time.Minute {
@@ -169,12 +170,12 @@ func magicDNS() string {
 	if magicDNSName != "" {
 		return magicDNSName
 	}
-	return defaultMagicDNS
+	return ""
 }
 
-// hello lets the app find every address this server answers on, so it can
-// switch between home Wi-Fi and Tailscale without asking.
-func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
+// helloInfo builds the discovery payload for /api/v1/hello and LAN UDP replies.
+func helloInfo() map[string]any {
+	port := portOf(playerAddr(), "8790")
 	var lan, ts []string
 	ifs, _ := net.Interfaces()
 	for _, i := range ifs {
@@ -187,7 +188,7 @@ func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
 			if !ok || ipn.IP.To4() == nil {
 				continue
 			}
-			u := "http://" + ipn.IP.String() + PlayerListen
+			u := "http://" + net.JoinHostPort(ipn.IP.String(), port)
 			if i.Name == "tailscale0" {
 				ts = append(ts, u)
 			} else if ipn.IP.IsPrivate() {
@@ -195,9 +196,22 @@ func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	host, _ := os.Hostname()
-	writeJSON(w, 200, map[string]any{"name": host, "lan": lan, "tailscale": ts,
-		"magicdns": "http://" + magicDNS() + PlayerListen, "app": readAppInfo("media-core")})
+	info := map[string]any{
+		"name":      serverName(),
+		"lan":       lan,
+		"tailscale": ts,
+		"app":       readAppInfo("media-core"),
+	}
+	if mdns := magicDNS(); mdns != "" {
+		info["magicdns"] = "http://" + net.JoinHostPort(mdns, port)
+	}
+	return info
+}
+
+// hello lets the app find every address this server answers on, so it can
+// switch between home Wi-Fi and Tailscale without asking.
+func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, helloInfo())
 }
 
 type dlRow struct {
