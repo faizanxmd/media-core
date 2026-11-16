@@ -63,6 +63,7 @@ func cutTimes(keys []float64, dur, minLen float64) []float64 {
 type liveStream struct {
 	file   string
 	dur    float64
+	keys   []float64     // all video keyframes, in seconds
 	cuts   []float64     // picture pieces' start times
 	audio  []probeStream // the file's sound tracks, in its order
 	video  int           // the picture's stream index
@@ -70,20 +71,26 @@ type liveStream struct {
 	dv5    bool          // Dolby Vision 5: no HDR10 underneath, so it's labelled as Dolby Vision
 	ahead  float64       // seconds ffmpeg may run past the player
 
-	mu     sync.Mutex
-	tracks map[string]*liveTrack
-	last   time.Time
+	mu      sync.Mutex
+	tracks  map[string]*liveTrack
+	last    time.Time
+	dropped bool
+}
+
+type trackWaiter struct {
+	i int // -1 for init, >= 0 for piece
 }
 
 type liveTrack struct {
-	s      *liveStream
-	name   string // "v", or "a<n>c" (copied) / "a<n>t" (made AAC)
-	cond   *sync.Cond
-	init   []byte
-	pieces map[int][]byte
-	bytes  int
-	want   int // the piece asked for last
-	run    *liveRun
+	s       *liveStream
+	name    string // "v", or "a<n>c" (copied) / "a<n>t" (made AAC)
+	cond    *sync.Cond
+	init    []byte
+	pieces  map[int][]byte
+	bytes   int
+	want    int // the piece asked for last
+	run     *liveRun
+	waiters []*trackWaiter
 }
 
 type liveRun struct {
@@ -95,9 +102,20 @@ type liveRun struct {
 	failed string
 }
 
+type streamCall struct {
+	done    chan struct{}
+	s       *liveStream
+	err     error
+	dropped bool
+}
+
 var (
-	streamsMu sync.Mutex
-	streams   = map[string]*liveStream{} // by file path
+	streamsMu   sync.Mutex
+	streams     = map[string]*liveStream{} // by file path
+	streamInits = map[string]*streamCall{} // in-flight per-file initialization
+
+	streamKeyframes = keyframes
+	streamProbe     = probeStreams
 )
 
 var streamDebug = os.Getenv("STREAM_DEBUG") != ""
@@ -106,15 +124,51 @@ var streamDebug = os.Getenv("STREAM_DEBUG") != ""
 // errKeysPending: the file is still being read for its keyframes.
 func streamFor(file string, info *MInfo) (*liveStream, error) {
 	streamsMu.Lock()
-	defer streamsMu.Unlock()
 	if s := streams[file]; s != nil {
+		streamsMu.Unlock()
 		s.touch()
 		return s, nil
 	}
+	if c := streamInits[file]; c != nil {
+		streamsMu.Unlock()
+		<-c.done
+		if c.s != nil {
+			c.s.touch()
+		}
+		return c.s, c.err
+	}
 	if info == nil || info.Dur <= 0 {
+		streamsMu.Unlock()
 		return nil, errors.New("the file hasn't been read yet")
 	}
-	keys, err := keyframes(file)
+	c := &streamCall{done: make(chan struct{})}
+	streamInits[file] = c
+	streamsMu.Unlock()
+
+	s, err := buildStream(file, info)
+
+	streamsMu.Lock()
+	if streamInits[file] == c {
+		delete(streamInits, file)
+	}
+	if c.dropped {
+		c.err = errors.New("stream dropped")
+	} else if err != nil {
+		c.err = err
+	} else {
+		if len(streams) == 0 {
+			go streamJanitor()
+		}
+		streams[file] = s
+		c.s = s
+	}
+	close(c.done)
+	streamsMu.Unlock()
+	return c.s, c.err
+}
+
+func buildStream(file string, info *MInfo) (*liveStream, error) {
+	keys, err := streamKeyframes(file)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +177,7 @@ func streamFor(file string, info *MInfo) (*liveStream, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	probed, err := probeStreams(ctx, file)
+	probed, err := streamProbe(ctx, file)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +185,7 @@ func streamFor(file string, info *MInfo) (*liveStream, error) {
 	if info.Mbps > 12 { // big pictures in small pieces, so a jump fetches less
 		minLen = 2.0
 	}
-	s := &liveStream{file: file, dur: info.Dur, dv5: strings.HasPrefix(info.HDR, "Dolby Vision 5"), cuts: cutTimes(keys, info.Dur, minLen), video: -1, tracks: map[string]*liveTrack{}, last: time.Now()}
+	s := &liveStream{file: file, dur: info.Dur, keys: keys, dv5: strings.HasPrefix(info.HDR, "Dolby Vision 5"), cuts: cutTimes(keys, info.Dur, minLen), video: -1, tracks: map[string]*liveTrack{}, last: time.Now()}
 	for _, p := range probed {
 		switch {
 		case p.Type == "video" && s.video < 0 && p.Disp.Pic == 0 && p.Codec != "mjpeg" && p.Codec != "png":
@@ -147,10 +201,6 @@ func streamFor(file string, info *MInfo) (*liveStream, error) {
 	if perSec := info.Mbps * 1e6 / 8; perSec > 0 {
 		s.ahead = math.Max(8, math.Min(aheadSeconds, aheadBytes/perSec))
 	}
-	if len(streams) == 0 {
-		go streamJanitor()
-	}
-	streams[file] = s
 	return s, nil
 }
 
@@ -191,11 +241,17 @@ func dropStream(file string) {
 	streamsMu.Lock()
 	s := streams[file]
 	delete(streams, file)
+	if c := streamInits[file]; c != nil {
+		c.dropped = true
+		delete(streamInits, file)
+	}
 	streamsMu.Unlock()
 	if s != nil {
 		s.mu.Lock()
+		s.dropped = true
 		for _, t := range s.tracks {
 			t.stop()
+			t.cond.Broadcast()
 		}
 		s.mu.Unlock()
 	}
@@ -271,9 +327,24 @@ func (t *liveTrack) pieceAt(at float64) int {
 // stop ends the track's ffmpeg. Call with the stream locked.
 func (t *liveTrack) stop() {
 	if r := t.run; r != nil && !r.done {
-		r.cmd.Process.Kill()
+		if r.cmd != nil && r.cmd.Process != nil {
+			if r.held {
+				syscall.Kill(r.cmd.Process.Pid, syscall.SIGCONT)
+				r.held = false
+			}
+			r.cmd.Process.Kill()
+		}
 	}
 	t.run = nil
+}
+
+// nextKey returns the first keyframe strictly after start, or 0 if none.
+func (s *liveStream) nextKey(start float64) float64 {
+	idx := sort.Search(len(s.keys), func(i int) bool { return s.keys[i] > start+0.001 })
+	if idx < len(s.keys) {
+		return s.keys[idx]
+	}
+	return 0
 }
 
 // args builds the ffmpeg command that writes this track from piece i on.
@@ -298,7 +369,11 @@ func (t *liveTrack) args(i int) []string {
 			"-map_metadata", "-1", "-map_chapters", "-1", "-f", "mp4", "pipe:1")
 	}
 	if t.name == "v" {
-		seek(start + 0.14) // ffmpeg aims 0.13 s early for pictures out of order; this lands on the piece's own keyframe
+		seekAt := start + 0.14 // ffmpeg aims 0.13 s early for pictures out of order; this lands on the piece's own keyframe
+		if next := s.nextKey(start); next > 0 && next < seekAt+0.001 {
+			seekAt = (start + next) / 2
+		}
+		seek(seekAt)
 		a = append(a, "-copyts", "-i", s.file, "-map", "0:"+itoa(s.video), "-c:v", "copy")
 		if s.vcodec == "hevc" { // the names Apple looks for; unofficial keeps the Dolby Vision record
 			tag := "hvc1"
@@ -563,20 +638,38 @@ func (t *liveTrack) wait(ctx context.Context, i int) ([]byte, error) {
 	defer timer.Stop()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.last = time.Now()
-	if i >= 0 {
-		t.want = i
+	if s.dropped {
+		return nil, errors.New("stream closed")
 	}
+	s.last = time.Now()
+	w := &trackWaiter{i: i}
+	t.waiters = append(t.waiters, w)
+	defer func() {
+		for idx, item := range t.waiters {
+			if item == w {
+				t.waiters = append(t.waiters[:idx], t.waiters[idx+1:]...)
+				break
+			}
+		}
+		t.syncWant()
+		t.cond.Broadcast()
+	}()
 	tries := 0
 	for {
 		if i < 0 && t.init != nil {
 			return t.init, nil
 		}
 		if b, ok := t.pieces[i]; i >= 0 && ok {
+			if r := t.run; r == nil || r.done || !t.anyOtherWaiterOnRun(r, w) {
+				t.want = i
+			}
 			if r := t.run; r != nil {
 				t.hold(r)
 			}
 			return b, nil
+		}
+		if s.dropped {
+			return nil, errors.New("stream closed")
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -586,20 +679,32 @@ func (t *liveTrack) wait(ctx context.Context, i int) ([]byte, error) {
 		}
 		r := t.run
 		switch {
+		case t.runServes(r, i):
+			t.syncWant()
+			t.hold(r)
+		case t.waiters[0] != w || t.olderWaiterOnRun(r, w):
+			// Another waiter ahead of us is actively waiting on r (or is next to start r).
+			if r != nil && !r.done {
+				t.syncWant()
+				t.hold(r)
+			}
 		case r != nil && r.done && r.failed != "":
 			if tries++; tries > 2 {
 				return nil, errors.New(r.failed)
 			}
-			t.begin(max(i, 0))
+			start := max(i, 0)
+			t.want = start
+			t.begin(start)
 		case i < 0:
 			if r == nil || r.done {
-				t.begin(t.want)
+				t.begin(max(t.want, 0))
 			}
-		case r == nil || r.done || i < r.at || i > r.at+t.near():
+		case r == nil || r.done || i < r.at || i > r.at+t.nearAt(r.at):
 			// not on its way: a jump, or a piece the run has passed that was since dropped
 			if tries++; tries > 4 {
 				return nil, errors.New("the stream couldn't make that piece")
 			}
+			t.want = i
 			t.begin(i)
 		default:
 			t.hold(r)
@@ -608,9 +713,71 @@ func (t *liveTrack) wait(ctx context.Context, i int) ([]byte, error) {
 	}
 }
 
+// runServes reports whether an active run r can produce piece i (or init if i < 0).
+func (t *liveTrack) runServes(r *liveRun, i int) bool {
+	if r == nil || r.done || r.failed != "" {
+		return false
+	}
+	if i < 0 {
+		return t.init == nil
+	}
+	if _, have := t.pieces[i]; have {
+		return false
+	}
+	return i >= r.at && i <= r.at+t.nearAt(r.at)
+}
+
+func (t *liveTrack) olderWaiterOnRun(r *liveRun, self *trackWaiter) bool {
+	if r == nil || r.done || r.failed != "" {
+		return false
+	}
+	for _, w := range t.waiters {
+		if w == self {
+			break
+		}
+		if t.runServes(r, w.i) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *liveTrack) anyOtherWaiterOnRun(r *liveRun, self *trackWaiter) bool {
+	if r == nil || r.done || r.failed != "" {
+		return false
+	}
+	for _, w := range t.waiters {
+		if w != self && t.runServes(r, w.i) {
+			return true
+		}
+	}
+	return false
+}
+
+// syncWant keeps t.want aligned with waiters actively using t.run so hold() won't pause it.
+func (t *liveTrack) syncWant() {
+	r := t.run
+	if r == nil || r.done {
+		return
+	}
+	best := -1
+	for _, w := range t.waiters {
+		if w.i >= 0 && t.runServes(r, w.i) && w.i > best {
+			best = w.i
+		}
+	}
+	if best >= 0 {
+		t.want = best
+	}
+}
+
 // near: how many pieces past the one being filled still count as "on its way".
 func (t *liveTrack) near() int {
-	_, l := t.span(min(t.want, t.count()-1))
+	return t.nearAt(t.want)
+}
+
+func (t *liveTrack) nearAt(at int) int {
+	_, l := t.span(min(max(at, 0), t.count()-1))
 	return max(2, int(8/math.Max(l, 0.5))) // about 8 seconds of film
 }
 
