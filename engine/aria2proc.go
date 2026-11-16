@@ -40,10 +40,10 @@ func aria2ConfText(secret, dataDir, alloc string, port int) string {
 // ensureAria2Conf writes the downloader's settings (with a fresh random secret, RPC on port) and its session
 // file if they are missing. It never changes an existing file.
 func ensureAria2Conf(port int) error {
-	if err := os.MkdirAll(DataDir, 0o755); err != nil {
+	if err := os.MkdirAll(DataDir, 0o700); err != nil {
 		return err
 	}
-	if f, err := os.OpenFile(filepath.Join(DataDir, "aria2.session"), os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+	if f, err := os.OpenFile(filepath.Join(DataDir, "aria2.session"), os.O_CREATE|os.O_WRONLY, 0o600); err == nil { // it holds download links
 		f.Close()
 	}
 	if _, err := os.Stat(Aria2Conf); err == nil {

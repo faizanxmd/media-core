@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// Job is persisted as ~/.local/share/media-core/jobs/<id>.json (same shape as the
-// Python version, plus a few numeric fields).
+// Job is persisted as <data>/jobs/<id>.json, readable only by the server's user (download links often carry
+// signed tokens).
 type Job struct {
 	ID          string   `json:"id"`
 	Created     float64  `json:"created"`
@@ -84,7 +84,7 @@ type Store struct {
 }
 
 func NewStore() *Store {
-	os.MkdirAll(JobsDir, 0o755)
+	os.MkdirAll(JobsDir, 0o700)
 	s := &Store{jobs: map[string]*Job{}, dirty: map[string]bool{}, subs: map[chan struct{}]bool{}}
 	ents, _ := os.ReadDir(JobsDir)
 	for _, e := range ents {
@@ -97,7 +97,7 @@ func NewStore() *Store {
 			log.Printf("skipping bad job file %s", e.Name())
 			continue
 		}
-		if j.State == "starting" { // Python-era state
+		if j.State == "starting" { // older job files
 			j.State = Queued
 		}
 		s.jobs[j.ID] = &j
@@ -114,7 +114,7 @@ func (s *Store) write(j *Job) {
 	j.Updated = now()
 	b, _ := json.MarshalIndent(j, "", " ")
 	p := filepath.Join(JobsDir, j.ID+".json")
-	if err := os.WriteFile(p+".tmp", b, 0o644); err != nil {
+	if err := os.WriteFile(p+".tmp", b, 0o600); err != nil {
 		log.Printf("save %s: %v", j.ID, err)
 		return
 	}

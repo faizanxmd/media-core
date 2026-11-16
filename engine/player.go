@@ -472,8 +472,9 @@ a.link:hover,a.link:focus-visible{background:#262a32}
 <h1>Media Core</h1>
 <p class="sub">{{.Name}}</p>
 <div class="links">
-<a class="link" href="/api/v1/app.apk">Download the TV app</a>
-<a class="link" href="/api/v1/phone-app.apk">Download the phone app</a>
+{{if .TV}}<a class="link" href="/api/v1/app.apk">Download the TV app</a>{{end}}
+{{if .Phone}}<a class="link" href="/api/v1/phone-app.apk">Download the phone app</a>{{end}}
+{{if not (or .TV .Phone)}}<p class="hint">No app build on this server yet. On the server, run: media-core-engine apps</p>{{end}}
 </div>
 <a class="btn" href="{{.DeepLink}}">Open in Media Core</a>
 <p class="hint">Install the app first, then tap this to connect it to {{.Name}}.</p>
@@ -489,11 +490,14 @@ func renderConnectPage(info map[string]any) []byte {
 	}
 	var buf bytes.Buffer
 	_ = connectPageTmpl.Execute(&buf, struct {
-		Name     string
-		DeepLink template.URL
+		Name      string
+		DeepLink  template.URL
+		TV, Phone bool
 	}{
 		Name:     name,
 		DeepLink: template.URL(connectDeepLink(info)),
+		TV:       readAppInfo("media-core") != nil,
+		Phone:    readAppInfo("media-core-phone") != nil,
 	})
 	return buf.Bytes()
 }

@@ -5,6 +5,8 @@ import (
 	"html"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,6 +52,16 @@ func TestConnectPageDeepLink(t *testing.T) {
 		t.Fatalf("connectDeepLink = %q, want %q", got, wantLink)
 	}
 
+	// a fresh server has no app builds: no links to files that aren't there
+	if page := string(renderConnectPage(info)); strings.Contains(page, "app.apk") || !strings.Contains(page, "No app build") {
+		t.Fatalf("a server with no apps links to them:\n%s", page)
+	}
+	appDir := filepath.Join(DataDir, "app")
+	os.MkdirAll(appDir, 0o755)
+	t.Cleanup(func() { os.RemoveAll(appDir) })
+	for _, n := range []string{"media-core", "media-core-phone"} {
+		os.WriteFile(filepath.Join(appDir, n+".json"), []byte(`{"version_code":1,"version_name":"1.0.0","size":1}`), 0o644)
+	}
 	page := string(renderConnectPage(info))
 	unescaped := html.UnescapeString(page)
 	for _, want := range []string{

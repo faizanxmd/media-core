@@ -12,7 +12,7 @@ import (
 )
 
 // Flex accepts a JSON string or number and stores it as a string, so plans
-// from the old Python app (ints) and the UI (strings) both decode.
+// from older job files (ints) and the UI (strings) both decode.
 type Flex string
 
 func (f *Flex) UnmarshalJSON(b []byte) error {

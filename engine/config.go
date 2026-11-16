@@ -13,7 +13,9 @@ import (
 
 const (
 	Listen = ":8780" // the site and Manager
-	UA     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+	// defaultUA is what downloads and link checks say they are: many file hosts refuse an unknown agent,
+	// so it's a common browser's. MEDIA_CORE_USER_AGENT replaces it.
+	defaultUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 	// MB/s used for ETAs until a real download has been measured.
 	DefaultMBps = 3.5
 )
@@ -26,6 +28,7 @@ var (
 	// Media is the library root: MEDIA_CORE_LIBRARY (install writes it to engine.env), else ~/Media.
 	Media    = envOr("MEDIA_CORE_LIBRARY", filepath.Join(homeDir(), "Media"))
 	DoviTool = envOr("MEDIA_CORE_DOVI_TOOL", defaultDoviTool())
+	UA       = envOr("MEDIA_CORE_USER_AGENT", defaultUA)
 
 	VideoExt   = set("mkv", "mp4", "m4v", "avi", "mov", "ts", "m2ts", "webm")
 	AudioExt   = set("flac", "mp3", "m4a", "aac", "ogg", "opus", "wav", "alac", "aiff")

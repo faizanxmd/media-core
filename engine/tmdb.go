@@ -112,10 +112,17 @@ func readJSONFile(p string, v any) {
 	}
 }
 
+// writeJSONFile saves v as JSON through a temp file and rename (a reader never sees half a file), readable
+// only by the server's user. A failure is logged: the next save tries again.
 func writeJSONFile(p string, v any) {
-	b, _ := json.Marshal(v)
-	if os.WriteFile(p+".tmp", b, 0o644) == nil {
-		os.Rename(p+".tmp", p)
+	b, err := json.Marshal(v)
+	if err == nil {
+		if err = os.WriteFile(p+".tmp", b, 0o600); err == nil {
+			err = os.Rename(p+".tmp", p)
+		}
+	}
+	if err != nil {
+		log.Printf("saving %s: %v", filepath.Base(p), err)
 	}
 }
 

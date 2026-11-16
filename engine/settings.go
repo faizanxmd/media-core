@@ -55,7 +55,7 @@ func (st *settingsStore) update(fn func(*Settings)) Settings {
 		log.Printf("settings: marshal: %v", err)
 		return st.s
 	}
-	if err := os.WriteFile(settingsPath+".tmp", b, 0o644); err != nil {
+	if err := os.WriteFile(settingsPath+".tmp", b, 0o600); err != nil {
 		log.Printf("settings: write %s: %v", settingsPath, err)
 		return st.s
 	}

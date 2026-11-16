@@ -23,7 +23,7 @@ rules=(
   "Tailscale address|\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.(?!0\.)[0-9]{1,3}\.[0-9]{1,3}\b"
   "home network address|\b192\.168\.(?!1\.|0\.)[0-9]{1,3}\.[0-9]{1,3}\b|\b10\.(?!0\.0\.)[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b"
   "home path|/home/(?!runner/|user/)[a-z_][a-z0-9_-]*/|/Users/(?!runner/|user/)[A-Za-z0-9_-]+/"
-  "email address|(?<![\w.])(?!(this|git)@)[A-Za-z0-9._%+-]+@(?!users\.noreply\.github\.com\b|anthropic\.com\b|example\.(com|org)\b)[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\b"
+  "email address|(?<![\w.])(?!(this|git)@)[A-Za-z0-9._%+-]+@(?!users\.noreply\.github\.com\b|example\.(com|org)\b)[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\b"
   "private key|-----BEGIN [A-Z ]*PRIVATE KEY-----"
 )
 skip='(scripts/check-private\.sh|engine/web/vendor/|android/gradle/wrapper/)'

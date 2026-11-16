@@ -97,7 +97,7 @@ func flushMediaInfo() {
 	defer miMu.Unlock()
 	loadMediaInfoLocked()
 	b, _ := json.Marshal(miCache)
-	os.WriteFile(miPath+".tmp", b, 0o644)
+	os.WriteFile(miPath+".tmp", b, 0o600)
 	os.Rename(miPath+".tmp", miPath)
 }
 
@@ -129,7 +129,7 @@ func saveMediaInfo(seen map[string]bool) {
 		}
 	}
 	b, _ := json.Marshal(miCache)
-	os.WriteFile(miPath+".tmp", b, 0o644)
+	os.WriteFile(miPath+".tmp", b, 0o600)
 	os.Rename(miPath+".tmp", miPath)
 }
 

@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// Cases were generated from the engine's first (Python) version, so the Go
-// rewrite names things the same way.
-func TestGuessMatchesPython(t *testing.T) {
+// Golden cases: how links are named and filed. Changing one changes where downloads land.
+func TestGuessGolden(t *testing.T) {
 	b, err := os.ReadFile("testdata/naming_cases.json")
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +23,7 @@ func TestGuessMatchesPython(t *testing.T) {
 			t.Errorf("%s: %v", c.Name, err)
 			continue
 		}
-		// Python left a trailing dot on extension-less names; its library was /srv/data/media
+		// the cases keep a trailing dot on extension-less names, and were written for a library at /srv/data/media
 		want := strings.Replace(strings.TrimSuffix(c.Final, "."), "/srv/data/media", Media, 1)
 		if p.Kind != c.Kind || p.Title != c.Title || string(p.Year) != c.Year ||
 			string(p.Season) != c.Season || string(p.Episode) != c.Episode || final != want {

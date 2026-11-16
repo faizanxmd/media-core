@@ -111,7 +111,7 @@ private fun Black(nav: Nav) {
 }
 
 /**
- * "mint is offline" (the server's own name), over everything, until the server answers again; then it fades back to
+ * "nas is offline" (the server's own name), over everything, until the server answers again; then it fades back to
  * the app. Until a server has ever answered, it says how the app looks for one. Either way it has a field for the
  * server's address, for networks the app can't search; it holds focus, so the remote can't wander the app under it.
  */

@@ -196,7 +196,8 @@ func main() {
 	case "help", "-h", "--help":
 		fmt.Println(usage)
 	default:
-		fail(usage)
+		fmt.Fprintln(os.Stderr, usage)
+		os.Exit(2)
 	}
 }
 
