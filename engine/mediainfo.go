@@ -59,14 +59,22 @@ var (
 	miPath  = filepath.Join(DataDir, "mediainfo.json")
 )
 
-func mediaInfo(path string, fi os.FileInfo) *MInfo {
-	miMu.Lock()
-	if miCache == nil {
-		miCache = map[string]miEntry{}
-		if b, err := os.ReadFile(miPath); err == nil {
-			json.Unmarshal(b, &miCache)
+func loadMediaInfoLocked() {
+	if miCache != nil {
+		return
+	}
+	miCache = map[string]miEntry{}
+	if b, err := os.ReadFile(miPath); err == nil {
+		json.Unmarshal(b, &miCache)
+		if miCache == nil {
+			miCache = map[string]miEntry{}
 		}
 	}
+}
+
+func mediaInfo(path string, fi os.FileInfo) *MInfo {
+	miMu.Lock()
+	loadMediaInfoLocked()
 	e, ok := miCache[path]
 	miMu.Unlock()
 	if ok && e.V == miVersion && e.Size == fi.Size() && e.Mtime == fi.ModTime().Unix() {
@@ -82,10 +90,11 @@ func mediaInfo(path string, fi os.FileInfo) *MInfo {
 	return info
 }
 
-// flushMediaInfo writes the cache without pruning (the catalog only sees videos).
+// flushMediaInfo writes the cache without pruning (Library() only sees Music).
 func flushMediaInfo() {
 	miMu.Lock()
 	defer miMu.Unlock()
+	loadMediaInfoLocked()
 	b, _ := json.Marshal(miCache)
 	os.WriteFile(miPath+".tmp", b, 0o644)
 	os.Rename(miPath+".tmp", miPath)
@@ -111,6 +120,7 @@ func frameRate(s string) float64 {
 func saveMediaInfo(seen map[string]bool) {
 	miMu.Lock()
 	defer miMu.Unlock()
+	loadMediaInfoLocked()
 	for p := range miCache {
 		if !seen[p] {
 			delete(miCache, p)

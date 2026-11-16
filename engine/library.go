@@ -103,14 +103,12 @@ func Library(p *Player) map[string]any {
 			}
 		}()
 	}
-	seen := map[string]bool{}
 	for _, p := range probes {
-		seen[p.path] = true
 		jobs <- p
 	}
 	close(jobs)
 	wg.Wait()
-	saveMediaInfo(seen)
+	flushMediaInfo()
 
 	idx := p.libraryIndex()
 	for dir := range librarySections {

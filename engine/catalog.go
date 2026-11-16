@@ -72,6 +72,7 @@ type Catalog struct {
 	intros  *Intros
 	thumbs  *Thumbs
 	ready   chan struct{} // closed after the first scan
+	noBg    bool          // skips background passes (tests)
 }
 
 func NewCatalog(t *TMDB, in *Intros, th *Thumbs) *Catalog {
@@ -282,6 +283,7 @@ func (c *Catalog) scan() {
 		it.Subs = sidecarSubs(it.file)
 		if lf := findLight(it.file); lf != "" {
 			if fi, err := os.Stat(lf); err == nil {
+				seen[lf] = true
 				it.Light = &Light{Size: fi.Size(), Info: mediaInfo(lf, fi), file: lf}
 			}
 		}
@@ -294,7 +296,7 @@ func (c *Catalog) scan() {
 			it.Intro = c.intros.Get(it.file)
 		}
 	}
-	flushMediaInfo()
+	saveMediaInfo(seen)
 
 	byTitle := func(xs []*Item) {
 		sort.Slice(xs, func(a, b int) bool { return sortKey(xs[a].Title) < sortKey(xs[b].Title) })
@@ -309,6 +311,9 @@ func (c *Catalog) scan() {
 	c.mu.Unlock()
 	log.Printf("catalog: %d movies, %d shows, %d items in %s", len(movies), len(shows), len(items),
 		time.Since(start).Round(time.Millisecond))
+	if c.noBg {
+		return
+	}
 
 	if c.intros.Pending(shows) {
 		go func() {
