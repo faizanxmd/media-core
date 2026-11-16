@@ -16,8 +16,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -39,6 +39,10 @@ const usage = `usage: media-core-engine [command]
                                  --port moves it off 8780/8790 (site N, apps N+10)
   add <url> [movie|tv|music] [title]   queue a link
   ls                             list downloads
+  devices                        list paired devices and any waiting to pair
+  devices approve CODE [--admin] let a waiting device in (a TV showing CODE, say)
+  devices revoke ID              take a device's key away
+  setup-code                     a new code for setting the server up in a browser
   version                        print the version`
 
 // serveFlags reads serve's options. --library makes a temporary server: it never touches the installed
@@ -104,6 +108,14 @@ func main() {
 		serve(serveFlags(os.Args[2:]))
 	case "version", "--version", "-v":
 		fmt.Println("media-core-engine", version)
+	case "setup-code":
+		code, err := newSetupCode(filepath.Join(ConfDir, "setup.code"))
+		if err != nil {
+			fail(err.Error())
+		}
+		fmt.Printf("Setup code: %s (lasts 24 hours)\nOpen http://<this server>:%s/#/setup on a device at home and enter it.\n", code, sitePort())
+	case "devices":
+		devicesCmd(os.Args[2:])
 	case "add":
 		if len(os.Args) < 3 {
 			fail("usage: media-core-engine add <url> [movie|tv|music] [title]")
@@ -141,17 +153,44 @@ func main() {
 	}
 }
 
+// cliCall sends a request with the command line's own key (cli.token, made by the running server).
+func cliCall(method, url string, body []byte, timeout time.Duration) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if b, err := os.ReadFile(cliTokenPath()); err == nil {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(b)))
+	}
+	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%v (is the server running?)", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		var e struct{ Error, Message string }
+		json.NewDecoder(resp.Body).Decode(&e)
+		if e.Message == "" {
+			e.Message = e.Error
+		}
+		if e.Message == "" {
+			e.Message = resp.Status
+		}
+		return nil, fmt.Errorf("%s", e.Message)
+	}
+	return resp, nil
+}
+
 func fetchStatus(base string) (Status, error) {
 	var st Status
-	c := &http.Client{Timeout: 10 * time.Second}
-	resp, err := c.Get(base + "/api/jobs")
+	resp, err := cliCall("GET", base+"/api/jobs", nil, 10*time.Second)
 	if err != nil {
 		return st, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return st, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
 	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
 		return st, err
 	}
@@ -163,15 +202,11 @@ func postJSON(base, path string, body, out any) error {
 	if err != nil {
 		return err
 	}
-	c := &http.Client{Timeout: 90 * time.Second}
-	resp, err := c.Post(base+path, "application/json", bytes.NewReader(b))
+	resp, err := cliCall("POST", base+path, b, 90*time.Second)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
@@ -184,4 +219,51 @@ func post(path string, body, out any) {
 func fail(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
+}
+
+func devicesCmd(args []string) {
+	if len(args) == 0 || args[0] == "ls" {
+		resp, err := cliCall("GET", adminURL()+"/api/devices", nil, 10*time.Second)
+		if err != nil {
+			fail(err.Error())
+		}
+		defer resp.Body.Close()
+		var d struct {
+			Devices []deviceView
+			Waiting []struct{ Code, Name, Kind, Address string }
+		}
+		json.NewDecoder(resp.Body).Decode(&d)
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "ID\tNAME\tKIND\tROLE\tLAST SEEN")
+		for _, v := range d.Devices {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", v.ID, v.Name, v.Kind, v.Role, time.Unix(v.Seen, 0).Format("2006-01-02 15:04"))
+		}
+		tw.Flush()
+		for _, w := range d.Waiting {
+			fmt.Printf("\nWaiting to pair: %s (%s) from %s, code %s\n  media-core-engine devices approve %s\n", w.Name, w.Kind, w.Address, w.Code, w.Code)
+		}
+		return
+	}
+	switch args[0] {
+	case "approve":
+		if len(args) < 2 {
+			fail("usage: media-core-engine devices approve CODE [--admin]")
+		}
+		role := rolePlayer
+		if len(args) > 2 && args[2] == "--admin" {
+			role = roleAdmin
+		}
+		var r struct{ Name, Role string }
+		post("/api/pair/approve", map[string]string{"code": args[1], "role": role}, &r)
+		fmt.Printf("%s is paired (%s).\n", r.Name, r.Role)
+	case "revoke":
+		if len(args) < 2 {
+			fail("usage: media-core-engine devices revoke ID")
+		}
+		var r struct{ OK bool }
+		post("/api/devices/"+args[1]+"/revoke", map[string]string{}, &r)
+		fmt.Println("Revoked.")
+	default:
+		fail(usage)
+	}
 }

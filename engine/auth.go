@@ -1,0 +1,330 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Every request needs a device key, apart from the few that find, set up or pair a device (openRoute).
+// A key is "mc_" plus 32 random bytes; only its SHA-256 is kept, in devices.json. Apps send it as
+// "Authorization: Bearer mc_…", browsers as the mc_session cookie (cookies ignore the port, so one sign-in
+// covers the site and the apps' port). Revoking a device ends its key on its next request.
+//
+// Two roles: "player" (watch: /api/v1 and the web player's log) and "admin" (everything, including Manager,
+// deleting, downloading and approving devices). The box's own command line has an admin key in cli.token.
+
+const (
+	roleAdmin  = "admin"
+	rolePlayer = "player"
+	cookieName = "mc_session"
+)
+
+type device struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"` // tv, phone, web, cli
+	Role    string `json:"role"`
+	Hash    string `json:"hash"`
+	Created int64  `json:"created"`
+	Seen    int64  `json:"seen"`
+}
+
+type devStore struct {
+	mu     sync.Mutex
+	path   string
+	list   []*device
+	byHash map[string]*device
+	dirty  bool // Seen changed: written at most once a minute
+}
+
+type devFile struct {
+	V       int       `json:"v"`
+	Devices []*device `json:"devices"`
+}
+
+func loadDevices(path string) *devStore {
+	s := &devStore{path: path, byHash: map[string]*device{}}
+	var f devFile
+	if b, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(b, &f)
+	}
+	for _, d := range f.Devices {
+		if d.Hash != "" && d.ID != "" {
+			s.list = append(s.list, d)
+			s.byHash[d.Hash] = d
+		}
+	}
+	return s
+}
+
+func hashToken(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(h[:])
+}
+
+func randToken(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // the system has no randomness: nothing safe can be done
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// saveLocked writes devices.json atomically, readable only by this user.
+func (s *devStore) saveLocked() error {
+	b, err := json.MarshalIndent(devFile{V: 1, Devices: s.list}, "", " ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	s.dirty = false
+	return os.Rename(tmp, s.path)
+}
+
+// add makes a device and returns its key (shown once, never stored).
+func (s *devStore) add(name, kind, role string) (string, *device, error) {
+	tok := "mc_" + randToken(32)
+	now := time.Now().Unix()
+	d := &device{ID: "d_" + randToken(6), Name: name, Kind: kind, Role: role, Hash: hashToken(tok), Created: now, Seen: now}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.list = append(s.list, d)
+	s.byHash[d.Hash] = d
+	if err := s.saveLocked(); err != nil {
+		s.list = s.list[:len(s.list)-1]
+		delete(s.byHash, d.Hash)
+		return "", nil, err
+	}
+	return tok, d, nil
+}
+
+// lookup finds the device a key belongs to (nil if none) and notes that it was seen.
+func (s *devStore) lookup(tok string) *device {
+	if !strings.HasPrefix(tok, "mc_") {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := s.byHash[hashToken(tok)]
+	if d == nil {
+		return nil
+	}
+	if now := time.Now().Unix(); now-d.Seen > 60 {
+		d.Seen = now
+		s.dirty = true
+	}
+	c := *d
+	return &c
+}
+
+func (s *devStore) revoke(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, d := range s.list {
+		if d.ID == id {
+			s.list = append(s.list[:i], s.list[i+1:]...)
+			delete(s.byHash, d.Hash)
+			s.saveLocked()
+			return true
+		}
+	}
+	return false
+}
+
+// removeKind drops every device of a kind (the old command-line key, when a new one is made).
+func (s *devStore) removeKind(kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keep := s.list[:0]
+	for _, d := range s.list {
+		if d.Kind == kind {
+			delete(s.byHash, d.Hash)
+			continue
+		}
+		keep = append(keep, d)
+	}
+	s.list = keep
+	s.saveLocked()
+}
+
+// claimed: someone has set the server up (an admin device other than the command line exists).
+func (s *devStore) claimed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, d := range s.list {
+		if d.Role == roleAdmin && d.Kind != "cli" {
+			return true
+		}
+	}
+	return false
+}
+
+type deviceView struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Role    string `json:"role"`
+	Created int64  `json:"created"`
+	Seen    int64  `json:"seen"`
+	This    bool   `json:"this,omitempty"` // the device asking
+}
+
+func (s *devStore) views(me string) []deviceView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]deviceView, 0, len(s.list))
+	for _, d := range s.list {
+		out = append(out, deviceView{d.ID, d.Name, d.Kind, d.Role, d.Created, d.Seen, d.ID == me})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Seen > out[j].Seen })
+	return out
+}
+
+func (s *devStore) flushSeen() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dirty {
+		s.saveLocked()
+	}
+}
+
+// cliToken makes sure the command line has a working admin key in cli.token (0600) and returns it.
+func (s *devStore) cliToken(path string) string {
+	if b, err := os.ReadFile(path); err == nil {
+		if tok := strings.TrimSpace(string(b)); s.lookup(tok) != nil {
+			return tok
+		}
+	}
+	s.removeKind("cli")
+	tok, _, err := s.add("Command line on the server", "cli", roleAdmin)
+	if err != nil {
+		return ""
+	}
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	os.WriteFile(path, []byte(tok+"\n"), 0o600)
+	return tok
+}
+
+// ---------- the check on every request ----------
+
+type ctxKey struct{}
+
+// deviceFrom is the device a request was made with (nil on open routes).
+func deviceFrom(r *http.Request) *device {
+	d, _ := r.Context().Value(ctxKey{}).(*device)
+	return d
+}
+
+func requestToken(r *http.Request) string {
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(h[len("Bearer "):])
+	}
+	if c, err := r.Cookie(cookieName); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// openRoute: reachable without a key (still home network only). Finding the server, its download page and
+// app files, setting it up and pairing; the site's own files (pages, scripts, fonts); WebDAV, which has its
+// own password.
+func openRoute(r *http.Request) bool {
+	p := r.URL.Path
+	switch p {
+	case "/api/v1/hello", "/api/v1/pair/start", "/api/v1/pair/poll",
+		"/api/v1/app", "/api/v1/phone-app", "/api/v1/app.apk", "/api/v1/phone-app.apk",
+		"/api/setup/state", "/api/setup/claim":
+		return true
+	}
+	if p == "/dav" || strings.HasPrefix(p, "/dav/") {
+		return true
+	}
+	return !strings.HasPrefix(p, "/api/") // pages and static files; on the apps' port, the download page
+}
+
+// playerRoute: what a watching-only device may use. Everything else under /api/ needs an admin.
+func playerRoute(p string) bool {
+	return strings.HasPrefix(p, "/api/v1/") || p == "/api/weblog"
+}
+
+type authGate struct {
+	dev *devStore
+	// openHome: during development, home-network devices without a key are let in (the apps installed
+	// before pairing existed). MEDIA_CORE_OPEN_HOME=1; removed before the first public release.
+	openHome bool
+	names    sync.Map // client IP -> device name, for "Playing now"
+}
+
+func (a *authGate) wrap(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if openRoute(r) {
+			h.ServeHTTP(w, r)
+			return
+		}
+		d := a.dev.lookup(requestToken(r))
+		if d == nil {
+			if a.openHome && homeAddr(clientIP(r)) {
+				h.ServeHTTP(w, r)
+				return
+			}
+			if !a.dev.claimed() {
+				writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "setup",
+					"message": "This server isn't set up yet. Open its website: http://<server>:" + sitePort() + "/#/setup"})
+				return
+			}
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "pair",
+				"message": "This device isn't paired with the server."})
+			return
+		}
+		if d.Role != roleAdmin && !playerRoute(r.URL.Path) {
+			writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "admin",
+				"message": "Only an admin device can do this."})
+			return
+		}
+		if ip := clientIP(r); ip != nil {
+			a.names.Store(ip.String(), d.Name)
+		}
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, d)))
+	})
+}
+
+func clientIP(r *http.Request) net.IP {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return net.ParseIP(host)
+}
+
+// nameOf: the name of the device last seen at an address ("" if none).
+func (a *authGate) nameOf(host string) string {
+	if v, ok := a.names.Load(host); ok {
+		return v.(string)
+	}
+	return ""
+}
+
+func setSessionCookie(w http.ResponseWriter, tok string) {
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", HttpOnly: true,
+		SameSite: http.SameSiteStrictMode, MaxAge: 400 * 24 * 3600})
+}
+
+func cliTokenPath() string { return filepath.Join(ConfDir, "cli.token") }

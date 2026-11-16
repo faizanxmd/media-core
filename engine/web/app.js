@@ -16,6 +16,9 @@ async function api(path, body, opts = {}) {
     const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), ...opts });
     const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     if (!r.ok && !j.error) j.error = `HTTP ${r.status}`;
+    // this browser lost its key (revoked), or the server isn't set up: go to the screen that fixes it
+    if ((r.status === 401 && j.error === "pair") || (r.status === 403 && j.error === "setup")) needKey(j.error);
+    else if (r.status === 403 && j.error === "admin") j.error = "Only an admin device can do this";
     return j;
   } catch (e) {
     return { error: `Can't reach ${serverName}`, offline: true };
@@ -263,8 +266,11 @@ function settings() {
     <section><h2 class="sech">Look</h2>
       <div class="setline"><div><div class="label">Accent colour</div><small>Play, progress bars and these headings</small></div>
         <div class="seg swatches" id="accent">${Object.keys(ACCENTS).map(n => `<button class="${n === cur ? "on" : ""}" data-a="${n}"><i style="background:${ACCENTS[n][2]}"></i>${n}</button>`).join("")}</div></div></section>
-    <section><h2 class="sech">Library</h2>
-      <a class="setline go" href="#/manager"><div><div class="label">Manager</div><small>Add links, follow downloads, look after the files and ${esc(serverName)}</small></div>${icon("ExpandMore")}</a></section>
+    ${isAdmin() ? `<section><h2 class="sech">Library</h2>
+      <a class="setline go" href="#/manager"><div><div class="label">Manager</div><small>Add links, follow downloads, look after the files and ${esc(serverName)}</small></div>${icon("ExpandMore")}</a>
+      <a class="setline go" href="#/devices"><div><div class="label">Devices</div><small>Pair a TV, phone or browser, or remove one</small></div>${icon("ExpandMore")}</a></section>` : ""}
+    <section><h2 class="sech">This browser</h2>
+      <div class="setline"><div><div class="label">${esc(me?.name || "This browser")}</div><small>${isAdmin() ? "Can watch and manage" : "Can watch"}</small></div></div></section>
     <p class="tmdb">Film and show information from TMDB. This app is not endorsed or certified by TMDB.</p></div>`);
   for (const b of $$("#accent button")) b.onclick = () => {
     store.set("accent", b.dataset.a); applyAccent(b.dataset.a);
@@ -450,6 +456,139 @@ document.addEventListener("keydown", e => {
   if (best) { best.focus({ preventScroll: true }); best.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" }); }
 });
 
+// ---------- this browser and the server's devices ----------
+// Every device has its own key. A browser gets one by setting the server up (the setup code from the installer)
+// or by pairing: it shows a code, and someone approves it on a device that's signed in (or on the server).
+let me = null; // { id, name, role, kind }
+const isAdmin = () => me?.role === "admin";
+function needKey(why) {
+  me = null;
+  const want = why === "setup" ? "#/setup" : "#/join";
+  if (location.hash !== want && !location.hash.startsWith("#/join")) location.replace(want);
+}
+function browserLabel() {
+  const ua = navigator.userAgent;
+  const b = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Browser";
+  const o = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
+  return o ? `${b} on ${o}` : b;
+}
+const kindName = k => ({ tv: "TV", phone: "Phone", web: "Browser", cli: "Command line" }[k] || "Device");
+function ago(sec) {
+  const d = Date.now() / 1000 - sec;
+  return d < 120 ? "Now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} days ago`;
+}
+function keyPage(title, body) {
+  $("#topbar").innerHTML = `<a class="brand" aria-label="Media Core"><img src="/wordmark.svg" alt="" width="89" height="34"></a>`;
+  show(`<div class="centre keypage"><div class="title">${title}</div>${body}</div>`);
+}
+
+// the first visit: the setup code turns this browser into the server's first admin
+async function setupPage() {
+  const st = await api("/api/setup/state");
+  if (st.claimed) { location.replace("#/join"); return; }
+  keyPage(`Set up ${esc(st.name || serverName)}`, `
+    <p class="mut keytext">Enter the setup code the installer showed. To make a new one, run <code>media-core-engine setup-code</code> on the server.</p>
+    <form id="claim" class="keyform">
+      <input class="field code" id="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" aria-label="Setup code" required>
+      <input class="field" id="name" value="${esc(browserLabel())}" aria-label="This browser's name" maxlength="60">
+      <button class="play" type="submit">Set up</button>
+      <p class="mut keyerr" id="err" role="alert"></p></form>`);
+  $("#code").focus();
+  $("#claim").onsubmit = async e => {
+    e.preventDefault();
+    const r = await api("/api/setup/claim", { code: $("#code").value, name: $("#name").value });
+    if (r.ok) { await boot(); location.replace("#/"); } else $("#err").textContent = r.error;
+  };
+}
+
+// a browser without a key: show a code and wait for someone to approve it
+async function joinPage() {
+  const token = joinPage.run = {};
+  const r = await api("/api/v1/pair/start", { kind: "web", name: browserLabel() });
+  if (joinPage.run !== token) return;
+  if (r.error) {
+    keyPage("Can't pair right now", `<p class="mut keytext">${esc(r.error)}</p><button class="word" id="again">Try again</button>`);
+    $("#again").onclick = () => joinPage();
+    return;
+  }
+  keyPage(`Pair this browser with ${esc(serverName)}`, `
+    <div class="paircode fig" aria-label="Code ${esc(r.code.split("").join(" "))}">${esc(r.code)}</div>
+    <p class="mut keytext">On a device that's already signed in, open Settings, then Devices, and enter this code.<br>
+      Or on the server: <code>media-core-engine devices approve ${esc(r.code)}</code></p>
+    <p class="mut keyerr" id="err" role="status"></p>`);
+  const end = Date.now() + r.expires_in * 1000;
+  while (joinPage.run === token && location.hash.startsWith("#/join")) {
+    await new Promise(ok => setTimeout(ok, (r.interval || 2) * 1000));
+    if (joinPage.run !== token || !location.hash.startsWith("#/join")) return;
+    const p = await api("/api/v1/pair/poll", { poll: r.poll });
+    if (p.state === "approved") { await boot(); location.replace("#/"); return; }
+    if (p.state === "denied") { $("#err").textContent = "Not allowed. Ask whoever runs the server."; return; }
+    if (p.state === "expired" || Date.now() > end) { joinPage(); return; }
+  }
+}
+
+// an admin approves a waiting device: a TV showing a code, a phone, another browser
+async function approvePage(code) {
+  if (!isAdmin()) { location.replace("#/"); return; }
+  tabs("Settings");
+  const r = await api(`/api/pair/${encodeURIComponent(code)}`);
+  if (r.error) {
+    show(`<div class="centre"><div class="title">No device is waiting with ${esc(code)}</div>
+      <p class="mut keytext">Codes last 10 minutes. Check the code on the device, or ask it for a new one.</p>
+      <a class="word" href="#/devices">Devices</a></div>`);
+    return;
+  }
+  show(`<div class="centre keypage"><div class="caps">${esc(kindName(r.kind))} · code ${esc(r.code)}</div>
+    <div class="title">Let ${esc(r.name)} use ${esc(serverName)}?</div>
+    <form id="ok" class="keyform">
+      <input class="field" id="name" value="${esc(r.name)}" aria-label="Its name" maxlength="60">
+      <div class="seg" role="radiogroup" id="role"><button type="button" role="radio" aria-checked="true" class="on" data-r="player">Watch</button><button type="button" role="radio" aria-checked="false" data-r="admin">Watch and manage</button></div>
+      <p class="mut keytext small">Manage means adding downloads, deleting files and letting other devices in.</p>
+      <div class="btns"><button class="play" type="submit">Allow</button><button class="word" type="button" id="deny">Don't allow</button></div>
+      <p class="mut keyerr" id="err" role="alert"></p></form></div>`);
+  let role = "player";
+  for (const b of $$("#role button")) b.onclick = () => { role = b.dataset.r; $$("#role button").forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); }); };
+  $("#ok").onsubmit = async e => {
+    e.preventDefault();
+    const a = await api("/api/pair/approve", { code, name: $("#name").value, role });
+    if (a.ok) { note(`${a.name} is paired`); location.replace("#/devices"); } else $("#err").textContent = a.error;
+  };
+  $("#deny").onclick = async () => { await api("/api/pair/deny", { code }); location.replace("#/devices"); };
+}
+
+// Settings, Devices: who has a key, who's waiting, and a box for a TV's code
+async function devicesPage() {
+  if (!isAdmin()) { location.replace("#/settings"); return; }
+  tabs("Settings");
+  const r = await api("/api/devices");
+  if (r.error) { errorPage(devicesPage); return; }
+  const line = d => `<div class="setline"><div><div class="label">${esc(d.name)}${d.this ? ` <span class="mut">· this browser</span>` : ""}</div>
+      <small>${esc(kindName(d.kind))} · ${d.role === "admin" ? "watch and manage" : "watch"} · ${esc(ago(d.seen))}</small></div>
+      ${d.kind === "cli" ? "" : `<button class="word danger" data-revoke="${esc(d.id)}" data-name="${esc(d.name)}">Remove</button>`}</div>`;
+  show(tabs("Settings") + `<div class="plain setpage"><h1 class="ptitle">Devices</h1>
+    <section><h2 class="sech">Add a device</h2>
+      <form class="setline" id="add"><div><div class="label">Enter the code it shows</div><small>Open Media Core on the TV, phone or browser; it shows a code for a few minutes</small></div>
+        <span class="addcode"><input class="field code" id="code" autocapitalize="characters" spellcheck="false" placeholder="ABC-DEF" aria-label="Code" required><button class="word" type="submit">Continue</button></span></form>
+      ${r.waiting.map(w => `<a class="setline go" href="#/pair/${esc(w.code.replace("-", ""))}"><div><div class="label">${esc(w.name)} is waiting</div><small>${esc(kindName(w.kind))} · code ${esc(w.code)}</small></div>${icon("ExpandMore")}</a>`).join("")}</section>
+    <section><h2 class="sech">Paired</h2>${r.devices.map(line).join("")}</section></div>`);
+  $("#add").onsubmit = e => { e.preventDefault(); location.hash = `#/pair/${encodeURIComponent($("#code").value.replace(/[^a-z0-9]/gi, ""))}`; };
+  for (const b of $$("[data-revoke]")) b.onclick = async () => {
+    if (!confirm(`Remove ${b.dataset.name}? It will need a new code to come back.`)) return;
+    const x = await api(`/api/devices/${b.dataset.revoke}/revoke`, {});
+    if (x.ok) devicesPage(); else note(x.error, true);
+  };
+}
+
+// who this browser is; then the page. Manager's live updates only for an admin.
+async function boot() {
+  const r = await api("/api/v1/me");
+  if (r.offline) { errorPage(() => boot().then(route)); return false; }
+  if (r.error) return false; // needKey already moved to setup or join
+  me = r;
+  if (isAdmin()) Manager.connect();
+  return true;
+}
+
 // ---------- where we are ----------
 const scrolls = {};
 let current = "";
@@ -472,7 +611,11 @@ function route() {
     case "settings": route.key = "settings"; settings(); break;
     case "films": case "shows": case "search": location.replace("#/"); break; // gone: everything is on Home, as on the TV
     case "title": route.key = "title" + parts[1]; title(parts[1]); break;
-    case "manager": route.key = "manager"; Manager.page(); break;
+    case "manager": route.key = "manager"; if (isAdmin()) Manager.page(); else location.replace("#/settings"); break;
+    case "setup": route.key = "setup"; if (me && !me.open) location.replace("#/"); else setupPage(); break;
+    case "join": route.key = "join"; if (me && !me.open) location.replace("#/"); else joinPage(); break;
+    case "pair": route.key = "pair" + parts[1]; approvePage(parts[1] || ""); break;
+    case "devices": route.key = "devices"; devicesPage(); break;
     case "add": location.replace("#/manager"); break;
     default: location.hash = "#/";
   }
@@ -488,5 +631,5 @@ const qs = new URLSearchParams(location.search);
 const shared = [qs.get("url"), qs.get("text"), qs.get("title")].filter(Boolean).join(" ");
 if (shared) { window.sharedLinks = shared; history.replaceState(null, "", "/#/manager"); }
 if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js");
-Manager.connect();
-route();
+// the setup and pairing screens work before this browser has a key; everything else waits for one
+if (/^#\/(setup|join)/.test(location.hash)) route(); else boot().then(ok => ok && route());

@@ -157,11 +157,18 @@ func helloInfo() map[string]any {
 			}
 		}
 	}
-	return map[string]any{
-		"name": serverName(),
-		"lan":  lan,
-		"app":  readAppInfo("media-core"),
+	info := map[string]any{
+		"name":    serverName(),
+		"lan":     lan,
+		"app":     readAppInfo("media-core"),
+		"api":     1,    // bumped when an older app can no longer talk to this server
+		"pair":    true, // devices need a key: /api/v1/pair/start
+		"version": version,
 	}
+	if rm := remoteAddrs(); len(rm) > 0 {
+		info["remote"] = rm
+	}
+	return info
 }
 
 // hello lets the app learn every address this server answers on.
@@ -492,16 +499,17 @@ func renderConnectPage(info map[string]any) []byte {
 }
 
 // servePlayer runs the player API on its own port, for the home network only (gate.go).
-func servePlayer(p *Player, gate *homeGate) *http.Server {
+func servePlayer(p *Player, wrap func(http.Handler) http.Handler, pr *pairing) *http.Server {
 	mux := http.NewServeMux()
 	p.mount(mux)
+	pr.mount(mux, false)
 	mountDAV(mux)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(renderConnectPage(helloInfo()))
 	})
 	addr := playerAddr()
-	hs := &http.Server{Addr: addr, Handler: gate.wrap(mux), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Addr: addr, Handler: wrap(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("player API listening on %s", addr)
 		if err := hs.ListenAndServe(); err != http.ErrServerClosed {

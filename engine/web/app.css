@@ -558,3 +558,19 @@ canvas.pgs { position: absolute; pointer-events: none; transition: transform var
 #player .card::after { box-shadow: none; border: var(--line) solid var(--ink); opacity: 0; transition: opacity var(--focus) var(--ease); }
 #player .card:hover, #player .card:focus-visible { transform: scale(1.04); box-shadow: none; outline: 0; }
 #player .card:hover::after, #player .card:focus-visible::after { opacity: 1; }
+/* setting up, pairing and approving devices: one column in the middle, the code large */
+.keypage { gap: 1.6rem; }
+.keytext { max-width: 52rem; font-size: 1.6rem; line-height: 2.4rem; font-weight: 500; }
+.keytext.small { font-size: 1.4rem; line-height: 2rem; }
+.keytext code, .keypage code { white-space: nowrap; font-family: ui-monospace, Menlo, monospace; font-size: .92em; color: var(--ink); background: var(--overlay); border-radius: .4rem; padding: .1rem .5rem; }
+.keyform { display: flex; flex-direction: column; align-items: center; gap: 1.2rem; width: min(40rem, 100%); margin-top: .8rem; }
+.keyform .btns { display: flex; gap: 1.2rem; margin-top: .4rem; }
+.keyerr { min-height: 2rem; font-size: 1.4rem; color: var(--bad); }
+.field { width: 100%; height: 4.8rem; padding: 0 1.6rem; border-radius: var(--r); background: var(--overlay); color: var(--ink); font-size: 1.7rem; font-weight: 500; transition: box-shadow var(--focus) var(--ease); }
+.field::placeholder { color: var(--faint); }
+.field:focus-visible { box-shadow: 0 0 0 var(--line) var(--ink); }
+.field.code { text-align: center; font-size: 2.2rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.paircode { font-size: 7.2rem; line-height: 8rem; font-weight: 800; letter-spacing: .08em; margin: .8rem 0; font-variant-numeric: tabular-nums; }
+.addcode { display: flex; gap: 1.2rem; align-items: center; flex: none; }
+.addcode .field { width: 16rem; height: 4rem; font-size: 1.8rem; }
+@media (max-width: 600px) { .paircode { font-size: 5.2rem; line-height: 6rem; } .setline .addcode { flex-wrap: wrap; } }

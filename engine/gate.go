@@ -3,12 +3,13 @@ package main
 import (
 	"net"
 	"net/http"
+	"sync"
 )
 
-// The site (web player and Manager) and the apps' API are open to this machine and the home network only.
-// There are no accounts, so anything else is refused here, whatever the firewall allows: a port forwarded
-// by mistake must not open the library to the internet. Reaching the server away from home is not
-// supported yet; it will plug in here when it is.
+// The first of two checks on every request: the network. The site and the apps' API answer this machine and
+// the home network only, whatever the firewall allows, so a port forwarded by mistake doesn't open the
+// library to the internet. Reaching the server away from home plugs in here (Remote). The second check,
+// the device key, is in auth.go.
 
 var (
 	// Tailscale's IPv6 range sits inside fc00::/7 (which IsPrivate accepts), so it is named and refused.
@@ -34,16 +35,51 @@ func homeAddr(ip net.IP) bool {
 	return ip.IsPrivate() && !tsV6.Contains(ip)
 }
 
+// Remote is where reaching the server away from home plugs in, and the only place. It may let an address
+// outside the home network through this check (the device key is still checked after it), and it may add
+// addresses the apps can try, which /api/v1/hello lists as "remote". Without one, the server is home-only.
+type Remote interface {
+	Trusted(r *http.Request, ip net.IP) bool
+	Addrs() []string
+}
+
+var (
+	remoteMu sync.RWMutex
+	remote   Remote
+)
+
+// RegisterRemote installs the away-from-home piece (call it before serving).
+func RegisterRemote(r Remote) {
+	remoteMu.Lock()
+	remote = r
+	remoteMu.Unlock()
+}
+
+func currentRemote() Remote {
+	remoteMu.RLock()
+	defer remoteMu.RUnlock()
+	return remote
+}
+
+// remoteAddrs: the extra addresses the away-from-home piece offers (none without one).
+func remoteAddrs() []string {
+	if rm := currentRemote(); rm != nil {
+		return rm.Addrs()
+	}
+	return nil
+}
+
 type homeGate struct{}
 
 func newHomeGate() *homeGate { return &homeGate{} }
 
 func (homeGate) allowed(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
+	ip := clientIP(r)
+	if homeAddr(ip) {
+		return true
 	}
-	return homeAddr(net.ParseIP(host))
+	rm := currentRemote()
+	return ip != nil && rm != nil && rm.Trusted(r, ip)
 }
 
 func (g *homeGate) wrap(h http.Handler) http.Handler {

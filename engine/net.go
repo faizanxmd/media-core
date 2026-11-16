@@ -11,11 +11,19 @@ import (
 
 // deviceOf names the machine an address belongs to: this machine or the home network.
 func deviceOf(host string) string {
+	if a := activeAuth; a != nil {
+		if n := a.nameOf(host); n != "" {
+			return n
+		}
+	}
 	if host == "127.0.0.1" || host == "::1" {
 		return serverName() + " itself"
 	}
 	return "Home network (" + host + ")"
 }
+
+// activeAuth is the running server's key check (nil in tests), for device names.
+var activeAuth *authGate
 
 // Playing is one title being watched right now.
 type Playing struct {
