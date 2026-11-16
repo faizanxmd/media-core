@@ -27,13 +27,18 @@ func lowPrio(ctx context.Context, name string, args ...string) *exec.Cmd {
 
 func (e *Engine) startPost(id string) {
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	e.mu.Lock()
+	if e.posts == nil {
+		e.posts = map[string]postEntry{}
+	}
 	if _, running := e.posts[id]; running {
 		e.mu.Unlock()
 		cancel()
+		close(done)
 		return
 	}
-	e.posts[id] = cancel
+	e.posts[id] = postEntry{cancel: cancel, done: done}
 	e.mu.Unlock()
 	go func() {
 		defer func() {
@@ -41,6 +46,7 @@ func (e *Engine) startPost(id string) {
 			delete(e.posts, id)
 			e.mu.Unlock()
 			cancel()
+			close(done)
 		}()
 		if err := e.waitForFilm(ctx, id); err != nil { // a Light copy waits for its film, outside the queue
 			if ctx.Err() == nil {
@@ -60,12 +66,15 @@ func (e *Engine) startPost(id string) {
 	}()
 }
 
-func (e *Engine) cancelPost(id string) {
+func (e *Engine) cancelPost(id string) <-chan struct{} {
 	e.mu.Lock()
-	if c := e.posts[id]; c != nil {
-		c()
-	}
+	ent, ok := e.posts[id]
 	e.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	ent.cancel()
+	return ent.done
 }
 
 type jobCtx struct {
@@ -132,14 +141,23 @@ func (e *Engine) post(ctx context.Context, id string) error {
 				return err
 			}
 		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		c.phase(Processing, "Placing files")
 		if videos, err = place(c, j.Plan, final, src); err != nil {
 			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		os.RemoveAll(dlDir)
 		if filepath.Base(legacyDir) == ".incoming" {
 			os.Remove(legacyDir) // remove shared .incoming only if now empty
 		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	c.set(true, func(j *Job) { j.Placed, j.Files = true, videos })
 

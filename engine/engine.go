@@ -14,6 +14,16 @@ import (
 	"time"
 )
 
+type postEntry struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+type pendingDelete struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
 // Engine hands downloads to aria2, mirrors their progress into the store and
 // runs the post-processing (unpack, rename, Dolby Vision fix, catalog refresh).
 type Engine struct {
@@ -26,7 +36,8 @@ type Engine struct {
 
 	op          sync.Mutex // serialises aria2 bookkeeping (sync loop vs. user actions)
 	mu          sync.Mutex
-	posts       map[string]context.CancelFunc
+	posts       map[string]postEntry
+	deletes     map[string]*pendingDelete
 	ariaOK      bool
 	lastStart   time.Time
 	speed       int64
@@ -40,7 +51,7 @@ type Engine struct {
 
 func NewEngine(st *Store, a *Aria2, set *settingsStore) *Engine {
 	return &Engine{store: st, aria: a, settings: set, kick: make(chan struct{}, 1),
-		postSem: make(chan struct{}, 1), posts: map[string]context.CancelFunc{}}
+		postSem: make(chan struct{}, 1), posts: map[string]postEntry{}, deletes: map[string]*pendingDelete{}}
 }
 
 func (e *Engine) Kick() {
@@ -373,22 +384,36 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 		if !j.busy() {
 			return j, errors.New("nothing to cancel")
 		}
-		e.cancelPost(id)
+		postDone := e.cancelPost(id)
+		e.cancelDelete(id)
 		gid := j.GID
 		if j.inAria() && gid != "" {
 			e.aria.Do(ctx, "forceRemove", gid)
 		}
 		j, _ = e.store.Update(id, true, func(j *Job) {
 			j.State, j.GID, j.Speed, j.ETA, j.SpeedBps, j.EtaSec, j.Phase = Cancelled, "", "", "", 0, 0, ""
-			logLine(j, "Cancelled (partial file kept, retry resumes)")
+			if del {
+				logLine(j, "Cancelled (deleting partial file)")
+			} else {
+				logLine(j, "Cancelled (partial file kept, retry resumes)")
+			}
 		})
 		if del {
-			go e.deletePartial(j, gid)
+			delCtx, delCancel := context.WithCancel(context.Background())
+			pd := &pendingDelete{cancel: delCancel, done: make(chan struct{})}
+			e.mu.Lock()
+			if e.deletes == nil {
+				e.deletes = map[string]*pendingDelete{}
+			}
+			e.deletes[id] = pd
+			e.mu.Unlock()
+			go e.deletePartial(delCtx, pd, j, gid, postDone)
 		}
 	case "retry":
 		if j.busy() {
 			return j, errBusy
 		}
+		e.cancelDelete(id)
 		if p := fresh; p != nil {
 			j, _ = e.store.Update(id, true, func(j *Job) {
 				j.URL, j.Connections = p.URL, max(p.Connections, 1)
@@ -398,6 +423,9 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 		if j.Downloaded {
 			lp := legacyTargetPath(j)
 			if path, err := targetPath(j); j.Placed || (err == nil && exists(path)) || (lp != "" && exists(lp)) {
+				if d := e.cancelPost(id); d != nil {
+					<-d
+				}
 				e.store.Update(id, true, func(j *Job) { j.State = Processing; logLine(j, "Retrying processing") })
 				e.startPost(id)
 				break
@@ -412,6 +440,7 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 		if j.busy() {
 			return j, errBusy
 		}
+		e.cancelDelete(id)
 		e.store.Remove(id)
 		return j, nil
 	default:
@@ -435,18 +464,54 @@ func (e *Engine) ClearFinished() int {
 	return n
 }
 
-func (e *Engine) deletePartial(j Job, gid string) {
+func (e *Engine) cancelDelete(id string) {
+	e.mu.Lock()
+	pd := e.deletes[id]
+	e.mu.Unlock()
+	if pd != nil {
+		pd.cancel()
+		<-pd.done
+	}
+}
+
+func (e *Engine) deletePartial(ctx context.Context, pd *pendingDelete, j Job, gid string, postDone <-chan struct{}) {
+	defer close(pd.done)
+	defer func() {
+		e.mu.Lock()
+		if e.deletes[j.ID] == pd {
+			delete(e.deletes, j.ID)
+		}
+		e.mu.Unlock()
+	}()
+	if postDone != nil {
+		select {
+		case <-postDone:
+		case <-ctx.Done():
+			return
+		}
+	}
 	if gid != "" { // wait until aria2 lets go of the file
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		for ctx.Err() == nil {
-			s, err := e.aria.Status(ctx, gid)
-			if err != nil || s.Status == "removed" {
+		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		for waitCtx.Err() == nil {
+			s, err := e.aria.Status(waitCtx, gid)
+			if err != nil || s.Status == "removed" || s.Status == "complete" || s.Status == "error" {
 				break
 			}
-			time.Sleep(300 * time.Millisecond)
+			select {
+			case <-waitCtx.Done():
+			case <-time.After(300 * time.Millisecond):
+			}
 		}
-		e.aria.Forget(ctx, gid)
+		if ctx.Err() == nil {
+			e.aria.Forget(waitCtx, gid)
+		}
 		cancel()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if cur, ok := e.store.Get(j.ID); ok && (cur.Placed || cur.State != Cancelled) {
+		return
 	}
 	path, err := targetPath(j)
 	if err != nil || j.Placed {
@@ -470,6 +535,9 @@ func (e *Engine) deletePartial(j Job, gid string) {
 		if os.Remove(d) != nil {
 			break
 		}
+	}
+	if e.onLibrary != nil {
+		e.onLibrary()
 	}
 	e.store.Update(j.ID, true, func(j *Job) { logLine(j, "Cancelled and partial file deleted") })
 }
