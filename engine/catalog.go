@@ -342,7 +342,7 @@ func seasonName(n int) string {
 	return "Season " + strconv.Itoa(n)
 }
 
-// sortKey drops a leading article, like Plex does ("The Wire" sorts under W).
+// sortKey drops a leading article so "The Wire" sorts under W.
 func sortKey(t string) string {
 	t = strings.ToLower(t)
 	for _, a := range []string{"the ", "a ", "an "} {

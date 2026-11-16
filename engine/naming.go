@@ -67,7 +67,7 @@ func clean(s string) string {
 	return reSpace.ReplaceAllString(s, " ")
 }
 
-// guess turns a release file name into a Plex plan.
+// guess turns a release file name into a Plan.
 func guess(filename string) Plan {
 	name, ex := filename, ""
 	if i := strings.LastIndex(filename, "."); i > 0 {
