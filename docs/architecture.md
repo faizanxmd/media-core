@@ -21,9 +21,9 @@ TV / phone app ◀─ :8790 player API /api/v1, streaming, WebDAV /dav ◀─ ca
                   (home network + Tailscale; UDP 8790 answers the apps' search)
 ```
 
-The engine never converts the picture while you watch. The apps get each file as it is, over HTTP ranges, and decode it themselves with Media3, plus FFmpeg decoders for DTS and TrueHD.
+The engine never converts the picture while you watch. The apps get each file as it is, reading the parts they need (HTTP range requests), and decode it themselves with Media3, plus FFmpeg decoders for DTS and TrueHD.
 
-Browsers are the exception, because some can't open a file as it is: an MKV in Safari, or Dolby and DTS sound in Chrome. Those get the file repackaged while it plays. The picture is copied untouched, and the sound becomes AAC only where it has to. [browser-playback.md](browser-playback.md) has the details.
+Browsers are the exception, because some can't open a file as it is: an MKV in Safari, or Dolby and DTS sound in Chrome. Those get the file repackaged while it plays: same picture, a different container. The picture is copied untouched, and the sound becomes AAC only where it has to. [browser-playback.md](browser-playback.md) has the details.
 
 ## How the apps find the server
 
@@ -31,7 +31,7 @@ An app races every address it knows and prefers the home network. It learns them
 
 ## Who can use it
 
-There are no accounts. Port 8790 answers the home network and the owner's own Tailscale devices; port 8780 answers only Tailscale, and of Tailscale only the owner's devices (`engine/owner.go`). Sharing the server with another Tailscale account does not open it to them. Anyone on the home network can use the apps' API, so never expose either port to the internet.
+There are no accounts. The engine answers the home network, and of Tailscale only the owner's own devices (`engine/owner.go`), so sharing the server with another Tailscale account does not open it to them. The firewall ([setup.md](setup.md), step 6) keeps 8780 to Tailscale. Anyone on the home network can use the apps' API, so never expose either port to the internet.
 
 ## The library
 
@@ -45,7 +45,7 @@ Music/<Artist>/<Album>/
 
 ## Engine API
 
-Adding a download takes two calls. `POST /api/probe {url}` says what a link is, including the video details, and returns a probe and a plan. `POST /api/jobs {probe,plan[,light]}` starts the download. `POST /api/quick {url[,kind,title]}` does both in one step.
+The main routes. Adding a download takes two calls. `POST /api/probe {url}` says what a link is, including the video details, and returns a probe and a plan. `POST /api/jobs {probe,plan[,light]}` starts the download. `POST /api/quick {url[,kind,title]}` does both in one step.
 
 `GET /api/jobs` lists the downloads, `GET /api/system` reports the server's disk and health, and `/api/events` sends live events. `GET /api/library` lists the library's files.
 

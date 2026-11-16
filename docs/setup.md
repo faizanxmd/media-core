@@ -1,6 +1,14 @@
 # Setting up Media Core
 
-This sets up the engine on a Linux box and connects the apps to it. Each step says what to run and how to check it worked.
+This sets up the engine on a Linux box and connects the apps to it. Each step says what to run and how to check it worked. `<server>` means the box's host name or IP address (`hostname -I` shows the address).
+
+## 0. Get the code
+
+```sh
+git clone https://github.com/faizanxmd/media-core.git && cd media-core
+```
+
+Every later command runs from this folder.
 
 ## 1. Install what the engine uses
 
@@ -10,12 +18,17 @@ On Debian or Ubuntu:
 sudo apt install aria2 ffmpeg p7zip-full mkvtoolnix
 ```
 
-Ubuntu's and Debian's ffmpeg include the chromaprint muxer that Skip Intro uses. Check with `ffmpeg -hide_banner -muxers | grep chromaprint`.
+Skip Intro needs ffmpeg's chromaprint support, which Debian and Ubuntu include. Check: `ffmpeg -hide_banner -muxers | grep chromaprint` prints a line.
 
 You also need:
 
-- **Go 1.27 or newer**, to build the engine. Unpack the official tarball to `~/.local/go`.
-- **dovi_tool 2.3.x**, for Dolby Vision profile 7 files. Put it in `~/.local/bin/dovi_tool` (from github.com/quietvoid/dovi_tool releases). It's optional: without it, profile 7 files play as HDR10.
+- **Go 1.27 or newer**, to build the engine:
+  ```sh
+  curl -LO https://go.dev/dl/go1.27.0.linux-amd64.tar.gz && mkdir -p ~/.local && tar -C ~/.local -xzf go1.27.0.linux-amd64.tar.gz
+  ~/.local/go/bin/go version
+  ```
+  On an ARM box, use the `linux-arm64` file instead.
+- **dovi_tool**, optional. It converts Dolby Vision profile 7 files (Blu-ray remuxes) so Android TVs play them in Dolby Vision; without it they play as HDR10. Skip it unless you have such files. Otherwise download the Linux release from github.com/quietvoid/dovi_tool and put the `dovi_tool` binary in `~/.local/bin/`.
 - **Tailscale**, optional, for use away from home.
 
 ## 2. Make the library folder
@@ -73,19 +86,22 @@ Check it:
 ```sh
 systemctl --user status media-core-engine media-core-aria2
 curl -s http://127.0.0.1:8790/api/v1/hello
+curl -sI http://127.0.0.1:8780/ | head -1
 ```
 
-The second command prints the server's name and addresses.
+Both services say `active (running)`, the second command prints the server's name and addresses, and the third prints `HTTP/1.1 200 OK`.
 
 ## 6. Firewall
 
-Allow port 8780 on `tailscale0` only. Allow port 8790, TCP and UDP, on the home network and on `tailscale0`. With ufw, where `192.168.1.0/24` is your home network:
+Port 8780 is the website and Manager; port 8790 is the apps' API (TCP) and how the apps search for the server (UDP). Allow 8780 on `tailscale0` only, and 8790 on the home network and on `tailscale0`. With ufw (`sudo ufw status` shows whether it's on), where `192.168.1.0/24` is your home network:
 
 ```sh
 sudo ufw allow in on tailscale0 to any port 8780 proto tcp
 sudo ufw allow in on tailscale0 to any port 8790
 sudo ufw allow from 192.168.1.0/24 to any port 8790
 ```
+
+Without Tailscale, allow 8780 from the home network instead: `sudo ufw allow from 192.168.1.0/24 to any port 8780 proto tcp`. With another firewall, open the same ports.
 
 Never open either port to the internet: there are no accounts, and the home network is trusted.
 
@@ -95,11 +111,16 @@ On a phone, open `http://<server>:8790/` and install the app from there. On a TV
 
 Each app offers an update when a newer build is published on the server.
 
+## 8. Add something
+
+Open `http://<server>:8780/`, go to Manager, and paste a link. It shows what the link is before anything downloads. When the download finishes, the title appears in the apps within a minute.
+
 ## Where things live
 
 None of this is in git.
 
-- `~/.config/media-core/` holds settings and secrets: `engine.env`, `aria2.conf` (with the RPC secret), `tmdb.key`, `webdav.pass`, and, on the machine that builds the apps, the signing key `app.jks` with `app.jks.pass`.
+- `~/.config/media-core/` holds settings and secrets: `engine.env`, `aria2.conf` (the downloader's settings, with the password the engine uses to talk to it), `tmdb.key`, `webdav.pass`, and, on the machine that builds the apps, the signing key `app.jks` with `app.jks.pass`.
+- `webdav.pass` is made by the engine. With the user `media-core` and that password, players such as Infuse or VLC can browse the library read-only at `http://<server>:8790/dav`.
 - `~/.local/share/media-core/` holds the runtime data: jobs, watch state, the TMDB cache, thumbnails, intros and the published APKs.
 - `~/.local/bin/media-core-engine` is the engine.
 
@@ -107,7 +128,7 @@ Three systemd user units do the work: `media-core-engine`, `media-core-aria2`, a
 
 ## Backups
 
-Every night `media-core-backup` saves watch progress, settings, intro data and title matches to `~/.local/share/media-core/backups/state/`, and keeps 30 days. If a USB stick is mounted at `/mnt/media-core-usb` (or `MEDIA_CORE_BACKUP_USB`), it saves a copy there too.
+Every night `media-core-backup` saves watch progress, the download settings, intro data and title matches to `~/.local/share/media-core/backups/state/`, and keeps 30 days. It does not include `engine.env`, `tmdb.key` or the signing key. If a USB stick is mounted at `/mnt/media-core-usb` (or `MEDIA_CORE_BACKUP_USB`), it saves a copy there too. Without the stick, the unit shows as failed each night, but the local copy is still made.
 
 To restore, stop the engine, unpack the newest `state-*.tgz` into `~/.local/share/media-core/` and start the engine again.
 
@@ -119,7 +140,7 @@ UUID=<uuid> /mnt/media-core-usb exfat noauto,nofail,x-systemd.automount,x-system
 
 ```sh
 sudo mkdir -p /mnt/media-core-usb
-sudo systemctl daemon-reload && sudo systemctl start mnt-media\\x2dcore\\x2dusb.automount
+sudo systemctl daemon-reload && sudo systemctl start "$(systemd-escape -p --suffix=automount /mnt/media-core-usb)"
 ```
 
 ## The signing key

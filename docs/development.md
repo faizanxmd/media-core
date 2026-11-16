@@ -16,14 +16,16 @@ go vet ./... && go test ./...
 
 Tests never touch real state: `engine/main_test.go` points every state path at a temporary folder.
 
-To run it against a scratch library, you also need aria2 and a config for it:
+To run it against a scratch library, with its own settings and state, you also need aria2. Never do this on the box that runs the live engine: the ports clash.
 
 ```sh
-mkdir -p ~/.config/media-core ~/.local/share/media-core
-sed -e "s|@HOME@|$HOME|g" -e "s|@SECRET@|dev|" deploy/aria2.conf.in > ~/.config/media-core/aria2.conf
-touch ~/.local/share/media-core/aria2.session
-aria2c --conf-path="$HOME/.config/media-core/aria2.conf" &
-cd engine && MEDIA_CORE_LIBRARY=~/media-test go run . serve   # site on :8780, apps' API on :8790
+cd ..   # back to the repo root
+export MEDIA_CORE_CONFIG_DIR=~/media-test/conf MEDIA_CORE_DATA_DIR=~/media-test/data MEDIA_CORE_LIBRARY=~/media-test/library
+mkdir -p "$MEDIA_CORE_CONFIG_DIR" "$MEDIA_CORE_DATA_DIR" "$MEDIA_CORE_LIBRARY"
+sed -e "s|@HOME@/.local/share/media-core|$MEDIA_CORE_DATA_DIR|g" -e "s|@SECRET@|dev|" deploy/aria2.conf.in > "$MEDIA_CORE_CONFIG_DIR/aria2.conf"
+touch "$MEDIA_CORE_DATA_DIR/aria2.session"
+aria2c --conf-path="$MEDIA_CORE_CONFIG_DIR/aria2.conf" &
+cd engine && go run . serve   # site on :8780, apps' API on :8790
 ```
 
 ffmpeg, ffprobe, 7z, mkvmerge and dovi_tool are only needed for post-processing, thumbnails and media info. Those steps run under `ionice`, so they work on Linux only. On macOS you can still browse and stream.
@@ -36,7 +38,7 @@ You need JDK 17 and the Android SDK (platform 36, build-tools 36). Gradle comes 
 
 On Linux, run `sudo apt install openjdk-17-jdk-headless` and then `scripts/android-setup.sh`, which puts the SDK in `~/android/sdk`. On macOS, install Android Studio, or run `brew install --cask android-commandlinetools` and set `ANDROID_HOME`. For UI checks without a device, `scripts/android-setup.sh --emulator` installs headless emulators and `scripts/emulator.sh tv|phone` starts one.
 
-Builds run on GitHub Actions ([build.yml](../.github/workflows/build.yml)), started by hand, so the server only downloads the result:
+Builds run on GitHub Actions ([build.yml](../.github/workflows/build.yml)), started by hand, so the server only downloads the result. `scripts/ci-build.sh` needs the `gh` command, signed in, and your local HEAD equal to `origin/main`:
 
 ```sh
 scripts/ci-build.sh                 # build both apps from origin/main, wait, publish where the engine serves them
