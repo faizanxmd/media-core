@@ -2,7 +2,9 @@
 
 Two ports. The site's port (8780) serves the website and the admin API under `/api/`. The apps' port (8790) serves the apps' API under `/api/v1/`, streaming, the download page and WebDAV. Both answer the home network only, and every route needs a device key (`Authorization: Bearer mc_…`, or the browser's session cookie) except the open ones below. JSON in, JSON out; errors are `{"ok": false, "error": "<code>", "message": "<for people>"}`.
 
-`/api/v1/hello` carries `"api": 1`. It goes up only when an older app can no longer talk to the server.
+**Stability.** Everything under `/api/v1/` is the apps' API: stable across 1.x, versioned by `"api"` in `hello` (now 1), which goes up only when an older app can no longer talk to the server. Everything else under `/api/` belongs to the website and may change in any release; scripts should use the `media-core-engine` commands instead. `engine/apidoc_test.go` fails if a `/api/v1` route is missing from this page.
+
+Finding the server: besides `hello`, the apps send the UDP message `media-core?` to port 8790 as a broadcast, and the server answers devices on the home network with the same JSON as `hello`.
 
 ## Open (no key)
 
@@ -29,8 +31,9 @@ On port 8790 (and 8780): `POST /api/weblog` (the web player's log), `GET /api/v1
 On port 8780.
 
 - Downloads: `POST /api/probe {url}` says what a link is and returns `{probe, plan}`; `POST /api/jobs {probe, plan}` starts it; `POST /api/quick {url, kind?, title?}` does both; `POST /api/plan` re-plans a probe. `GET /api/jobs`, `POST /api/jobs/{id}/{action}` (pause, resume, cancel, retry and the like), `POST /api/clear` (clears finished ones), `GET /api/events` (live events), `GET /api/system` (disk, health, what's playing), `POST /api/settings` (download settings), `GET /api/cover`.
+- Internal to the website (may change any time): `/api/manager/*`, `/api/setup/*`, `/api/library*`, `/api/cover`, `/api/settings`, `/api/clear`, `/api/weblog`, and the web player's `hls/…` and `web/…`.
 - Library: `GET /api/library`, `POST /api/library/delete`; Manager's `GET /api/manager/titles`, `POST /api/manager/light`, `POST /api/manager/light/delete`.
 - Devices: `GET /api/devices` (`{devices, waiting}`), `GET /api/pair/{code}`, `POST /api/pair/approve {code, name?, role?}`, `POST /api/pair/deny {code}`, `POST /api/devices/{id}/revoke`.
-- Server: `GET /api/setup/config`, `POST /api/setup/config {library?, make_folders?, name?, tmdb_key?}` (restarts the engine; refused while something plays or downloads), `GET /api/setup/busy`, `GET /api/tools`.
+- Server: `GET /api/setup/config`, `POST /api/setup/config {library?, make_folders?, name?, tmdb_key?}` (restarts the engine; refused while something plays or downloads), `GET /api/busy` (`{busy, why}`: whether something plays or downloads, as `upgrade` checks it), `GET /api/tools`.
 
 The routes are registered with Go's `http.ServeMux` patterns, so `grep -n HandleFunc engine/*.go` lists every one; `engine/auth_test.go` checks each needs a key.
