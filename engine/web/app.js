@@ -136,23 +136,20 @@ function wireRows(root) {
 function titleMark(logo, name) {
   return `<div class="mark">${logo ? `<img src="${img(logo, "w500")}" alt="${esc(name)}">` : `<div class="display two" style="min-height:0">${esc(name)}</div>`}</div>`;
 }
-const MARKS = { atmos: [676, "atmos"], dv: [640, "dv"], dtsx: [269, "dtsx"], dtshdma: [321, "dtshdma"], truehd: [382, "truehd"], hdr10: [275, "hdr10"], hdr10p: [313, "hdr10p"] };
-const logoMark = (k, h) => {
-  const [w] = MARKS[k], px = 1.4 + h;
-  return `<i class="logo" style="--m:url(/marks/logo_${k}.png);height:${px}rem;width:${(px * w / 96).toFixed(2)}rem"></i>`;
-};
+// formats as plain text chips, like 4K (no trademark logos in the repo)
+const chip = t => `<span class="chip">${t}</span>`;
 function formatMarks(i) {
   if (!i) return "";
   const out = [], hdr = i.hdr || "", a = i.audio || "";
-  if (i.res === "4K") out.push(`<span class="chip">4K</span>`);
-  if (hdr.startsWith("Dolby Vision")) out.push(logoMark("dv", 0));
-  else if (hdr === "HDR10+") out.push(logoMark("hdr10p", .2));
-  else if (hdr === "HDR10") out.push(logoMark("hdr10", .2));
+  if (i.res === "4K") out.push(chip("4K"));
+  if (hdr.startsWith("Dolby Vision")) out.push(chip("Dolby Vision"));
+  else if (hdr === "HDR10+") out.push(chip("HDR10+"));
+  else if (hdr === "HDR10") out.push(chip("HDR10"));
   else if (hdr) out.push(`<span class="meta mut">${esc(hdr)}</span>`);
-  if (a.includes("Atmos")) out.push(logoMark("atmos", 0));
-  else if (a.startsWith("DTS:X")) out.push(logoMark("dtsx", .2));
-  else if (a.startsWith("DTS-HD MA")) out.push(logoMark("dtshdma", .4));
-  else if (a.startsWith("TrueHD")) out.push(logoMark("truehd", .4));
+  if (a.includes("Atmos")) out.push(chip("Dolby Atmos"));
+  else if (a.startsWith("DTS:X")) out.push(chip("DTS:X"));
+  else if (a.startsWith("DTS-HD MA")) out.push(chip("DTS-HD MA"));
+  else if (a.startsWith("TrueHD")) out.push(chip("TrueHD"));
   return out.join("");
 }
 // the format marks after the facts, set off by the same middle dot

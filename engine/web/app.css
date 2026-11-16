@@ -151,8 +151,6 @@ svg.i { width: 2.4rem; height: 2.4rem; fill: currentColor; flex: none; display: 
 .hero .facts { margin-top: 2rem; color: var(--ink); flex-wrap: wrap; font-size: 1.6rem; line-height: 2rem; font-weight: 600; text-shadow: 0 .1rem .8rem rgba(4,5,7,.7); }
 .hero .facts .meta { font-size: inherit; line-height: inherit; font-weight: inherit; }
 .chip { font-size: 1.2rem; line-height: 1.6rem; font-weight: 700; background: var(--ink); color: var(--base); padding: 0 .5rem; border-radius: var(--chip); }
-.logo { background: var(--muted); -webkit-mask: var(--m) left center / contain no-repeat; mask: var(--m) left center / contain no-repeat; display: inline-block; height: 1.4rem; }
-.hero .logo { background: rgba(242,243,247,.82); }
 .epl { margin-top: 1.4rem; font-size: 1.7rem; line-height: 2.2rem; font-weight: 700; text-shadow: 0 .1rem .8rem rgba(4,5,7,.7); }
 .story { margin-top: 1.2rem; font-size: 1.7rem; line-height: 2.5rem; font-weight: 500; color: rgba(242,243,247,.9); max-width: 58rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; text-shadow: 0 .1rem 1rem rgba(4,5,7,.75); }
 .epl + .story { margin-top: .4rem; }
