@@ -1,8 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHowToPlay(t *testing.T) {
@@ -87,5 +95,100 @@ func TestHowToPlay(t *testing.T) {
 	}
 	if got := say(howToPlay(nil, nil, safari)); got != "none" {
 		t.Errorf("unread file: %q, want none", got)
+	}
+}
+
+func TestWatchedWithShowAndOfflineProgress(t *testing.T) {
+	sh := &Item{ID: "s1", Type: "show", Title: "Raw Show", Meta: &TMeta{Title: "Real Show", Logo: "/logo.png"}}
+	ep := &Item{ID: "e1", Type: "episode", Title: "Ep 1", ShowID: "s1", Show: "Raw Show", Season: 1, Episode: 1, file: "/lib/ep1.mkv"}
+	cat := &Catalog{items: map[string]*Item{"s1": sh, "e1": ep}}
+	p := &Player{c: cat, w: newTestWatch(), t: &TMDB{}}
+	mux := http.NewServeMux()
+	p.mount(mux)
+
+	req := httptest.NewRequest("POST", "/api/v1/watched", bytes.NewBufferString(`{"id":"e1","watched":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("watched status = %d", rec.Code)
+	}
+	var wout struct {
+		Item Item `json:"item"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &wout)
+	if wout.Item.Show != "Real Show" || wout.Item.Meta == nil || wout.Item.Meta.Logo != "/logo.png" {
+		t.Fatalf("watched item missing withShow data: show=%q meta=%+v", wout.Item.Show, wout.Item.Meta)
+	}
+
+	playMu.Lock()
+	playing = map[string]time.Time{}
+	playMu.Unlock()
+
+	req2 := httptest.NewRequest("POST", "/api/v1/progress", bytes.NewBufferString(`{"id":"e1","pos":60000,"dur":600000,"at":1700000000}`))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.RemoteAddr = "192.168.1.50:1234"
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != 200 {
+		t.Fatalf("progress status = %d", rec2.Code)
+	}
+	if n := playingNow(); n != 0 {
+		t.Fatalf("offline progress report touched playing: playingNow()=%d", n)
+	}
+}
+
+func TestSpeedTestStopsWhenContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("GET", "/api/v1/speedtest?bytes=52428800", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	speedTest(rec, req)
+	if rec.Body.Len() > 0 {
+		t.Fatalf("speedTest wrote %d bytes after context cancelled", rec.Body.Len())
+	}
+}
+
+func TestServeAPKSendsNoStore(t *testing.T) {
+	oldD := DataDir
+	DataDir = t.TempDir()
+	defer func() { DataDir = oldD }()
+	os.MkdirAll(filepath.Join(DataDir, "app"), 0o755)
+	os.WriteFile(filepath.Join(DataDir, "app", "media-core.apk"), []byte("apk"), 0o644)
+
+	rec := httptest.NewRecorder()
+	serveAPK("media-core")(rec, httptest.NewRequest("GET", "/api/v1/app.apk", nil))
+	if rec.Code != 200 {
+		t.Fatalf("serveAPK status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+func TestHelloMagicDNSFromTailscale(t *testing.T) {
+	magicDNSMu.Lock()
+	magicDNSName = ""
+	magicDNSMu.Unlock()
+	defer func() {
+		magicDNSMu.Lock()
+		magicDNSName = ""
+		magicDNSMu.Unlock()
+	}()
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "tailscale")
+	os.WriteFile(bin, []byte("#!/bin/sh\necho '{\"Self\":{\"DNSName\":\"custom-host.tailnet.ts.net.\"}}'\n"), 0o755)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	p := &Player{c: &Catalog{items: map[string]*Item{}}, w: newTestWatch(), t: &TMDB{}}
+	rec := httptest.NewRecorder()
+	p.hello(rec, httptest.NewRequest("GET", "/api/v1/hello", nil))
+	var out struct {
+		MagicDNS string `json:"magicdns"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.MagicDNS != "http://custom-host.tailnet.ts.net:8790" {
+		t.Fatalf("magicdns = %q, want http://custom-host.tailnet.ts.net:8790", out.MagicDNS)
 	}
 }

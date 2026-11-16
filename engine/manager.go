@@ -148,13 +148,6 @@ func (s *Server) titles(c Caps) []mTitle {
 	return out
 }
 
-func pad2(n int) string {
-	if n < 10 {
-		return "0" + strconv.Itoa(n)
-	}
-	return strconv.Itoa(n)
-}
-
 // lightPlan is the plan for a Light copy of the library file or film folder at into.
 func lightPlan(kind, title string, into string, lp Probe) Plan {
 	return Plan{Kind: kind, Title: title, Light: true, Into: into, Ext: lp.Plan.Ext, MP4: true}

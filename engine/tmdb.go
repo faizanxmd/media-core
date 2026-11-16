@@ -53,9 +53,8 @@ type Person struct {
 }
 
 type tmdbMatch struct {
-	ID     int     `json:"id"` // 0 = searched, nothing found
-	At     float64 `json:"at"`
-	Manual bool    `json:"manual,omitempty"`
+	ID int     `json:"id"` // 0 = searched, nothing found
+	At float64 `json:"at"`
 }
 
 // seasonMeta is a season plus its episodes, cached per season.
@@ -328,7 +327,7 @@ func (t *TMDB) FetchMissing(movies, shows []*Item) bool {
 				continue
 			}
 		}
-		t.setMatch(m.folder, id, false)
+		t.setMatch(m.folder, id)
 		changed = true
 	}
 	for _, s := range shows {
@@ -353,7 +352,7 @@ func (t *TMDB) FetchMissing(movies, shows []*Item) bool {
 					continue
 				}
 			}
-			t.setMatch(s.folder, id, false)
+			t.setMatch(s.folder, id)
 			changed = true
 		}
 		if id == 0 {
@@ -396,9 +395,9 @@ func (t *TMDB) FetchMissing(movies, shows []*Item) bool {
 	return changed
 }
 
-func (t *TMDB) setMatch(folder string, id int, manual bool) {
+func (t *TMDB) setMatch(folder string, id int) {
 	t.mu.Lock()
-	t.matches[folder] = tmdbMatch{ID: id, At: now(), Manual: manual}
+	t.matches[folder] = tmdbMatch{ID: id, At: now()}
 	t.mu.Unlock()
 }
 

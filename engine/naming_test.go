@@ -138,11 +138,7 @@ func TestExtIsSanitised(t *testing.T) {
 func TestPlanPathsRejectsEmptyCleanPath(t *testing.T) {
 	badPaths := []string{".", "..", "/", "a/.."}
 	for _, p := range badPaths {
-		_, _, _, err := planPaths(Plan{Kind: "convert", Path: p})
-		if err == nil || err.Error() != "no file to convert" {
-			t.Errorf("convert Path %q: err = %v, want %q", p, err, "no file to convert")
-		}
-		_, _, _, err = planPaths(Plan{Kind: "movie", Light: true, Into: p, Ext: "mp4"})
+		_, _, _, err := planPaths(Plan{Kind: "movie", Light: true, Into: p, Ext: "mp4"})
 		if err == nil || err.Error() != "a Light copy needs its title" {
 			t.Errorf("Light Into %q: err = %v, want %q", p, err, "a Light copy needs its title")
 		}

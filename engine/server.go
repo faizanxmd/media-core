@@ -202,7 +202,7 @@ func (s *Server) routes() http.Handler {
 		var lp Plan
 		if b.Light != nil {
 			_, fn, final, err := planPaths(b.Plan)
-			if err != nil || b.Light.Plan == nil || b.Plan.Kind == "convert" || b.Plan.Light || (b.Plan.Kind == "tv" && fn == "") || b.Plan.Kind == "music" {
+			if err != nil || b.Light.Plan == nil || b.Plan.Light || (b.Plan.Kind == "tv" && fn == "") || b.Plan.Kind == "music" {
 				errJSON(w, 400, "a Light copy goes with one film or one episode")
 				return
 			}

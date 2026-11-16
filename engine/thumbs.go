@@ -275,11 +275,6 @@ var pauseTick atomic.Int64 // ns between checks; a var so tests can shorten it
 
 func init() { pauseTick.Store(int64(3 * time.Second)) }
 
-// pauseWhileStreaming freezes ffmpeg while someone is watching and lets it go on afterwards.
-func pauseWhileStreaming(pid int, stop <-chan struct{}) {
-	pauseWithTimeout(pid, stop, 0, nil)
-}
-
 // pauseWithTimeout freezes pid while streaming and cancels after activeLimit of
 // unpaused runtime (when > 0), so paused time doesn't count toward timeouts.
 func pauseWithTimeout(pid int, stop <-chan struct{}, activeLimit time.Duration, cancel context.CancelFunc) {

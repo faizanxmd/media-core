@@ -174,7 +174,7 @@ func (w *Watch) decorate(it *Item, deep bool) *Item {
 	return &cp
 }
 
-// continueRow is Plex's "Continue Watching": things part-way through, plus
+// continueRow builds the "Continue Watching" row: things part-way through, plus
 // the next episode of any show you're working through, newest activity first.
 func (w *Watch) continueRow(movies, shows []*Item) []*Item {
 	type entry struct {

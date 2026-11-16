@@ -39,7 +39,6 @@ type Probe struct {
 	Browser bool                `json:"browser"`        // plays in the browser that asked
 	Play    string              `json:"play,omitempty"` // how: direct | repack | none (play.go)
 	On      map[string]OnDevice `json:"on,omitempty"`   // where it will play once downloaded
-	CanMP4  bool                `json:"can_mp4"`        // an MP4 after downloading would make it play in browsers
 	Heavy   bool                `json:"heavy"`          // 4K or HDR: worth a Light copy
 	PGS     bool                `json:"pgs"`            // picture subtitles, which an MP4 can only keep beside the file
 }
@@ -267,12 +266,7 @@ func (e *Engine) Probe(ctx context.Context, raw string) Probe {
 	}
 	if !p.Archive && VideoExt[p.Ext] {
 		if m := linkMedia(ctx, u); m != nil && m.VCodec != "" {
-			r.Media, r.Browser, r.CanMP4, r.Heavy, r.PGS = m, playsInBrowser(m), canMP4(m), heavy(m), m.PGS
-		} else if p.Ext != "mp4" && p.Ext != "m4v" {
-			// a slow link (one connection, other downloads running) can't be
-			// read in time: offer the MP4 anyway, and the step after the
-			// download checks the file itself and keeps 4K or HDR as it is
-			r.CanMP4 = true
+			r.Media, r.Browser, r.Heavy, r.PGS = m, playsInBrowser(m), heavy(m), m.PGS
 		}
 		// The MP4 step is no longer the default: browsers get what they can't open as a
 		// stream made while it plays (stream.go), and the file stays as it came.

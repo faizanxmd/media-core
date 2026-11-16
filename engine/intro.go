@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// Skip Intro without Plex Pass: the opening of every episode in a season is
+// Skip Intro: the opening of every episode in a season is
 // audio-fingerprinted (ffmpeg's chromaprint muxer), and the stretch two
 // episodes share near their start is the intro. Same idea as Jellyfin's
 // intro-skipper plugin. Runs niced in the background after a scan, a few

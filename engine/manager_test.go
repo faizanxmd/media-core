@@ -47,14 +47,6 @@ func TestLightAndConvertPaths(t *testing.T) {
 	if _, _, _, err := planPaths(Plan{Kind: "movie", Light: true, Into: "Movies/X", Archive: true}); err == nil {
 		t.Fatal("an archive can't be a Light copy")
 	}
-	_, _, final, _ = planPaths(Plan{Kind: "convert", Path: "Movies/X (2020)/X (2020).mkv"})
-	if final != "/lib/Movies/X (2020)/X (2020).mkv" {
-		t.Fatalf("convert: %q", final)
-	}
-	_, _, final, _ = planPaths(Plan{Kind: "convert", Path: "../../etc/passwd"})
-	if !strings.HasPrefix(final, "/lib/") {
-		t.Fatalf("convert escaped the library: %q", final)
-	}
 }
 
 func TestSrtToVTT(t *testing.T) {
@@ -159,7 +151,7 @@ func TestToMP4AndLight(t *testing.T) {
 	e := testEngine(t)
 	moved := ""
 	e.onMoved = func(a, b string) { moved = b }
-	j := &Job{ID: "t1", State: Processing, Plan: Plan{Kind: "convert", Path: rel(src)}, Files: []string{src}, Log: []string{}}
+	j := &Job{ID: "t1", State: Processing, Plan: Plan{Kind: "movie", Title: "Clip", Year: "2020", Ext: "mkv", MP4: true}, Files: []string{src}, Log: []string{}}
 	e.store.jobs[j.ID] = j
 	ctx := context.Background()
 	out, err := e.toMP4(ctx, jobCtx{e, j.ID}, src)
@@ -195,5 +187,30 @@ func TestToMP4AndLight(t *testing.T) {
 	makeClip(t, lightPath, "9")
 	if err := e.acceptLight(ctx, jobCtx{e, lj.ID}, lj, []string{lightPath}); err == nil || exists(lightPath) {
 		t.Fatalf("a different cut was kept: %v", err)
+	}
+}
+
+func TestSystemCachesSectionSizes(t *testing.T) {
+	oldM, oldD := Media, DataDir
+	Media, DataDir = t.TempDir(), t.TempDir()
+	defer func() { Media, DataDir = oldM, oldD }()
+	os.MkdirAll(filepath.Join(Media, "Movies", "Film"), 0o755)
+	os.MkdirAll(filepath.Join(Media, "TV Shows"), 0o755)
+	os.MkdirAll(filepath.Join(Media, "Music"), 0o755)
+	os.WriteFile(filepath.Join(Media, "Movies", "Film", "f.mkv"), []byte("12345"), 0o644)
+
+	srv := &Server{e: testEngine(t), p: &Player{c: &Catalog{items: map[string]*Item{}}, w: newTestWatch(), t: &TMDB{}}}
+	s1 := srv.system()
+	lib1 := s1["library"].(map[string]any)
+	if lib1["films"].(int64) != 5 {
+		t.Fatalf("films = %v, want 5", lib1["films"])
+	}
+
+	// Add another file; within 5 minutes /api/system must return the cached size without re-walking.
+	os.WriteFile(filepath.Join(Media, "Movies", "Film", "f2.mkv"), []byte("1234567890"), 0o644)
+	s2 := srv.system()
+	lib2 := s2["library"].(map[string]any)
+	if lib2["films"].(int64) != 5 {
+		t.Fatalf("second /api/system walked disk again: films = %v, want cached 5", lib2["films"])
 	}
 }
