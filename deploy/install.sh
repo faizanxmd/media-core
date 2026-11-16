@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the engine from this source tree (for development; everyone else uses the one-line install).
-# Tests and builds it, keeps the old binary as .prev, then runs `media-core-engine install --yes`, which keeps
-# every setting, rewrites the service files only if they changed, and restarts the engine.
+# Tests and builds it, keeps the old binary as .prev, then runs `media-core-engine install --yes --no-apps`, which keeps
+# every setting, rewrites the service files only if they changed, and restarts the engine (never while busy).
 # Usage: deploy/install.sh [install flags, e.g. --library DIR]
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,4 +18,5 @@ mkdir -p "$(dirname "$BIN")"
 go build -trimpath -ldflags "-s -w -X main.version=${ver#v}" -o "$BIN.new" .
 [ -f "$BIN" ] && cp -p "$BIN" "$BIN.prev"
 mv "$BIN.new" "$BIN"
-exec "$BIN" install --yes "$@"
+# --no-apps: a build from source keeps the apps this server already has (scripts/ci-build.sh puts them there)
+exec "$BIN" install --yes --no-apps "$@"
