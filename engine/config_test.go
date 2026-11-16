@@ -61,7 +61,7 @@ func TestParseEnvFileAndEnvOrFrom(t *testing.T) {
 	}
 }
 
-func TestXDGFallbacks(t *testing.T) {
+func TestConfigDirs(t *testing.T) {
 	homeDir := "/tmp/test-home"
 	t.Setenv("HOME", homeDir)
 	t.Setenv("MEDIA_CORE_CONFIG_DIR", "")
@@ -76,13 +76,14 @@ func TestXDGFallbacks(t *testing.T) {
 		t.Fatalf("default DataDir = %q", got)
 	}
 
+	// XDG_* is ignored on purpose: the aria2 unit and backup script use the fixed paths
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg-cfg/")
 	t.Setenv("XDG_DATA_HOME", "/tmp/xdg-data/")
-	if got := defaultConfDir(); got != "/tmp/xdg-cfg/media-core" {
-		t.Fatalf("XDG ConfDir = %q", got)
+	if got := defaultConfDir(); got != filepath.Join(homeDir, ".config/media-core") {
+		t.Fatalf("ConfDir with XDG set = %q", got)
 	}
-	if got := defaultDataDir(); got != "/tmp/xdg-data/media-core" {
-		t.Fatalf("XDG DataDir = %q", got)
+	if got := defaultDataDir(); got != filepath.Join(homeDir, ".local/share/media-core") {
+		t.Fatalf("DataDir with XDG set = %q", got)
 	}
 
 	t.Setenv("MEDIA_CORE_CONFIG_DIR", "/tmp/explicit-cfg/")
@@ -130,5 +131,18 @@ func TestServerNameAndDoviToolAndAddrs(t *testing.T) {
 	t.Setenv("MEDIA_CORE_PLAYER_LISTEN", ":9790")
 	if got := playerAddr(); got != ":9790" {
 		t.Fatalf("playerAddr() = %q, want :9790", got)
+	}
+}
+
+func TestTrimSlashAndDiscoverAddr(t *testing.T) {
+	for in, want := range map[string]string{"": "", "/": "/", "//": "/", "/srv/media/": "/srv/media", "x": "x"} {
+		if got := trimSlash(in); got != want {
+			t.Errorf("trimSlash(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{":8790": ":8790", "127.0.0.1:9000": "127.0.0.1:9000", "bad": ":8790"} {
+		if got := discoverAddr(in); got != want {
+			t.Errorf("discoverAddr(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

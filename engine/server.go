@@ -457,7 +457,7 @@ func serve() {
 	go pl.watchRelay()
 	gate := newOwnerGate()
 	ps := servePlayer(pl, gate)
-	dc := serveDiscover(":" + portOf(playerAddr(), "8790"))
+	dc := serveDiscover(discoverAddr(playerAddr()))
 	srv := &Server{e: e, p: pl, assets: loadAssets()}
 	addr := listenAddr()
 	hs := &http.Server{Addr: addr, Handler: gate.wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}

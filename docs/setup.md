@@ -68,7 +68,7 @@ It holds plain `KEY=value` lines:
 | `MEDIA_CORE_PLAYER_LISTEN` | `:8790` | the apps' API, and the UDP port the apps search on |
 | `MEDIA_CORE_DOVI_TOOL` | `dovi_tool` on the PATH, else `~/.local/bin/dovi_tool` | the Dolby Vision tool |
 
-A value set in the environment wins over the file. Write full paths: `~` isn't expanded. Two more settings work only as environment variables, since they say where this file lives: `MEDIA_CORE_CONFIG_DIR` (default `~/.config/media-core`) and `MEDIA_CORE_DATA_DIR` (default `~/.local/share/media-core`, for jobs, watch progress and caches).
+A value set in the environment wins over the file. Write full paths: `~` isn't expanded. Two more settings work only as environment variables, since they say where this file lives: `MEDIA_CORE_CONFIG_DIR` (default `~/.config/media-core`) and `MEDIA_CORE_DATA_DIR` (default `~/.local/share/media-core`, for jobs, watch progress and caches). Leave both alone on a real install: `install.sh`, the downloader and the nightly backup always use the default folders.
 
 ## 5. Install and start the engine
 

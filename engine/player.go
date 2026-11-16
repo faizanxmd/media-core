@@ -151,9 +151,11 @@ func magicDNS() string {
 	}
 	magicDNSMu.Lock()
 	defer magicDNSMu.Unlock()
-	if magicDNSName != "" && time.Since(magicDNSAt) < 5*time.Minute {
+	// one lookup per 5 minutes, found or not: discovery replies must never wait on tailscale
+	if !magicDNSAt.IsZero() && time.Since(magicDNSAt) < 5*time.Minute {
 		return magicDNSName
 	}
+	magicDNSAt = time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if out, err := exec.CommandContext(ctx, "tailscale", "status", "--json").Output(); err == nil {
@@ -165,7 +167,6 @@ func magicDNS() string {
 		if json.Unmarshal(out, &r) == nil {
 			if dns := strings.TrimSuffix(strings.TrimSpace(r.Self.DNSName), "."); dns != "" {
 				magicDNSName = dns
-				magicDNSAt = time.Now()
 				return magicDNSName
 			}
 		}

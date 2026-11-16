@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -38,31 +39,46 @@ var (
 	envFile map[string]string
 )
 
+// The folders are fixed under the home folder (no XDG_* lookup): the aria2 unit, install.sh and the
+// backup script use the same paths, so the engine must not wander off on its own.
 func defaultConfDir() string {
-	if v := strings.TrimRight(os.Getenv("MEDIA_CORE_CONFIG_DIR"), "/"); v != "" {
+	if v := trimSlash(os.Getenv("MEDIA_CORE_CONFIG_DIR")); v != "" {
 		return v
 	}
-	if v := strings.TrimRight(os.Getenv("XDG_CONFIG_HOME"), "/"); v != "" {
-		return filepath.Join(v, "media-core")
-	}
-	return filepath.Join(os.Getenv("HOME"), ".config/media-core")
+	return filepath.Join(homeDir(), ".config/media-core")
 }
 
 func defaultDataDir() string {
-	if v := strings.TrimRight(os.Getenv("MEDIA_CORE_DATA_DIR"), "/"); v != "" {
+	if v := trimSlash(os.Getenv("MEDIA_CORE_DATA_DIR")); v != "" {
 		return v
 	}
-	if v := strings.TrimRight(os.Getenv("XDG_DATA_HOME"), "/"); v != "" {
-		return filepath.Join(v, "media-core")
+	return filepath.Join(homeDir(), ".local/share/media-core")
+}
+
+// homeDir is $HOME, else the account's home folder, so paths never end up relative to where it started.
+func homeDir() string {
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
+		return h
 	}
-	return filepath.Join(os.Getenv("HOME"), ".local/share/media-core")
+	if u, err := user.Current(); err == nil && u.HomeDir != "" {
+		return u.HomeDir
+	}
+	return "/"
+}
+
+// trimSlash drops trailing slashes but keeps "/" itself.
+func trimSlash(v string) string {
+	if t := strings.TrimRight(v, "/"); t != "" || v == "" {
+		return t
+	}
+	return "/"
 }
 
 func defaultDoviTool() string {
 	if p, err := exec.LookPath("dovi_tool"); err == nil && p != "" {
 		return p
 	}
-	return filepath.Join(os.Getenv("HOME"), ".local/bin/dovi_tool")
+	return filepath.Join(homeDir(), ".local/bin/dovi_tool")
 }
 
 func parseEnvFile(path string) map[string]string {
@@ -105,10 +121,10 @@ func loadEnv() map[string]string {
 
 func envOrWith(key, def string, file map[string]string) string {
 	if v := os.Getenv(key); v != "" {
-		return strings.TrimRight(v, "/")
+		return trimSlash(v)
 	}
 	if v := file[key]; v != "" {
-		return strings.TrimRight(v, "/")
+		return trimSlash(v)
 	}
 	return def
 }

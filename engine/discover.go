@@ -5,12 +5,23 @@ import (
 	"errors"
 	"log"
 	"net"
+	"time"
 )
 
 const (
 	discoverProbe    = "media-core?"
 	discoverMaxBytes = 1400
+	discoverPerSec   = 10 // replies per second at most: a source address can be faked, so cap what we send
 )
+
+// discoverAddr is the UDP address to listen on: the same host and port as the apps' API.
+func discoverAddr(player string) string {
+	host, port, err := net.SplitHostPort(player)
+	if err != nil {
+		return ":" + portOf(player, "8790")
+	}
+	return net.JoinHostPort(host, port)
+}
 
 // serveDiscover listens for LAN UDP discovery probes and replies with helloInfo JSON.
 // If addr cannot be bound it logs once and returns nil so the server carries on.
@@ -26,12 +37,15 @@ func serveDiscover(addr string) net.PacketConn {
 
 func runDiscover(pc net.PacketConn, infoFn func() map[string]any) {
 	buf := make([]byte, 2048)
+	var window time.Time
+	sent := 0
 	for {
 		n, src, err := pc.ReadFrom(buf)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
+			time.Sleep(100 * time.Millisecond) // don't spin on a broken socket
 			continue
 		}
 		if n != len(discoverProbe) || string(buf[:n]) != discoverProbe {
@@ -40,6 +54,13 @@ func runDiscover(pc net.PacketConn, infoFn func() map[string]any) {
 		if !isLocalUDP(src) {
 			continue
 		}
+		if now := time.Now(); now.Sub(window) >= time.Second {
+			window, sent = now, 0
+		}
+		if sent >= discoverPerSec {
+			continue
+		}
+		sent++
 		if b := discoverReply(infoFn()); len(b) > 0 {
 			_, _ = pc.WriteTo(b, src)
 		}
