@@ -1,5 +1,5 @@
-# Runs on every push and pull request: engine tests, and a scan for secrets
-# and private details (the same check as the pre-commit hook).
+# Runs on every push and pull request: engine tests, a compile of both apps (debug, unsigned, nothing
+# published), and a scan for secrets and private details (the same check as the pre-commit hook).
 name: Check
 
 on:
@@ -23,6 +23,20 @@ jobs:
           test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
           go vet ./...
           go test -count=1 ./...
+
+  apps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Compile (no signing, nothing published)
+        working-directory: android
+        run: ./gradlew --no-daemon --stacktrace :core:compileDebugKotlin :app:compileTvDebugKotlin :phone:compileDebugKotlin
 
   private:
     runs-on: ubuntu-24.04
