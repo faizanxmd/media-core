@@ -306,6 +306,7 @@ func (s *Server) mountManager(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"titles": s.titles(capsOf(r))})
 	})
 	mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.system()) })
+	mux.HandleFunc("GET /api/tools", serveTools)
 	// a Light copy for a title already in the library: the link was checked first (/api/probe)
 	mux.HandleFunc("POST /api/manager/light", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {

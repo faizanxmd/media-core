@@ -206,9 +206,10 @@ func (t *Thumbs) make(it *Item) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ionice", "-c3", "nice", "-n", "19", "ffmpeg", "-nostdin", "-v", "error",
+	prog, argv := lowPrioArgv(true, "19", "ffmpeg", "-nostdin", "-v", "error",
 		"-skip_frame", "nokey", "-i", it.file, "-map", "0:v:0", "-an", "-sn", "-dn", "-fps_mode", "passthrough",
 		"-vf", vf, "-q:v", "5", filepath.Join(tmp, "%06d.jpg"))
+	cmd := exec.CommandContext(ctx, prog, argv...)
 	var errOut strings.Builder
 	cmd.Stderr = &errOut
 	if err := cmd.Start(); err != nil {

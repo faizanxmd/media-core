@@ -10,7 +10,7 @@ func diskAt(path string) (free, total int64) {
 	if syscall.Statfs(path, &st) != nil {
 		return 0, 0
 	}
-	return int64(st.Bavail) * st.Bsize, int64(st.Blocks) * st.Bsize
+	return int64(st.Bavail) * int64(st.Bsize), int64(st.Blocks) * int64(st.Bsize)
 }
 
 func freeGB() int {

@@ -14,15 +14,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	DataDir = filepath.Join(tmp, "data")
-	JobsDir = filepath.Join(DataDir, "jobs")
-	ConfDir = filepath.Join(tmp, "conf")
-	Aria2Conf = filepath.Join(ConfDir, "aria2.conf")
-	introsPath = filepath.Join(DataDir, "intros.json")
-	miPath = filepath.Join(DataDir, "mediainfo.json")
-	tmdbDir = filepath.Join(DataDir, "tmdb")
-	settingsPath = filepath.Join(DataDir, "settings.json")
-	watchPath = filepath.Join(DataDir, "watch.json")
+	setPaths(filepath.Join(tmp, "conf"), filepath.Join(tmp, "data"), Media)
 	for _, d := range []string{JobsDir, ConfDir} {
 		os.MkdirAll(d, 0o755)
 	}

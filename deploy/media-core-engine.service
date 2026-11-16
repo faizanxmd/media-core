@@ -5,7 +5,7 @@ Wants=media-core-aria2.service
 
 [Service]
 ExecStart=%h/.local/bin/media-core-engine serve
-Restart=on-failure
+Restart=always
 RestartSec=3
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 UMask=0002

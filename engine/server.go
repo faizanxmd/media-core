@@ -8,14 +8,17 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"mime"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -436,8 +439,21 @@ func logRequests(h http.Handler) http.Handler {
 	})
 }
 
-func serve() {
+// serveOpts: how serve runs. A temporary server (serve --library) runs aria2 itself and, without --state,
+// keeps its state in a temp folder that is removed when it stops.
+type serveOpts struct {
+	temp     bool   // started with --library: no units, aria2 as a child
+	removeAt string // a folder to delete on exit ("" keeps everything)
+}
+
+func serve(o serveOpts) {
 	log.SetFlags(0)
+	if o.temp {
+		startAria2 = startAria2Child
+		if err := ensureAria2Conf(freePort()); err != nil {
+			log.Fatal(err)
+		}
+	}
 	store := NewStore()
 	aria, err := NewAria2()
 	if err != nil {
@@ -473,8 +489,21 @@ func serve() {
 		}
 		hs.Shutdown(ctx)
 	}()
-	log.Printf("media-core-engine listening on %s", addr)
+	cleanup := func() {
+		stopAria2Child()
+		if o.removeAt != "" {
+			time.Sleep(300 * time.Millisecond) // let aria2 let go of its session file
+			os.RemoveAll(o.removeAt)
+			log.Printf("removed %s", o.removeAt)
+		}
+	}
+	defer cleanup()
+	log.Printf("media-core-engine %s listening on %s", version, addr)
 	if err := hs.ListenAndServe(); err != http.ErrServerClosed {
+		cleanup()
+		if errors.Is(err, syscall.EADDRINUSE) {
+			log.Fatalf("%v: another server is using this port (the installed one?). A temporary server can move with --port", err)
+		}
 		log.Fatal(err)
 	}
 	store.Flush()

@@ -29,7 +29,8 @@ var (
 // Heavy tools run at low CPU and IO priority so playback from the same
 // HDD doesn't stutter.
 func lowPrio(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "ionice", append([]string{"-c2", "-n7", "nice", "-n", "10", name}, args...)...)
+	prog, argv := lowPrioArgv(false, "10", name, args...)
+	cmd := exec.CommandContext(ctx, prog, argv...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
@@ -193,6 +194,9 @@ func (e *Engine) post(ctx context.Context, id string) error {
 
 	for i, v := range videos {
 		switch prof := dvProfile(ctx, v); {
+		case prof == 7 && (needTool("", "dovi_tool") != nil || needTool("", "mkvmerge") != nil):
+			c.log("Dolby Vision profile 7: plays as HDR10. The fix to DV needs mkvmerge and dovi_tool (" +
+				installHint("mkvmerge") + "; dovi_tool: " + installHint("dovi_tool") + ")")
 		case prof == 7:
 			v2, err := dvConvert(ctx, c, v)
 			if err != nil {
@@ -308,6 +312,9 @@ func unpack(ctx context.Context, c jobCtx, archive string) (string, error) {
 	uctx, cancel := context.WithTimeout(ctx, unpackTimeout)
 	defer cancel()
 	x := filepath.Join(filepath.Dir(archive), "x")
+	if err := needTool("Unpacking", "7z"); err != nil {
+		return "", err
+	}
 	c.phase(Processing, "Unpacking")
 	c.log("Unpacking " + filepath.Base(archive))
 	// One pass: 7z checks CRCs while extracting, so a separate `7z t` would

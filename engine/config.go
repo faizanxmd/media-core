@@ -41,6 +41,19 @@ var (
 
 // The folders are fixed under the home folder (no XDG_* lookup): the aria2 unit, install.sh and the
 // backup script use the same paths, so the engine must not wander off on its own.
+// setPaths points every state path at conf, data and the library. main calls it before anything is opened
+// (serve --library), so the package-level defaults above are only defaults.
+func setPaths(conf, data, media string) {
+	ConfDir, DataDir, Media = conf, data, media
+	JobsDir = filepath.Join(DataDir, "jobs")
+	Aria2Conf = filepath.Join(ConfDir, "aria2.conf")
+	introsPath = filepath.Join(DataDir, "intros.json")
+	miPath = filepath.Join(DataDir, "mediainfo.json")
+	tmdbDir = filepath.Join(DataDir, "tmdb")
+	settingsPath = filepath.Join(DataDir, "settings.json")
+	watchPath = filepath.Join(DataDir, "watch.json")
+}
+
 func defaultConfDir() string {
 	if v := trimSlash(os.Getenv("MEDIA_CORE_CONFIG_DIR")); v != "" {
 		return v
@@ -172,5 +185,5 @@ func ext(name string) string {
 	return strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
 }
 
-// rel shows a library path the way the UI does: relative to /srv/data/media.
+// rel shows a library path the way the UI does: relative to the library root.
 func rel(p string) string { return strings.TrimPrefix(p, Media+"/") }

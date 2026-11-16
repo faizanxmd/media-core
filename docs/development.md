@@ -16,19 +16,15 @@ go vet ./... && go test ./...
 
 Tests never touch real state: `engine/main_test.go` points every state path at a temporary folder.
 
-To run it against a scratch library, with its own settings and state, you also need aria2. Never do this on the box that runs the live engine: the ports clash.
+To try it against a folder of videos, run a temporary server. It needs no install and no settings, runs its own aria2 if aria2 is installed, and with no `--state` keeps everything in a temp folder that it removes when you press Ctrl-C:
 
 ```sh
-cd ..   # back to the repo root
-export MEDIA_CORE_CONFIG_DIR=~/media-test/conf MEDIA_CORE_DATA_DIR=~/media-test/data MEDIA_CORE_LIBRARY=~/media-test/library
-mkdir -p "$MEDIA_CORE_CONFIG_DIR" "$MEDIA_CORE_DATA_DIR" "$MEDIA_CORE_LIBRARY"
-sed -e "s|@HOME@/.local/share/media-core|$MEDIA_CORE_DATA_DIR|g" -e "s|@SECRET@|dev|" deploy/aria2.conf.in > "$MEDIA_CORE_CONFIG_DIR/aria2.conf"
-touch "$MEDIA_CORE_DATA_DIR/aria2.session"
-aria2c --conf-path="$MEDIA_CORE_CONFIG_DIR/aria2.conf" &
-cd engine && go run . serve   # site on :8780, apps' API on :8790
+cd engine && go run . serve --library ~/Videos --port 28780   # site on :28780, apps' API on :28790
 ```
 
-ffmpeg, ffprobe, 7z, mkvmerge and dovi_tool are only needed for post-processing, thumbnails and media info. Those steps run under `ionice`, so they work on Linux only. On macOS you can still browse and stream.
+Leave out `--port` on a machine with no installed server. A TMDB key the installed server already has is reused.
+
+ffmpeg, ffprobe, 7z, mkvmerge and dovi_tool are only needed for post-processing, thumbnails and media info. They run at low priority (`ionice` where there is one, else `nice`). The engine builds and runs on Linux and macOS.
 
 `scripts/web-drive.py` drives the site in headless Firefox, to check the web player and Manager after a change.
 

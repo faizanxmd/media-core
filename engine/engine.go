@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -122,8 +121,8 @@ func (e *Engine) syncLocked() bool {
 	if err != nil {
 		if time.Since(e.lastStart) > 30*time.Second {
 			e.lastStart = time.Now()
-			log.Printf("aria2 unreachable (%v); starting media-core-aria2", err)
-			exec.Command("systemctl", "--user", "start", "media-core-aria2.service").Run()
+			log.Printf("%s; starting it", describeAria2(err))
+			startAria2()
 		}
 		if wasOK {
 			e.store.Notify()
