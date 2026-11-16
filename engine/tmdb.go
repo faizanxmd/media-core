@@ -89,6 +89,18 @@ func NewTMDB() *TMDB {
 	readJSONFile(filepath.Join(t.dir, "movies.json"), &t.movies)
 	readJSONFile(filepath.Join(t.dir, "shows.json"), &t.shows)
 	readJSONFile(filepath.Join(t.dir, "seasons.json"), &t.seasons)
+	if t.matches == nil {
+		t.matches = map[string]tmdbMatch{}
+	}
+	if t.movies == nil {
+		t.movies = map[int]*TMeta{}
+	}
+	if t.shows == nil {
+		t.shows = map[int]*TMeta{}
+	}
+	if t.seasons == nil {
+		t.seasons = map[string]*seasonMeta{}
+	}
 	return t
 }
 

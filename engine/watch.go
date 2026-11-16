@@ -43,7 +43,15 @@ func NewWatch() *Watch {
 // repair fixes entries saved before the three states were enforced: watched
 // with a position was a rewatch left part-way, so it's part-way.
 func (w *Watch) repair() {
-	for _, s := range w.m {
+	if w.m == nil {
+		w.m = map[string]*WState{}
+	}
+	for id, s := range w.m {
+		if s == nil {
+			delete(w.m, id)
+			w.dirty = true
+			continue
+		}
 		if s.Watched && s.Pos > 0 {
 			s.Watched = false
 			w.dirty = true
@@ -198,15 +206,16 @@ func (w *Watch) continueRow(movies, shows []*Item) []*Item {
 func (w *Watch) carryOn(eps []*Item) (*Item, float64) {
 	var last float64
 	lastIdx := -1
+	var lastState *WState
 	for i, e := range eps {
 		if s := w.Get(e.ID); s != nil && (s.Watched || s.Pos > 0) && s.At >= last {
-			last, lastIdx = s.At, i
+			last, lastIdx, lastState = s.At, i, s
 		}
 	}
 	if lastIdx < 0 {
 		return nil, 0
 	}
-	if s := w.Get(eps[lastIdx].ID); s.Pos > 0 {
+	if lastState.Pos > 0 {
 		return eps[lastIdx], last
 	}
 	for _, e := range eps[lastIdx+1:] {

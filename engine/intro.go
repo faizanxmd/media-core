@@ -55,6 +55,9 @@ var introsPath = filepath.Join(DataDir, "intros.json")
 func NewIntros() *Intros {
 	in := &Intros{m: map[string]*introEntry{}, path: introsPath}
 	readJSONFile(in.path, &in.m)
+	if in.m == nil {
+		in.m = map[string]*introEntry{}
+	}
 	os.MkdirAll(filepath.Join(DataDir, "fp"), 0o755)
 	return in
 }

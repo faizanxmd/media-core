@@ -127,3 +127,26 @@ func TestCarryOn(t *testing.T) {
 		t.Fatalf("finished the last one played, got %s", ep.ID)
 	}
 }
+
+func TestRepairHandlesNull(t *testing.T) {
+	w := &Watch{}
+	w.repair()
+	if w.m == nil {
+		t.Fatal("w.m is nil after repair")
+	}
+
+	w2 := &Watch{m: map[string]*WState{
+		"bad": nil,
+		"ok":  {Pos: 30000, At: 1},
+	}}
+	w2.repair()
+	if _, ok := w2.m["bad"]; ok {
+		t.Fatal("nil entry was not deleted")
+	}
+	if s := w2.m["ok"]; s == nil || s.Pos != 30000 || s.At != 1 {
+		t.Fatalf("ok entry changed: %+v", s)
+	}
+	if !w2.dirty {
+		t.Fatal("dirty is false after deleting nil entry")
+	}
+}
