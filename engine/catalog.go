@@ -221,8 +221,8 @@ func (c *Catalog) scan() {
 				if !VideoExt[ext(ch.Name)] || isSample(filepath.Join(Media, ch.Path)) {
 					continue
 				}
-				s, e := epNumber(strings.TrimSuffix(ch.Name, filepath.Ext(ch.Name)))
-				if s == 0 && hint > 0 {
+				s, e, named := epParts(strings.TrimSuffix(ch.Name, filepath.Ext(ch.Name)))
+				if !named && hint > 0 {
 					s = hint
 				}
 				if e == 0 {

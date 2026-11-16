@@ -230,22 +230,29 @@ var (
 	reEpOnly = regexp.MustCompile(`(?i)\b(?:E|Ep|Episode) ?(\d{1,3})\b`)
 )
 
-// epNumber reads season/episode from a file name; 0 means unknown.
-func epNumber(name string) (season, episode int) {
+// epParts reads season/episode from a file name; named is true when the season
+// came from the name (including S00 specials).
+func epParts(name string) (season, episode int, named bool) {
 	s := reSep.ReplaceAllString(name, " ")
 	if m := reEpSE.FindStringSubmatch(s); m != nil {
 		a, _ := strconv.Atoi(m[1])
 		b, _ := strconv.Atoi(m[2])
-		return a, b
+		return a, b, true
 	}
 	if m := reEpX.FindStringSubmatch(s); m != nil {
 		a, _ := strconv.Atoi(m[1])
 		b, _ := strconv.Atoi(m[2])
-		return a, b
+		return a, b, true
 	}
 	if m := reEpOnly.FindStringSubmatch(s); m != nil {
 		b, _ := strconv.Atoi(m[1])
-		return 0, b
+		return 0, b, false
 	}
-	return 0, 0
+	return 0, 0, false
+}
+
+// epNumber reads season/episode from a file name; 0 means unknown.
+func epNumber(name string) (season, episode int) {
+	s, e, _ := epParts(name)
+	return s, e
 }

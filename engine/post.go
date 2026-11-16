@@ -333,8 +333,8 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 		show := clean(p.Title)
 		def, _ := atoi(p.Season, 1)
 		for _, v := range videos {
-			s, e := epNumber(filepath.Base(v))
-			if s == 0 {
+			s, e, named := epParts(filepath.Base(v))
+			if !named {
 				s = def
 			}
 			sdir := filepath.Join(Media, "TV Shows", show, fmt.Sprintf("Season %02d", s))
@@ -352,11 +352,11 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 		}
 		// subtitles that name an episode: "Show - S01E02.en.srt"
 		for _, sub := range filesWith(src, SubExt) {
-			s, e := epNumber(filepath.Base(sub))
+			s, e, named := epParts(filepath.Base(sub))
 			if e == 0 {
 				continue
 			}
-			if s == 0 {
+			if !named {
 				s = def
 			}
 			suffix := "." + ext(sub)

@@ -55,6 +55,25 @@ func TestEpNumber(t *testing.T) {
 	}
 }
 
+func TestEpPartsNamesSeason(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		s, e  int
+		named bool
+	}{
+		{"S00E01", 0, 1, true},
+		{"S02E05", 2, 5, true},
+		{"3x07", 3, 7, true},
+		{"Show Episode 12", 0, 12, false},
+		{"Show.E04.720p", 0, 4, false},
+		{"Movie.1920x1080.mkv", 0, 0, false},
+	} {
+		if s, e, named := epParts(tc.name); s != tc.s || e != tc.e || named != tc.named {
+			t.Errorf("%q: got (%d,%d,%v) want (%d,%d,%v)", tc.name, s, e, named, tc.s, tc.e, tc.named)
+		}
+	}
+}
+
 func TestNormalizeURL(t *testing.T) {
 	for in, want := range map[string]string{
 		"https://drive.google.com/file/d/AbC_1-2/view?usp=sharing).": "https://drive.usercontent.google.com/download?id=AbC_1-2&export=download&confirm=t",
