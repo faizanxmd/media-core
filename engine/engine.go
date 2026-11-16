@@ -38,6 +38,7 @@ type Engine struct {
 	mu          sync.Mutex
 	posts       map[string]postEntry
 	deletes     map[string]*pendingDelete
+	adding      int // in-flight NewJob RPCs, so syncLocked won't Forget their GIDs before Add
 	ariaOK      bool
 	lastStart   time.Time
 	speed       int64
@@ -147,13 +148,18 @@ func (e *Engine) syncLocked() bool {
 	}
 	active := false
 	jobs := e.store.List()
+	e.mu.Lock()
+	adding := e.adding
+	e.mu.Unlock()
 	known := map[string]bool{}
 	for _, j := range jobs {
 		known[j.GID] = true
 	}
-	for gid, s := range all { // results nobody is waiting for (e.g. after a cancel)
-		if !known[gid] && (s.Status == "complete" || s.Status == "error" || s.Status == "removed") {
-			e.aria.Forget(ctx, gid)
+	if adding == 0 {
+		for gid, s := range all { // results nobody is waiting for (e.g. after a cancel)
+			if !known[gid] && (s.Status == "complete" || s.Status == "error" || s.Status == "removed") {
+				e.aria.Forget(ctx, gid)
+			}
 		}
 	}
 	for _, j := range jobs {
@@ -253,11 +259,10 @@ func (e *Engine) syncLocked() bool {
 	return active
 }
 
-func (e *Engine) submit(ctx context.Context, j Job, resubmit bool) {
+func (e *Engine) submitAria(ctx context.Context, j Job, resubmit bool) (gid, path, n string, err error) {
 	dir, fn, _, err := jobPaths(j.Plan, j.ID)
 	if err != nil {
-		e.fail(j.ID, err.Error())
-		return
+		return "", "", "", err
 	}
 	if fn == "" {
 		fn = clean(j.Filename)
@@ -274,11 +279,11 @@ func (e *Engine) submit(ctx context.Context, j Job, resubmit bool) {
 			}
 		}
 	}
-	n := itoa(max(j.Connections, 1))
+	n = itoa(max(j.Connections, 1))
 	opts := map[string]string{
 		"dir": dir, "out": fn, "split": n, "max-connection-per-server": n,
 	}
-	path := filepath.Join(dir, fn)
+	path = filepath.Join(dir, fn)
 	if resubmit || exists(path+".aria2") {
 		opts["continue"] = "true"
 		opts["auto-file-renaming"] = "false"
@@ -286,9 +291,17 @@ func (e *Engine) submit(ctx context.Context, j Job, resubmit bool) {
 			opts["allow-overwrite"] = "true"
 		}
 	}
-	gid, err := e.aria.Add(ctx, j.URL, opts)
+	gid, err = e.aria.Add(ctx, j.URL, opts)
 	if err != nil {
-		e.fail(j.ID, "aria2 refused the download: "+err.Error())
+		return "", "", "", fmt.Errorf("aria2 refused the download: %w", err)
+	}
+	return gid, path, n, nil
+}
+
+func (e *Engine) submit(ctx context.Context, j Job, resubmit bool) {
+	gid, path, n, err := e.submitAria(ctx, j, resubmit)
+	if err != nil {
+		e.fail(j.ID, err.Error())
 		return
 	}
 	e.store.Update(j.ID, true, func(j *Job) {
@@ -308,6 +321,22 @@ func (e *Engine) fail(id, msg string) {
 
 var errBusy = errors.New("job is running")
 
+func (e *Engine) checkDisk(hasSize bool, extra int64) error {
+	if !hasSize {
+		return nil
+	}
+	need := extra
+	for _, j := range e.store.List() {
+		if j.inAria() && j.TotalBytes > j.DoneBytes {
+			need += j.TotalBytes - j.DoneBytes
+		}
+	}
+	if free, _ := disk(); need > free-5e9 {
+		return fmt.Errorf("not enough free space: needs %s with the queue, %s free", human(need), human(free))
+	}
+	return nil
+}
+
 func (e *Engine) NewJob(p Probe, plan Plan) (Job, error) {
 	if pv := preview(plan); pv.Error != "" {
 		return Job{}, errors.New("bad plan: " + pv.Error)
@@ -315,16 +344,12 @@ func (e *Engine) NewJob(p Probe, plan Plan) (Job, error) {
 	if p.URL == "" {
 		return Job{}, errors.New("missing link")
 	}
+	var sz int64
 	if p.Size != nil {
-		need := *p.Size
-		for _, j := range e.store.List() {
-			if j.inAria() && j.TotalBytes > j.DoneBytes {
-				need += j.TotalBytes - j.DoneBytes
-			}
-		}
-		if free, _ := disk(); need > free-5e9 {
-			return Job{}, fmt.Errorf("not enough free space: needs %s with the queue, %s free", human(need), human(free))
-		}
+		sz = *p.Size
+	}
+	if err := e.checkDisk(p.Size != nil, sz); err != nil {
+		return Job{}, err
 	}
 	plan.Ext = strings.ToLower(plan.Ext)
 	j := &Job{ID: newID(), Created: now(), State: Queued, URL: p.URL, Filename: p.Filename,
@@ -335,10 +360,24 @@ func (e *Engine) NewJob(p Probe, plan Plan) (Job, error) {
 	logLine(j, "Added")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	e.op.Lock()
+
+	e.mu.Lock()
+	e.adding++
+	e.mu.Unlock()
+	gid, path, n, err := e.submitAria(ctx, *j, false)
+	if err != nil {
+		e.mu.Lock()
+		e.adding--
+		e.mu.Unlock()
+		return Job{}, err
+	}
+	j.GID = gid
+	logLine(j, fmt.Sprintf("Queued in aria2 → %s (%s connection%s)", rel(path), n, plural(j.Connections)))
 	e.store.Add(j)
-	e.submit(ctx, *j, false)
-	e.op.Unlock()
+	e.mu.Lock()
+	e.adding--
+	e.mu.Unlock()
+
 	e.Kick()
 	cp, _ := e.store.Get(j.ID)
 	return cp, nil
