@@ -48,6 +48,8 @@ const usage = `usage: media-core-engine [command]
   devices                        list paired devices and any waiting to pair
   devices approve CODE [--admin] let a waiting device in (a TV showing CODE, say)
   devices revoke ID              take a device's key away
+  doctor [--json]                check the server and say how to fix what's wrong (exit 0 ok, 1 warnings, 2 broken)
+  backup                         save progress, settings and devices (MEDIA_CORE_BACKUP_DIR: a second copy)
   setup-code                     a new code for setting the server up in a browser
   version                        print the version`
 
@@ -136,6 +138,10 @@ func main() {
 		fmt.Printf("Setup code: %s (lasts 24 hours)\nOpen http://<this server>:%s/#/setup on a device at home and enter it.\n", code, sitePort())
 	case "devices":
 		devicesCmd(os.Args[2:])
+	case "doctor":
+		doctorCmd(os.Args[2:])
+	case "backup":
+		backupCmd()
 	case "add":
 		if len(os.Args) < 3 {
 			fail("usage: media-core-engine add <url> [movie|tv|music] [title]")
