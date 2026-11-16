@@ -16,7 +16,7 @@ On a Linux computer with systemd, at home:
 curl -fsSL https://github.com/faizanxmd/media-core/releases/latest/download/install.sh | sh
 ```
 
-It asks for nothing as root, and prints the two or three sudo lines it would like you to run. It ends with a link and a setup code: open the link in a browser at home and enter the code. Then install the apps from `http://<server>:8790/` and pair each with the code it shows. [docs/setup.md](docs/setup.md) has every step, and [AGENTS.md](AGENTS.md) is the same for an AI agent doing it for you.
+It asks for nothing as root, and prints the two or three sudo lines it would like you to run. It ends with a link and a setup code: open the link in a browser at home and enter the code. Then install the apps from `http://<server>:8790/` and pair each with the code it shows. [docs/setup.md](docs/setup.md) has every step, and [docs/operating.md](docs/operating.md) is the same for an AI agent doing it for you.
 
 ## What it does
 
@@ -43,7 +43,7 @@ Each [release](https://github.com/faizanxmd/media-core/releases/latest) has the 
 
 ## Docs
 
-[Setup](docs/setup.md) · [How it works](docs/architecture.md) · [API](docs/api.md) · [Away from home](docs/remote.md) · [Development](docs/development.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [For AI agents](AGENTS.md)
+[Setup](docs/setup.md) · [How it works](docs/architecture.md) · [API](docs/api.md) · [Away from home](docs/remote.md) · [Development](docs/development.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Operating, for AI agents](docs/operating.md) · [Coding, for AI agents](AGENTS.md)
 
 ## Credits
 

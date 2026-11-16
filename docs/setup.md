@@ -1,6 +1,6 @@
 # Setting up Media Core
 
-This turns a Linux computer at home into a Media Core server and connects the TV, phone and browser to it. Each step says what to run and how to check it worked. An AI agent doing this for someone should read [AGENTS.md](../AGENTS.md) first.
+This turns a Linux computer at home into a Media Core server and connects the TV, phone and browser to it. Each step says what to run and how to check it worked. An AI agent doing this for someone should read [operating.md](operating.md) first.
 
 ## 1. Install
 

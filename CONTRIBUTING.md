@@ -33,7 +33,7 @@ By contributing you agree that your work is licensed under the [GPL-3.0](LICENSE
 
 ## Using an AI agent
 
-The same rules apply to changes made with an AI agent, and you're responsible for what it writes. An agent must not build or sign the apps, or run anything against a live server. [AGENTS.md](AGENTS.md) is for agents operating a server, not for changing the code.
+The same rules apply to changes made with an AI agent, and you're responsible for what it writes. An agent must not build or sign the apps, or run anything against a live server. [AGENTS.md](AGENTS.md) has the rules in short form for coding agents; [docs/operating.md](docs/operating.md) is for agents running a server.
 
 ## Releases
 

@@ -1,72 +1,30 @@
-# For AI agents
+# For AI coding agents
 
-This page is for an AI agent installing, checking or operating a Media Core server for someone. People should read [docs/setup.md](docs/setup.md). For changing the code, see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/development.md](docs/development.md).
+Rules for changing this code. To install or run a server for someone, read [docs/operating.md](docs/operating.md) instead. People: [CONTRIBUTING.md](CONTRIBUTING.md) says the same at more length.
 
-## Never
+## Layout
 
-- Never delete or overwrite `~/.config/media-core`, `~/.local/share/media-core` or the library folder. They hold the paired devices, everyone's watch progress and the person's media. `uninstall --purge` deletes the first two: run it only when the person asks for exactly that.
-- Never use sudo without showing the person the exact command and getting their OK.
-- Never forward ports 8780 or 8790 to the internet, or set `MEDIA_CORE_HOSTS` to a public name, to "make it work away from home". It isn't supported, and the server refuses it.
-- Never print, log or send anywhere the contents of `tmdb.key`, `aria2.conf`, `cli.token`, `devices.json`, `webdav.pass` or a setup code, except the setup code to the person who'll use it.
-- Never upgrade or restart while something is playing or downloading unless the person says so. `upgrade` checks this; `--force` skips the check.
+- `engine/`: the server, Go, standard library only. The website is `engine/web`, plain JavaScript, built into the binary.
+- `android/core`: what both apps use to talk to the server (API, models, offline copies, thumbnails). Fix those once, there.
+- `android/app` (TV) and `android/phone`: screens and each app's own player. A fix in the player goes in both.
+- [docs/architecture.md](docs/architecture.md) explains how they fit; [docs/api.md](docs/api.md) lists the API.
 
-## Ask the person
-
-- Where the library goes (a folder with room for their films and shows). Default: `~/Media`.
-- Their TMDB key, if they want posters and details (free at themoviedb.org).
-- Before any sudo command: installing tools, `loginctl enable-linger`, firewall rules.
-
-## Install
+## Check before you finish
 
 ```sh
-curl -fsSL https://github.com/faizanxmd/media-core/releases/latest/download/install.sh \
-  | MEDIA_CORE_YES=1 MEDIA_CORE_LIBRARY=/path/to/library sh
+cd engine && gofmt -l . && go vet ./... && go test -race ./...
 ```
 
-The install exits non-zero if it fails. It prints the sudo commands it needs (missing tools, linger) and, at the end, a link and a setup code. Give both to the person: they open the link in a browser at home and enter the code, which makes that browser the admin. Then:
+`scripts/test-install.sh` runs the one-line install end to end in a throwaway home.
 
-```sh
-media-core-engine setup --tmdb-key KEY      # if they gave one
-media-core-engine doctor --json
-```
+## Rules
 
-## Check
-
-`media-core-engine doctor --json` prints:
-
-```json
-{"version": "1.0.0", "status": "ok|warn|fail", "checks": [{"id": "aria2", "status": "ok", "message": "...", "fix": "..."}]}
-```
-
-The exit code is 0 for ok, 1 for warnings only, 2 when something is broken. Each check that isn't ok has a `fix`: a command to run (ask before sudo) or a step for the person. Check ids: `library`, `disk`, `tool:<name>`, `config`, `devices`, `tmdb`, `open-home`, `service`, `linger`, `server`, `aria2`.
-
-## Operate
-
-| Task | Command |
-| --- | --- |
-| Queue a download | `media-core-engine add <url> [movie\|tv\|music] [title]` |
-| List downloads | `media-core-engine ls` |
-| List devices, and any waiting to pair | `media-core-engine devices` |
-| Approve a device showing a code | `media-core-engine devices approve K7M-2XQ` (add `--admin` only if the person says so) |
-| Remove a device | `media-core-engine devices revoke <id>` |
-| New setup code | `media-core-engine setup-code` |
-| Change library, name, TMDB key | `media-core-engine setup --library DIR --name NAME --tmdb-key KEY` |
-| Upgrade | `media-core-engine upgrade` |
-| Fetch the apps again | `media-core-engine apps` |
-| Back up now | `media-core-engine backup` (exit 4: saved here, but the second copy failed) |
-| List backups | `media-core-engine backup list` |
-| Restore a backup | stop the server, then `media-core-engine restore FILE` (ask first: it replaces progress, settings and devices) |
-| Logs | `journalctl --user -u media-core-engine -n 100` |
-| Restart | `systemctl --user restart media-core-engine` |
-
-These commands talk to the running server with the command line's own admin key (`~/.config/media-core/cli.token`), so they work only on the server itself.
-
-## Library layout
-
-The server names and files downloads itself. When placing files by hand, use:
-
-- `Movies/<Title> (<Year>)/<Title> (<Year>).<ext>`
-- `TV Shows/<Show>/Season 01/<Show> - S01E01.<ext>`
-- `Music/<Artist>/<Album>/`
-
-Folders starting with `.` are ignored. New folders show up in the apps within a minute; no scan is needed.
+- **Tests never touch real state.** `engine/main_test.go` points every state path at a temporary folder; new tests use `t.TempDir()` and never call the real `systemctl`, `loginctl` or a running server (the package variables in `engine/cli.go` stand in for them).
+- **Watch progress has one source of truth**, `engine/watch.go`. An item is not started, part-way or finished, never two at once. Rules about progress go there, not in an app.
+- **Every route needs a device key** unless it's listed in `openRoute` (`engine/auth.go`); `TestEveryRouteNeedsAKey` checks it. New `/api/v1` routes go in `docs/api.md` (`TestAPIDocListsEveryRoute`).
+- **State files**: a change of shape needs a migration and a higher `stateSchema` (`engine/migrate.go`).
+- **Public names stay**: `/api/v1`, `doctor` check ids, `--json` field names and exit codes. Add; never rename or remove.
+- **Nothing private in git.** Run `git config core.hooksPath .githooks` once; the hook runs `scripts/check-private.sh`. No real addresses, host names, home paths, emails or keys, in code, tests or docs: use `10.0.0.x`, `/srv/...` and made-up names.
+- **Don't build or sign the apps** (Gradle, `android/build.sh`, `scripts/ci-build.sh`) or push tags unless the person you're working for asks: CI compiles them on every push, and a `v*` tag publishes a release.
+- **Don't run anything against a live server** (installs, restarts, deploys) unless asked.
+- Commits: one change each, with a `CHANGELOG.md` line under Unreleased when a user would notice it.
