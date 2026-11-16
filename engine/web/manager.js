@@ -631,7 +631,7 @@ const Manager = (() => {
   function drawSystem() {
     const body = $("#body"); if (!body) return;
     if (!SYS || !S) { if (body._k !== "sys0") { body._k = "sys0"; body.innerHTML = `<div class="empty">Loading</div>`; } return; }
-    const L = SYS.library, D = SYS.data, used = L.total - L.free;
+    const L = SYS.library, used = L.total - L.free;
     const pct = n => L.total ? Math.max(n > 0 ? .3 : 0, n / L.total * 100).toFixed(2) : 0;
     const other = Math.max(0, used - L.films - L.shows - L.music);
     // the bar shows everything that fills the disk, so what's left of it is what's free
