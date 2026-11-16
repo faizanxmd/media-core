@@ -72,7 +72,7 @@ func (e *Engine) Run() {
 }
 
 func targetPath(j Job) (string, error) {
-	dir, fn, _, err := planPaths(j.Plan)
+	dir, fn, _, err := jobPaths(j.Plan, j.ID)
 	if err != nil {
 		return "", err
 	}
@@ -80,6 +80,16 @@ func targetPath(j Job) (string, error) {
 		fn = clean(j.Filename)
 	}
 	return filepath.Join(dir, fn), nil
+}
+
+// legacyTargetPath returns the pre-per-job .incoming/<file> path for jobs
+// saved before .incoming/<job ID> isolation.
+func legacyTargetPath(j Job) string {
+	dir, fn, _, err := planPaths(j.Plan)
+	if err != nil || fn != "" || filepath.Base(dir) != ".incoming" {
+		return ""
+	}
+	return filepath.Join(dir, clean(j.Filename))
 }
 
 // sync mirrors aria2 state into the jobs; returns whether anything is downloading.
@@ -146,7 +156,13 @@ func (e *Engine) syncLocked() bool {
 				e.fail(j.ID, err.Error())
 				continue
 			}
-			if gid, found := byPath[path]; found { // aria2 restored it under a new gid
+			gid, found := byPath[path]
+			if !found {
+				if lp := legacyTargetPath(j); lp != "" {
+					gid, found = byPath[lp]
+				}
+			}
+			if found { // aria2 restored it under a new gid
 				e.store.Update(j.ID, true, func(j *Job) { j.GID = gid })
 				s = all[gid]
 			} else {
@@ -227,13 +243,25 @@ func (e *Engine) syncLocked() bool {
 }
 
 func (e *Engine) submit(ctx context.Context, j Job) {
-	dir, fn, _, err := planPaths(j.Plan)
+	dir, fn, _, err := jobPaths(j.Plan, j.ID)
 	if err != nil {
 		e.fail(j.ID, err.Error())
 		return
 	}
 	if fn == "" {
 		fn = clean(j.Filename)
+	}
+	if lp := legacyTargetPath(j); lp != "" {
+		dst := filepath.Join(dir, fn)
+		if !exists(dst) && exists(lp) {
+			os.MkdirAll(dir, 0o2775)
+			if os.Rename(lp, dst) == nil {
+				if exists(lp + ".aria2") {
+					os.Rename(lp+".aria2", dst+".aria2")
+				}
+				os.Remove(filepath.Dir(lp))
+			}
+		}
 	}
 	n := itoa(max(j.Connections, 1))
 	gid, err := e.aria.Add(ctx, j.URL, map[string]string{
@@ -368,7 +396,8 @@ func (e *Engine) Action(id, action, newURL string, del bool) (Job, error) {
 			})
 		}
 		if j.Downloaded {
-			if path, err := targetPath(j); j.Placed || (err == nil && exists(path)) {
+			lp := legacyTargetPath(j)
+			if path, err := targetPath(j); j.Placed || (err == nil && exists(path)) || (lp != "" && exists(lp)) {
 				e.store.Update(id, true, func(j *Job) { j.State = Processing; logLine(j, "Retrying processing") })
 				e.startPost(id)
 				break
@@ -425,10 +454,19 @@ func (e *Engine) deletePartial(j Job, gid string) {
 	}
 	os.Remove(path)
 	os.Remove(path + ".aria2")
+	startDir := filepath.Dir(path)
+	if filepath.Base(filepath.Dir(startDir)) == ".incoming" {
+		os.RemoveAll(startDir)
+		startDir = filepath.Dir(startDir)
+	}
+	if lp := legacyTargetPath(j); lp != "" && lp != path {
+		os.Remove(lp)
+		os.Remove(lp + ".aria2")
+	}
 	// tidy empty folders we created (never the library roots)
 	roots := map[string]bool{Media: true, filepath.Join(Media, "Movies"): true,
 		filepath.Join(Media, "TV Shows"): true, filepath.Join(Media, "Music"): true}
-	for d := filepath.Dir(path); !roots[d] && strings.HasPrefix(d, Media+"/"); d = filepath.Dir(d) {
+	for d := startDir; !roots[d] && strings.HasPrefix(d, Media+"/"); d = filepath.Dir(d) {
 		if os.Remove(d) != nil {
 			break
 		}

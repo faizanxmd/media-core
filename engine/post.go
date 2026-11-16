@@ -103,7 +103,7 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	if !ok {
 		return nil
 	}
-	dlDir, fn, final, err := planPaths(j.Plan)
+	dlDir, fn, final, err := jobPaths(j.Plan, j.ID)
 	if err != nil {
 		return err
 	}
@@ -113,6 +113,19 @@ func (e *Engine) post(ctx context.Context, id string) error {
 			videos = []string{filepath.Join(dlDir, fn)}
 		}
 	} else if !j.Placed {
+		legacyDir := filepath.Dir(dlDir)
+		if filepath.Base(legacyDir) == ".incoming" {
+			if name := clean(j.Filename); name != "" {
+				dst := filepath.Join(dlDir, name)
+				srcLegacy := filepath.Join(legacyDir, name)
+				if !exists(dst) && exists(srcLegacy) {
+					os.MkdirAll(dlDir, 0o2775)
+					if err := os.Rename(srcLegacy, dst); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		src := dlDir
 		if j.Plan.Archive {
 			if src, err = unpack(ctx, c, filepath.Join(dlDir, clean(j.Filename))); err != nil {
@@ -124,6 +137,9 @@ func (e *Engine) post(ctx context.Context, id string) error {
 			return err
 		}
 		os.RemoveAll(dlDir)
+		if filepath.Base(legacyDir) == ".incoming" {
+			os.Remove(legacyDir) // remove shared .incoming only if now empty
+		}
 	}
 	c.set(true, func(j *Job) { j.Placed, j.Files = true, videos })
 
@@ -379,7 +395,11 @@ func place(c jobCtx, p Plan, final, src string) ([]string, error) {
 		for dir, files := range albums {
 			tags := audioTags(files[0])
 			artist := clean(firstOf(p.Title, tags["album_artist"], tags["artist"], "Unknown Artist"))
-			album := clean(firstOf(tags["album"], filepath.Base(dir)))
+			fallbackAlbum := filepath.Base(dir)
+			if filepath.Base(filepath.Dir(dir)) == ".incoming" || fallbackAlbum == ".incoming" || fallbackAlbum == "x" {
+				fallbackAlbum = baseName(files[0])
+			}
+			album := clean(firstOf(tags["album"], fallbackAlbum))
 			dst := filepath.Join(Media, "Music", artist, album)
 			ents, _ := os.ReadDir(dir)
 			for _, f := range ents {

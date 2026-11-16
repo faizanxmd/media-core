@@ -203,6 +203,19 @@ func planPaths(p Plan) (dir, file, final string, err error) {
 	return "", "", "", errors.New("unknown kind")
 }
 
+// jobPaths returns planPaths with a per-job subfolder under any shared .incoming
+// directory so concurrent jobs never collide or delete each other's files.
+func jobPaths(p Plan, id string) (dir, file, final string, err error) {
+	dir, file, final, err = planPaths(p)
+	if err != nil {
+		return "", "", "", err
+	}
+	if file == "" && id != "" && filepath.Base(dir) == ".incoming" {
+		dir = filepath.Join(dir, id)
+	}
+	return dir, file, final, nil
+}
+
 type Preview struct {
 	Dest  string `json:"dest,omitempty"`
 	Note  string `json:"note,omitempty"`
