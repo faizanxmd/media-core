@@ -457,6 +457,7 @@ func serve() {
 	go pl.watchRelay()
 	gate := newOwnerGate()
 	ps := servePlayer(pl, gate)
+	dc := serveDiscover(":" + portOf(playerAddr(), "8790"))
 	srv := &Server{e: e, p: pl, assets: loadAssets()}
 	addr := listenAddr()
 	hs := &http.Server{Addr: addr, Handler: gate.wrap(srv.routes()), ReadHeaderTimeout: 10 * time.Second}
@@ -468,6 +469,9 @@ func serve() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		ps.Shutdown(ctx)
+		if dc != nil {
+			dc.Close()
+		}
 		hs.Shutdown(ctx)
 	}()
 	log.Printf("media-core-engine listening on %s", addr)
