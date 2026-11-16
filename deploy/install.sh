@@ -13,7 +13,7 @@ cd "$ROOT/engine"
 test -z "$(gofmt -l .)" || { gofmt -l .; echo "run gofmt -w ." >&2; exit 1; }
 go vet ./...
 go test -count=1 ./...
-ver="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo dev)"
+ver="$(git -C "$ROOT" describe --tags --match "v[0-9]*" --dirty 2>/dev/null || echo "dev-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null)")"
 mkdir -p "$(dirname "$BIN")"
 go build -trimpath -ldflags "-s -w -X main.version=${ver#v}" -o "$BIN.new" .
 [ -f "$BIN" ] && cp -p "$BIN" "$BIN.prev"
