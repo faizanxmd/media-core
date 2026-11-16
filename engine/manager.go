@@ -185,6 +185,33 @@ func lightPlan(kind, title string, into string, lp Probe) Plan {
 	return Plan{Kind: kind, Title: title, Light: true, Into: into, Ext: lp.Plan.Ext, MP4: true}
 }
 
+func lightPlanFor(it *Item, lp Probe) Plan {
+	if it.Type == "episode" {
+		title := it.Show
+		if title == "" {
+			title = it.Title
+		}
+		p := lightPlan("tv", title, rel(it.file), lp)
+		p.Season = Flex(itoa(it.Season))
+		p.Episode = Flex(itoa(it.Episode))
+		return p
+	}
+	title, year := it.Title, it.Year
+	if it.Meta != nil {
+		if it.Meta.Title != "" {
+			title = it.Meta.Title
+		}
+		if year == 0 {
+			year = it.Meta.Year
+		}
+	}
+	p := lightPlan("movie", title, rel(it.file), lp)
+	if year > 0 {
+		p.Year = Flex(itoa(year))
+	}
+	return p
+}
+
 // ---------- mint ----------
 
 func meminfo() (avail, total int64) {
@@ -317,15 +344,16 @@ func (s *Server) mountManager(mux *http.ServeMux) {
 			errJSON(w, 400, "not a film or an episode")
 			return
 		}
-		kind := "movie"
-		if it.Type == "episode" {
-			kind = "tv"
+		busy := s.busyFiles()
+		if busy[it.file] || (filepath.Dir(it.file) != filepath.Join(Media, "Movies") && busy[filepath.Dir(it.file)]) {
+			errJSON(w, 400, "a job is still working on this")
+			return
 		}
 		if err := lightFits(it.Info, b.Probe.Media); err != nil {
 			errJSON(w, 400, err.Error())
 			return
 		}
-		j, err := s.e.NewJob(b.Probe, lightPlan(kind, it.Title, rel(it.file), b.Probe))
+		j, err := s.e.NewJob(b.Probe, lightPlanFor(it, b.Probe))
 		if err != nil {
 			errJSON(w, 400, err.Error())
 			return
@@ -346,7 +374,11 @@ func (s *Server) mountManager(mux *http.ServeMux) {
 			errJSON(w, 400, "a job is still working on this")
 			return
 		}
-		os.Remove(it.Light.file)
+		if err := os.Remove(it.Light.file); err != nil {
+			errJSON(w, 500, err.Error())
+			return
+		}
+		dropStream(it.Light.file)
 		os.Remove(lightDir(it.file))
 		s.p.c.Refresh()
 		s.e.store.Notify()

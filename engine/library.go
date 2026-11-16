@@ -160,16 +160,38 @@ func (e *Engine) DeleteFromLibrary(p string) (freed int64, err error) {
 		if perr == nil && (within(final, abs) || within(abs, final) || within(dir, abs)) {
 			return 0, errors.New("a download is still working on this; cancel it first")
 		}
+		if j.Plan.Into != "" {
+			into := filepath.Join(Media, j.Plan.Into)
+			if within(into, abs) || within(abs, into) {
+				return 0, errors.New("a download is still working on this; cancel it first")
+			}
+		}
+		for _, f := range j.Files {
+			if within(f, abs) || within(abs, f) {
+				return 0, errors.New("a download is still working on this; cancel it first")
+			}
+		}
 	}
+	var drop []string
 	if info, err := os.Lstat(abs); err == nil && info.IsDir() {
 		freed = scanTree(abs).Size
+		filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && VideoExt[ext(path)] {
+				drop = append(drop, path)
+			}
+			return nil
+		})
 	} else if err == nil {
 		freed = info.Size()
+		if VideoExt[ext(abs)] {
+			drop = append(drop, abs)
+		}
 	}
 	var extra []string // a video's Light copy and its subtitle files go with it
 	if info, err := os.Lstat(abs); err == nil && !info.IsDir() && VideoExt[ext(abs)] {
 		if lf := findLight(abs); lf != "" {
 			extra = append(extra, lf)
+			drop = append(drop, lf)
 		}
 		ents, _ := os.ReadDir(filepath.Dir(abs))
 		for _, en := range ents {
@@ -189,6 +211,9 @@ func (e *Engine) DeleteFromLibrary(p string) (freed int64, err error) {
 	}
 	for _, x := range extra {
 		os.Remove(x)
+	}
+	for _, v := range drop {
+		dropStream(v)
 	}
 	os.Remove(lightDir(abs)) // only if empty
 	root := filepath.Join(Media, section)
