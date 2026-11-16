@@ -468,6 +468,9 @@ func serve(o serveOpts) {
 	if err := ensureAria2Conf(6800); err != nil { // only writes it when missing (a first start without the installer)
 		log.Fatal(err)
 	}
+	if err := migrateState(); err != nil {
+		log.Fatal(err)
+	}
 	store := NewStore()
 	aria, err := NewAria2()
 	if err != nil {

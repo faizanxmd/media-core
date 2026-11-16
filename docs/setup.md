@@ -95,16 +95,18 @@ Logs: `journalctl --user -u media-core-engine -f`.
 
 ## Backups
 
-Every night at 4:00 the server saves watch progress, settings, paired devices and title matches to `~/.local/share/media-core/backups/state/`, keeping 30. Secrets aren't included. Set `MEDIA_CORE_BACKUP_DIR` in `engine.env` to a USB stick or network share for a second copy that survives the disk; if it isn't there one night, only the local copy is made and the timer shows as failed. `media-core-engine backup` runs one now.
+Every night at 4:00 the server saves watch progress, settings, paired devices and title matches to `~/.local/share/media-core/backups/state/`, keeping 30. Secrets aren't included. Set `MEDIA_CORE_BACKUP_DIR` in `engine.env` to a USB stick or network share for a second copy that survives the disk; if it isn't there one night, only the local copy is made and the timer shows as failed. `MEDIA_CORE_BACKUP_KEEP` changes how many are kept. `media-core-engine backup` runs one now.
 
-To restore, stop the server, unpack the newest `state-*.tgz` and copy its `data/` into `~/.local/share/media-core/` and its `config/` into `~/.config/media-core/`, then start it:
+To restore one, stop the server, put the backup back and start it again. `restore` checks every file against the backup's list first, and saves the current files as `pre-restore-*.tgz` before replacing them.
 
 ```sh
+media-core-engine backup list
 systemctl --user stop media-core-engine
-mkdir /tmp/restore && tar -xzf ~/.local/share/media-core/backups/state/state-2026-01-02.tgz -C /tmp/restore
-cp -r /tmp/restore/data/. ~/.local/share/media-core/ && cp -r /tmp/restore/config/. ~/.config/media-core/
+media-core-engine restore ~/.local/share/media-core/backups/state/state-2026-01-02.tgz
 systemctl --user start media-core-engine
 ```
+
+When an upgrade changes how the server stores its data, it saves an `upgrade-*.tgz` backup before changing anything, and keeps the last five. A newer version's data is never touched by an older one: the older one refuses to start and says so.
 
 ## Trying it without installing
 

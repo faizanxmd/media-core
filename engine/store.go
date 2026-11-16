@@ -97,9 +97,6 @@ func NewStore() *Store {
 			log.Printf("skipping bad job file %s", e.Name())
 			continue
 		}
-		if j.State == "starting" { // older job files
-			j.State = Queued
-		}
 		s.jobs[j.ID] = &j
 	}
 	go func() {

@@ -4,6 +4,11 @@ What changed for people using Media Core, newest first. The format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- `backup list` and `restore FILE`. Backups now carry a manifest with each file's checksum, and `restore` refuses damaged or unexpected files.
+- The data folder has a schema number (`state.json`). An upgrade that changes stored data backs it up first, and an older version refuses newer data instead of damaging it.
+
 ## [1.0.0]
 
 The first public release.

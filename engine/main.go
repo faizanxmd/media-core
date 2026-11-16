@@ -58,7 +58,9 @@ const usage = `usage: media-core-engine [command]
   devices approve CODE [--admin] let a waiting device in (a TV showing CODE, say)
   devices revoke ID              take a device's key away
   doctor [--json]                check the server and say how to fix what's wrong (exit 0 ok, 1 warnings, 2 broken)
-  backup                         save progress, settings and devices (MEDIA_CORE_BACKUP_DIR: a second copy)
+  backup [--to DIR] [--keep N]   save progress, settings and devices (MEDIA_CORE_BACKUP_DIR: a second copy)
+  backup list                    the saved backups, newest first
+  restore FILE                   put a backup back (with the server stopped)
   setup-code                     a new code for setting the server up in a browser
   version                        print the version`
 
@@ -150,7 +152,9 @@ func main() {
 	case "doctor":
 		doctorCmd(os.Args[2:])
 	case "backup":
-		backupCmd()
+		backupCmd(os.Args[2:])
+	case "restore":
+		restoreCmd(os.Args[2:])
 	case "install":
 		installCmd(installFlags("install", os.Args[2:]))
 	case "setup":
@@ -314,4 +318,29 @@ func devicesCmd(args []string) {
 	default:
 		fail(usage)
 	}
+}
+
+// Exit codes for every command: 0 done, 1 failed, 2 wrong usage, 3 busy (something is playing or downloading),
+// 4 partly done, 5 not supported on this system.
+const (
+	exitFailed      = 1
+	exitUsage       = 2
+	exitBusy        = 3
+	exitPartial     = 4
+	exitUnsupported = 5
+)
+
+// failWith prints msg (as {"ok":false,"error":msg} with asJSON) and exits with code.
+func failWith(code int, asJSON bool, msg string) {
+	if asJSON {
+		printJSON(map[string]any{"ok": false, "error": msg})
+	} else {
+		fmt.Fprintln(os.Stderr, msg)
+	}
+	os.Exit(code)
+}
+
+func printJSON(v any) {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
 }

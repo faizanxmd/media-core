@@ -53,7 +53,9 @@ The exit code is 0 for ok, 1 for warnings only, 2 when something is broken. Each
 | Change library, name, TMDB key | `media-core-engine setup --library DIR --name NAME --tmdb-key KEY` |
 | Upgrade | `media-core-engine upgrade` |
 | Fetch the apps again | `media-core-engine apps` |
-| Back up now | `media-core-engine backup` |
+| Back up now | `media-core-engine backup` (exit 4: saved here, but the second copy failed) |
+| List backups | `media-core-engine backup list` |
+| Restore a backup | stop the server, then `media-core-engine restore FILE` (ask first: it replaces progress, settings and devices) |
 | Logs | `journalctl --user -u media-core-engine -n 100` |
 | Restart | `systemctl --user restart media-core-engine` |
 
