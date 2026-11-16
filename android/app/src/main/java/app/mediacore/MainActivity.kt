@@ -57,7 +57,7 @@ class Nav {
     var update by mutableStateOf<Int?>(null) // newer app build on the server
     var home by mutableStateOf<Home?>(null)
     var homeJson: String? = null // what [home] was parsed from: an identical answer changes nothing on screen
-    var offline by mutableStateOf(false) // mint isn't answering
+    var offline by mutableStateOf(false) // the server isn't answering
     /** Home's focus, kept while a title page is open: "settings", "play", "info", or "row/id". */
     var homeFocus: String? = null
     val homeCols = mutableMapOf<String, Int>() // the card each row last had focused
@@ -83,6 +83,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Api.init(this)
+        Api.connect(intent?.data)
         Px.init(this)
         Move.read(this)
         loadAccent(this)
@@ -92,7 +93,7 @@ class MainActivity : ComponentActivity() {
         val tv = isTv(this)
         setContent {
             CompositionLocalProvider(LocalTv provides tv) {
-                AppTheme { Root(nav, tv, ::installUpdate) } // TV or phone app, per build flavor
+                AppTheme { Root(nav, ::installUpdate) }
             }
         }
         // the TV's Root paints the whole screen itself; the window's own fill under it was one more full-screen pass a frame
@@ -106,6 +107,12 @@ class MainActivity : ComponentActivity() {
             nav.refresh++
             ui.postDelayed(this, 60_000)
         }
+    }
+
+    // the connect link while the app is already open: start over with its addresses
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (Api.connect(intent.data)) nav.refresh++
     }
 
     override fun onPause() {
@@ -137,7 +144,7 @@ class MainActivity : ComponentActivity() {
         nav.update = if (code > BuildConfig.VERSION_CODE) code else null
     }
 
-    /** Downloads the new APK from mint and hands it to the system installer. */
+    /** Downloads the new APK from the server and hands it to the system installer. */
     private fun installUpdate() {
         if (!packageManager.canRequestPackageInstalls()) {
             Toast.makeText(this, "Allow Media Core to install updates, then press Update again", Toast.LENGTH_LONG).show()

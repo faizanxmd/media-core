@@ -21,9 +21,10 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Talks to the engine's player API on mint. At home that's the LAN address
- * (full speed, no VPN); away it's the Tailscale address. The app races all
- * known addresses and prefers the LAN one, so it never needs a settings page.
+ * Talks to the engine's player API. At home that's the LAN address (full speed, no VPN); away it's the Tailscale
+ * address. The app races every address it knows and prefers the LAN one. It learns them three ways: from the server
+ * itself (/hello lists them all), from a broadcast on the home network, and from a connect link
+ * (mediacore://connect?u=…, on the server's download page) or an address typed on the "can't find" screen.
  */
 object Api {
     val http: OkHttpClient = OkHttpClient.Builder()
@@ -37,22 +38,42 @@ object Api {
         .callTimeout(4, TimeUnit.SECONDS) // also bounds DNS (MagicDNS when Tailscale is off)
         .build()
 
-    // Baked-in guesses for the very first start; /hello replaces them.
-    private val defaults = listOf(
-        "http://192.168.68.101:8790",
-        "http://100.75.19.19:8790",
-        "http://mint.tail25d09d.ts.net:8790",
-    )
+    /** The player API's port, and the one the server answers broadcasts on. */
+    const val PORT = 8790
 
     @Volatile var base: String = ""
         private set
+    /** What the server calls itself (its host name unless set otherwise), for "… is offline" and the like. */
+    @Volatile var name: String = "the server"
+        private set
     private lateinit var prefs: SharedPreferences
+    private lateinit var app: Context
     private val discoverLock = Mutex()
 
     fun init(ctx: Context) {
+        app = ctx.applicationContext
         prefs = ctx.getSharedPreferences("media-core", Context.MODE_PRIVATE)
         base = prefs.getString("base", "") ?: ""
+        prefs.getString("name", null)?.let { name = it }
+        // installs from before the server sent its name: ask once, quietly
+        if (base.isNotEmpty() && !prefs.contains("name")) {
+            http.newCall(Request.Builder().url("$base/api/v1/hello").build()).enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: IOException) {}
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    response.use { r -> runCatching { if (r.isSuccessful) learn(JSONObject(r.body!!.string())) } }
+                }
+            })
+        }
     }
+
+    /** The name at the start of a sentence: "The server is offline", "the server is offline". */
+    val nameAtStart: String get() = if (name == "the server") "The server" else name
+
+    /** Whether a server has ever answered this app (the offline screen says "Looking for your server" until one has). */
+    val hasServer: Boolean get() = base.isNotEmpty() || prefs.contains("name")
+
+    /** Can't reach the server: the message every caller shows. */
+    val unreachable: String get() = "Can't reach $name"
 
     val viaTailscale: Boolean get() = !isLan(base)
 
@@ -62,12 +83,61 @@ object Api {
             Regex("""^172\.(1[6-9]|2\d|3[01])\.""").containsMatchIn(host)
     }
 
+    /** A Tailscale address or name (100.64.0.0/10, *.ts.net): reachable away from home. */
+    private fun isTailscale(u: String): Boolean {
+        val host = u.substringAfter("://").substringBefore(":").substringBefore("/")
+        if (host.endsWith(".ts.net")) return true
+        val p = host.split(".").mapNotNull { it.toIntOrNull() }
+        return p.size == 4 && p[0] == 100 && p[1] in 64..127
+    }
+
+    /**
+     * A connect link from the server's download page: mediacore://connect?u=<address>&u=… . Only home-network and
+     * Tailscale addresses are taken, so a link on some other web page can't point the app at a server on the internet.
+     */
+    fun connect(uri: android.net.Uri?): Boolean {
+        if (uri == null || uri.scheme != "mediacore" || uri.host != "connect") return false
+        val us = uri.getQueryParameters("u").map { it.trimEnd('/') }
+            .filter { (it.startsWith("http://") || it.startsWith("https://")) && (isLan(it) || isTailscale(it)) }
+        if (us.isEmpty()) return false
+        forget(us.toSet())
+        return true
+    }
+
+    /** An address typed on the "can't find" screen: "192.168.1.5", "myserver:8790" or a full URL. */
+    fun useAddress(text: String): Boolean {
+        var u = text.trim().trimEnd('/')
+        if (u.isEmpty()) return false
+        if ("://" !in u) u = "http://$u"
+        val host = u.substringAfter("://")
+        if (':' !in host.substringBefore('/')) u = u.substringBefore("://") + "://" + host.substringBefore('/') + ":$PORT"
+        forget(setOf(u))
+        return true
+    }
+
+    /** Starts over with just these addresses; the next request finds which one answers. */
+    private fun forget(addresses: Set<String>) {
+        base = ""
+        prefs.edit().putString("base", "").putStringSet("known", addresses).apply()
+    }
+
     /** Finds a server address that answers; LAN wins if it replies within ~1 s of a Tailscale reply. */
     suspend fun discover(): String? = discoverLock.withLock {
         val known = (listOf(prefs.getString("base", "") ?: "") +
-            (prefs.getStringSet("known", emptySet()) ?: emptySet()) + defaults)
+            (prefs.getStringSet("known", emptySet()) ?: emptySet()))
             .filter { it.isNotBlank() }.distinct()
-        val found = withContext(Dispatchers.IO) {
+        // nothing saved answers (or nothing saved yet): ask the home network
+        val found = race(known) ?: withContext(Dispatchers.IO) { broadcast() }.filter { it !in known }.let { race(it) }
+        if (found != null) {
+            base = found
+            prefs.edit().putString("base", found).apply()
+        }
+        found
+    }
+
+    private suspend fun race(known: List<String>): String? {
+        if (known.isEmpty()) return null
+        return withContext(Dispatchers.IO) {
             coroutineScope {
                 val ch = Channel<String?>(known.size)
                 known.forEach { u -> launch { ch.send(if (hello(u)) u else null) } }
@@ -88,24 +158,84 @@ object Api {
                 pick ?: fallback
             }
         }
-        if (found != null) {
-            base = found
-            prefs.edit().putString("base", found).apply()
+    }
+
+    /**
+     * Asks the home network for a server: "media-core?" to the broadcast address of each Wi-Fi or Ethernet network,
+     * and the server answers with the same addresses /hello lists. Bound to that network, so a VPN on the phone
+     * doesn't carry it off. About 1.5 s; nothing found is an empty list.
+     */
+    private fun broadcast(): List<String> {
+        val cm = app.getSystemService(android.net.ConnectivityManager::class.java) ?: return emptyList()
+        val out = linkedSetOf<String>()
+        @Suppress("DEPRECATION")
+        for (net in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(net) ?: continue
+            if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
+                !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) continue
+            val lp = cm.getLinkProperties(net) ?: continue
+            for (la in lp.linkAddresses) {
+                val a = la.address as? java.net.Inet4Address ?: continue
+                runCatching { ask(net, broadcastOf(a, la.prefixLength), out) }
+            }
         }
-        found
+        return out.toList()
+    }
+
+    private fun ask(net: android.net.Network, to: java.net.InetAddress, out: MutableSet<String>) {
+        java.net.DatagramSocket().use { s ->
+            net.bindSocket(s)
+            s.broadcast = true
+            s.soTimeout = 250
+            val msg = "media-core?".toByteArray()
+            val end = System.currentTimeMillis() + 1500
+            var sent = 0
+            val buf = ByteArray(4096)
+            while (System.currentTimeMillis() < end) {
+                if (sent < 2) { s.send(java.net.DatagramPacket(msg, msg.size, to, PORT)); sent++ } // twice: UDP can drop one
+                val p = java.net.DatagramPacket(buf, buf.size)
+                try { s.receive(p) } catch (e: java.net.SocketTimeoutException) { continue }
+                val j = runCatching { JSONObject(String(p.data, 0, p.length)) }.getOrNull() ?: continue
+                out += "http://${p.address.hostAddress}:$PORT" // where it answered from comes first
+                out += addresses(j)
+                if (out.isNotEmpty() && sent >= 2) break
+            }
+        }
+    }
+
+    private fun broadcastOf(a: java.net.Inet4Address, prefix: Int): java.net.InetAddress {
+        val b = a.address
+        val ip = ((b[0].toInt() and 255) shl 24) or ((b[1].toInt() and 255) shl 16) or
+            ((b[2].toInt() and 255) shl 8) or (b[3].toInt() and 255)
+        val mask = if (prefix <= 0) 0 else -1 shl (32 - prefix.coerceAtMost(32))
+        val bc = ip or mask.inv()
+        return java.net.InetAddress.getByAddress(byteArrayOf((bc ushr 24).toByte(), (bc ushr 16).toByte(), (bc ushr 8).toByte(), bc.toByte()))
+    }
+
+    /** Every address a /hello answer lists: LAN, Tailscale, then the Tailscale name. */
+    private fun addresses(j: JSONObject): Set<String> {
+        val all = linkedSetOf<String>()
+        for (k in listOf("lan", "tailscale")) {
+            val a = j.optJSONArray(k) ?: continue
+            for (i in 0 until a.length()) all += a.getString(i)
+        }
+        j.optString("magicdns").takeIf { it.isNotEmpty() }?.let { all += it }
+        return all
+    }
+
+    /** Keeps what a /hello answer says: every address, and the server's name. */
+    private fun learn(j: JSONObject) {
+        val e = prefs.edit()
+        val all = addresses(j)
+        if (all.isNotEmpty()) e.putStringSet("known", all)
+        j.optString("name").takeIf { it.isNotBlank() }?.let { name = it; e.putString("name", it) }
+        e.apply()
     }
 
     private fun hello(u: String): Boolean = try {
         probe.newCall(Request.Builder().url("$u/api/v1/hello").build()).execute().use { r ->
             if (!r.isSuccessful) return false
-            val j = JSONObject(r.body!!.string())
-            val all = mutableSetOf<String>()
-            for (k in listOf("lan", "tailscale")) {
-                val a = j.optJSONArray(k) ?: continue
-                for (i in 0 until a.length()) all += a.getString(i)
-            }
-            j.optString("magicdns").takeIf { it.isNotEmpty() }?.let { all += it }
-            if (all.isNotEmpty()) prefs.edit().putStringSet("known", all).apply()
+            learn(JSONObject(r.body!!.string()))
             true
         }
     } catch (e: Exception) {
@@ -129,11 +259,11 @@ object Api {
     }
 
     private suspend fun call(build: (String) -> Request): JSONObject {
-        if (base.isEmpty()) discover() ?: throw IOException("Can't reach mint")
+        if (base.isEmpty()) discover() ?: throw IOException(unreachable)
         return try {
             exec(build(base))
         } catch (e: IOException) {
-            discover() ?: throw IOException("Can't reach mint")
+            discover() ?: throw IOException(unreachable)
             exec(build(base))
         }
     }

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Run a headless TV or phone emulator for UI testing (needs scripts/android-setup.sh --emulator).
 # Usage: scripts/emulator.sh tv|phone
-# On mint, run it as its own unit so it outlives the shell, and stop it after (~1.5 GB RAM):
-#   systemd-run --user --unit=emu-tv --collect bash ~/apps/media-core/scripts/emulator.sh tv
+# On a server, run it as its own unit so it outlives the shell, and stop it after (~1.5 GB RAM):
+#   systemd-run --user --unit=emu-tv --collect bash "$PWD/scripts/emulator.sh" tv
 #   adb -e ...;  systemctl --user stop emu-tv
 set -euo pipefail
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android/sdk}"

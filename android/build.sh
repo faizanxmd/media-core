@@ -20,28 +20,28 @@ export ANDROID_HOME
 if [ -z "${JAVA_HOME:-}" ] && [ -d /usr/lib/jvm/java-17-openjdk-amd64 ]; then
   export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 fi
-# a local Gradle 8.14.3 if there is one (mint), else the wrapper downloads it
+# a local Gradle 8.14.3 if there is one, else the wrapper downloads it
 if [ -z "${GRADLE:-}" ]; then
   GRADLE=./gradlew
   [ -x "$HOME/android/gradle-8.14.3/bin/gradle" ] && GRADLE="$HOME/android/gradle-8.14.3/bin/gradle"
 fi
 
 # One signing key forever, so updates install over the old app. Copy
-# ~/.config/media-core/app.jks + app.jks.pass from mint; never make a new one
+# ~/.config/media-core/app.jks + app.jks.pass from the machine that holds the key; never make a new one
 # by accident, or the TV and phone refuse the update.
 CONF="$HOME/.config/media-core"
 export MEDIA_CORE_KEYSTORE="$CONF/app.jks"
 if [ ! -f "$MEDIA_CORE_KEYSTORE" ] || [ ! -f "$CONF/app.jks.pass" ]; then
   if [ "${MEDIA_CORE_NEW_KEY:-}" != 1 ]; then
     echo "no signing key in $CONF (app.jks + app.jks.pass)." >&2
-    echo "Copy both from mint: scp 'mint:.config/media-core/app.jks*' $CONF/" >&2
+    echo "Copy both from the machine that holds the key into $CONF/" >&2
     echo "Only for a brand-new install (apps signed with the old key must be uninstalled): MEDIA_CORE_NEW_KEY=1 $0 $*" >&2
     exit 1
   fi
   mkdir -p "$CONF"; umask 077
   head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$CONF/app.jks.pass"
   keytool -genkeypair -keystore "$MEDIA_CORE_KEYSTORE" -alias media-core -keyalg RSA -keysize 3072 -validity 20000 \
-    -storepass "$(cat "$CONF/app.jks.pass")" -keypass "$(cat "$CONF/app.jks.pass")" -dname "CN=media-core, O=mint" >/dev/null
+    -storepass "$(cat "$CONF/app.jks.pass")" -keypass "$(cat "$CONF/app.jks.pass")" -dname "CN=media-core" >/dev/null
   umask 022
 fi
 export MEDIA_CORE_KS_PASS="$(cat "$CONF/app.jks.pass")"

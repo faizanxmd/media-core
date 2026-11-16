@@ -11,6 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -96,19 +104,53 @@ fun Loading() {
     }
 }
 
+/**
+ * Nothing to show and the server doesn't answer. Until a server has ever answered, it explains how the app finds one;
+ * either way there's a field for its address, for networks the app can't search (guest Wi-Fi, away from home).
+ */
 @Composable
 fun ErrorView(msg: String, onRetry: () -> Unit) {
+    var address by remember { mutableStateOf("") }
+    fun connect() { if (Api.useAddress(address)) onRetry() }
     Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Can't reach mint", style = Type.Title)
-            Spacer(Modifier.height(12.dp))
-            Text("At home: check that mint is on.\nAway from home: open the Tailscale app and connect.", style = Type.Body, color = Muted)
-            if (msg != "Can't reach mint") Text(msg, style = Type.Caption, color = Muted, modifier = Modifier.padding(top = 8.dp))
+            if (Api.hasServer) {
+                Text(Api.unreachable, style = Type.Title)
+                Spacer(Modifier.height(12.dp))
+                Text("At home: check that ${Api.name} is on.\nAway from home: open the Tailscale app and connect.", style = Type.Body, color = Muted)
+                if (msg != Api.unreachable) Text(msg, style = Type.Caption, color = Muted, modifier = Modifier.padding(top = 8.dp))
+            } else {
+                Text("Looking for your server", style = Type.Title)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Join the same Wi-Fi as the server, or open its download page and tap Open in Media Core.",
+                    style = Type.Body, color = Muted, textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(24.dp))
             Box(
                 Modifier.size(40.dp).clip(CardShape).background(Overlay).clickable(onClick = onRetry),
                 contentAlignment = Alignment.Center,
             ) { Icon(AppIcons.Refresh, "Try again", tint = Ink, modifier = Modifier.size(24.dp)) }
+            Spacer(Modifier.height(32.dp))
+            Text("Or type its address", style = Type.Caption, color = Muted)
+            Spacer(Modifier.height(8.dp))
+            BasicTextField(
+                address,
+                onValueChange = { address = it },
+                singleLine = true,
+                textStyle = Type.Body.copy(color = Ink),
+                cursorBrush = SolidColor(Ink),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
+                keyboardActions = KeyboardActions(onGo = { connect() }),
+                modifier = Modifier.width(260.dp).clip(CardShape).background(Overlay).padding(horizontal = 12.dp, vertical = 10.dp),
+                decorationBox = { field ->
+                    Box {
+                        if (address.isEmpty()) Text("192.168.1.20", style = Type.Body, color = Muted)
+                        field()
+                    }
+                },
+            )
         }
     }
 }

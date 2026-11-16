@@ -15,7 +15,7 @@ import java.io.File
  * Downloads for watching without a connection (plane, travel). The original
  * file is copied as-is by Android's DownloadManager (resumes, survives app
  * exit), into the app's own storage; positions watched offline are sent to
- * mint the next time it's reachable.
+ * the server the next time it's reachable.
  */
 object Offline {
     private lateinit var dir: File
@@ -97,8 +97,6 @@ object Offline {
         .sortedByDescending { it.optLong("_at") }
         .map { j -> applyPos(Item.parse(j)) }
 
-    fun usedBytes(): Long = dir.listFiles()?.sumOf { it.length() } ?: 0L
-
     // ---------- positions watched while offline ----------
 
     private val prefs get() = ctx.getSharedPreferences("offline-progress", Context.MODE_PRIVATE)
@@ -114,7 +112,7 @@ object Offline {
         return it.copy(watch = w)
     }
 
-    /** Sends offline positions to mint once it's reachable again, with when they happened; mint drops any it has newer news of. */
+    /** Sends offline positions to the server once it's reachable again, with when they happened; the server drops any it has newer news of. */
     suspend fun sync() {
         val all = prefs.all
         for ((id, v) in all) {
@@ -128,6 +126,4 @@ object Offline {
             if (ok) prefs.edit().putString(id, p.put("sent", true).toString()).apply()
         }
     }
-
-    fun queueJson(items: List<Item>) = JSONArray(items.map { it.raw }).toString()
 }

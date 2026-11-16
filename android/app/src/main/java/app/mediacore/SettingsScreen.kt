@@ -65,7 +65,7 @@ fun loadAccent(ctx: Context) {
 
 /**
  * Settings (board 12): one list. Up and Down move, Left and Right change the value in place. On the right, read-only,
- * how well mint reaches this TV, measured when the screen opens.
+ * how well the server reaches this TV, measured when the screen opens.
  *
  * The values are kept in "settings". Only real settings belong here: one the app doesn't act on is not shown.
  */
@@ -165,7 +165,7 @@ private fun SettingRow(s: Setting, prefs: android.content.SharedPreferences, fr:
     }
 }
 
-/** How fast mint reaches this TV and how long a request takes, and whether that's enough for the heaviest file. */
+/** How fast the server reaches this TV and how long a request takes, and whether that's enough for the heaviest file. */
 @Composable
 private fun Connection(nav: Nav, modifier: Modifier) {
     var speed by remember { mutableStateOf<Double?>(null) }
@@ -179,7 +179,7 @@ private fun Connection(nav: Nav, modifier: Modifier) {
     }
     val heaviest = nav.home?.let { h -> (h.cont + h.recent + h.movies).mapNotNull { it.info?.mbps }.maxOrNull() }
     Column(modifier) {
-        Text("Connection to mint", style = ts(29, 36, 700, Pal.AccentText, cond = true, track = 0.01f), modifier = Modifier.padding(bottom = 8.px))
+        Text("Connection to ${Api.name}", style = ts(29, 36, 700, Pal.AccentText, cond = true, track = 0.01f), modifier = Modifier.padding(bottom = 8.px))
         Row(Modifier.padding(top = 10.px), horizontalArrangement = Arrangement.spacedBy(80.px)) {
             Reading(speed?.let { "%.0f".format(it) } ?: "–", "Mb/s", "Speed")
             Reading(delay?.toString() ?: "–", "ms", "Delay")
@@ -213,7 +213,7 @@ private fun ping(): Long {
     return SystemClock.elapsedRealtime() - t
 }
 
-/** Megabits per second over a 16 MB download from mint's speed test. */
+/** Megabits per second over a 16 MB download from the server's speed test. */
 private fun measure(alive: () -> Boolean): Double {
     val bytes = 16L shl 20
     val t = SystemClock.elapsedRealtime()

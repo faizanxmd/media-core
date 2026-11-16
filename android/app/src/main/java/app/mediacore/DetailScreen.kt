@@ -78,7 +78,7 @@ fun TitlePage(nav: Nav, id: String) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val art = LocalArt.current
-    // shown at once: what was fetched before, else (a film) what Home already knows of it; mint's answer follows
+    // shown at once: what was fetched before, else (a film) what Home already knows of it; the server's answer follows
     var data by remember(id) {
         mutableStateOf(nav.details[id] ?: nav.home?.let { h -> (h.cont + h.recent + h.movies).firstOrNull { it.id == id && it.type == "movie" } }?.let { it to null })
     }
@@ -145,7 +145,7 @@ fun TitlePage(nav: Nav, id: String) {
         }
     }
     fun go(p: Place, k: String) { place = p; scope.launchFocus(fr(k)) }
-    // "mint is offline" took focus while it was up: when it goes, focus comes back to where it was on this page
+    // "the server is offline" took focus while it was up: when it goes, focus comes back to where it was on this page
     LaunchedEffect(nav.offline) {
         if (nav.offline) return@LaunchedEffect
         withFrameNanos { }
@@ -402,7 +402,7 @@ fun dateWords(d: String?): String? = runCatching {
 
 // ---------- a title still downloading (board 08) ----------
 
-/** All mint knows of a title that's still downloading: its name and how far along it is. */
+/** All the server knows of a title that's still downloading: its name and how far along it is. */
 @Composable
 fun PendingPage(nav: Nav, title: String) {
     val art = LocalArt.current
@@ -572,10 +572,6 @@ fun soundTrack(s: String): SoundTrack {
 
 /** Every track, the file's own first (its default), as the sheet lists them. */
 private fun soundTracks(tracks: List<String>) = tracks.map(::soundTrack)
-
-/** The one track worth naming on its own (SPEC.md): lossless above lossy, then more channels. */
-fun bestTrack(tracks: List<String>): SoundTrack? =
-    tracks.map(::soundTrack).maxWithOrNull(compareBy<SoundTrack> { it.lossless }.thenBy { it.channels })
 
 /** "English" ×2: subtitles by language, in the file's order; a forced track counts with its language. */
 private fun subtitleCounts(labels: List<String>): List<Pair<String, Int>> {

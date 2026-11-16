@@ -20,7 +20,7 @@ fi
 yes | "$SM" --licenses >/dev/null || true
 "$SM" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 if [ "${1:-}" = "--emulator" ]; then
-  # Android 11 TV: the Android 13 TV image crashes in host GPU emulation on mint
+  # Android 11 TV: the Android 13 TV image crashes in host GPU emulation on some hosts
   "$SM" "emulator" "system-images;android-30;android-tv;x86" "system-images;android-30;google_apis;x86"
 fi
 echo "SDK ready in $ANDROID_HOME"

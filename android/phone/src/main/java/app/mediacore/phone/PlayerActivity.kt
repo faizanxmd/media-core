@@ -61,7 +61,7 @@ import java.util.Locale
 /**
  * Direct play only: the original file is streamed over HTTP and decoded on
  * the phone (MKV, HEVC, Dolby Vision, PGS/SRT/ASS subtitles; DTS/TrueHD via
- * FFmpeg only when it can't). mint never transcodes.
+ * FFmpeg only when it can't). The server never transcodes.
  * The controls are our own Compose overlay (PhonePlayer.kt) on a bare PlayerView.
  */
 @OptIn(UnstableApi::class)
@@ -663,7 +663,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             val network = error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
             val hint = when {
                 decoder -> "This phone can't decode this video."
-                network -> "Lost the connection to mint. Away from home? Check that Tailscale is on."
+                network -> "Lost the connection to ${Api.name}. Away from home? Check that Tailscale is on."
                 else -> "Something went wrong while playing."
             }
             st.mode = Mode.Hidden
@@ -680,7 +680,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     private fun send(id: String, pos: Long, dur: Long, ended: Boolean) {
         Api.progress(id, pos, dur, ended)
-        if (id in localIds) Offline.savePos(id, pos, dur, ended) // synced to mint when back online
+        if (id in localIds) Offline.savePos(id, pos, dur, ended) // synced to the server when back online
     }
 
     // ---------- headset buttons ----------

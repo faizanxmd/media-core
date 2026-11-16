@@ -64,7 +64,7 @@ import kotlin.math.abs
 /**
  * Direct play only: the original file is streamed over HTTP and decoded on
  * the device (MKV, HEVC, Dolby Vision, PGS/SRT/ASS subtitles; DTS/TrueHD via
- * FFmpeg only when the TV can't). mint never transcodes.
+ * FFmpeg only when the TV can't). The server never transcodes.
  * The controls are our own Compose overlay (PlayerUi.kt) on a bare PlayerView.
  */
 @OptIn(UnstableApi::class)
@@ -556,7 +556,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             .setEnableDecoderFallback(true)
         val load = DefaultLoadControl.Builder()
             // start (and resume after a seek) at 0.5 s buffered; keep up to ~50 s ahead and the last
-            // 20 s behind, so skips both ways stay in memory instead of reloading from mint.
+            // 20 s behind, so skips both ways stay in memory instead of reloading from the server.
             // Capped at 128 MB (largeHeap, about what Netflix uses): all 70 s of a 15 Mb/s WEB-DL
             .setBufferDurationsMs(15_000, 50_000, 500, 2_000)
             .setBackBuffer(20_000, true)
@@ -856,7 +856,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             val network = error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
             val hint = when {
                 decoder -> "This TV can't decode this video."
-                network -> "Lost the connection to mint. Away from home? Check that Tailscale is on."
+                network -> "Lost the connection to ${Api.name}. Away from home? Check that Tailscale is on."
                 else -> "Something went wrong while playing."
             }
             abandonHold()
@@ -876,7 +876,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     private fun send(id: String, pos: Long, dur: Long, ended: Boolean) {
         Api.progress(id, pos, dur, ended)
-        if (id in localIds) Offline.savePos(id, pos, dur, ended) // synced to mint when back online
+        if (id in localIds) Offline.savePos(id, pos, dur, ended) // synced to the server when back online
     }
 
     // ---------- remote control ----------

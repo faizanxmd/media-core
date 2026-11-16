@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.mediacore.core.Item
+import app.mediacore.core.Api
 import app.mediacore.core.Offline
 import app.mediacore.core.hm
 
@@ -41,7 +42,7 @@ fun HomeScreen(nav: Nav) {
             nav.loadHome(cache)
             error = null
         } catch (e: Exception) {
-            if (nav.home == null) error = e.message ?: "Can't reach mint"
+            if (nav.home == null) error = e.message ?: Api.unreachable
         }
     }
     val offline = remember(nav.refresh) { Offline.items().filter { Offline.state(it.id)?.done == true } }

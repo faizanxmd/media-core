@@ -24,6 +24,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- mediacore://connect?u=…: the "Open in Media Core" button on the server's download page -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mediacore" android:host="connect" />
+            </intent-filter>
         </activity>
 
         <activity

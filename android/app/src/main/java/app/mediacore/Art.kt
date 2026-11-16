@@ -38,7 +38,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Every screen's background: its picture and the layered gradients over it, drawn once off the UI
- * thread into one picture the size of the screen (SPEC.md, Performance). Moving around then never redraws any of it,
+ * thread into one picture the size of the screen. Moving around then never redraws any of it,
  * and changing the picture is one fade between two finished pictures.
  */
 enum class ArtStyle {
@@ -248,12 +248,6 @@ class ArtState(private val ctx: Context, private val scope: CoroutineScope) {
             fade.animateTo(1f, Move.fade(ms))
             back = null
         }
-    }
-
-    /** Draws a picture ahead, so the screen that wants it next finds it ready. */
-    fun warm(spec: ArtSpec) {
-        if (Art.cached(spec) != null) return
-        scope.launch { runCatching { Art.bake(ctx, spec, w, h) } }
     }
 }
 

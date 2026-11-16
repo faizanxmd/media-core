@@ -8,7 +8,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import app.mediacore.core.Api
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,7 +50,7 @@ import kotlinx.coroutines.delay
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun Root(nav: Nav, tv: Boolean, onUpdate: () -> Unit) {
+fun Root(nav: Nav, onUpdate: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val art = remember { ArtState(ctx.applicationContext, scope) }
@@ -96,15 +109,19 @@ private fun Black(nav: Nav) {
     if (nav.black.value > 0f) Box(Modifier.fillMaxSize().fadeBy { nav.black.value }.background(Color.Black))
 }
 
-/** "mint is offline", over everything, until mint answers again; then it fades back to the app. */
+/**
+ * "mint is offline" (the server's own name), over everything, until the server answers again; then it fades back to
+ * the app. Until a server has ever answered, it says how the app looks for one. Either way it has a field for the
+ * server's address, for networks the app can't search; it holds focus, so the remote can't wander the app under it.
+ */
 @Composable
 private fun Offline(nav: Nav) {
     val a by animateFloatAsState(if (nav.offline) 1f else 0f, Move.fade(Move.Screen), label = "offline")
     if (a == 0f) return
     val fr = remember { FocusRequester() }
+    var address by remember { mutableStateOf("") }
     // Back does nothing while it's up: it would otherwise leave screens, or ask to quit, hidden under it
     BackHandler(enabled = nav.offline) { }
-    // it holds focus while it's up, so the remote can't move around the app hidden under it
     LaunchedEffect(nav.offline) { if (nav.offline) { delay(16); runCatching { fr.requestFocus() } } }
     LaunchedEffect(nav.offline) {
         while (nav.offline) {
@@ -112,11 +129,42 @@ private fun Offline(nav: Nav) {
             runCatching { nav.refresh++ }
         }
     }
-    Box(Modifier.fillMaxSize().fadeBy { a }.background(Pal.Base)
-        .focusProperties { up = FocusRequester.Cancel; down = FocusRequester.Cancel; left = FocusRequester.Cancel; right = FocusRequester.Cancel }
-        .focusRequester(fr).focusable()) {
+    Box(Modifier.fillMaxSize().fadeBy { a }.background(Pal.Base)) {
         GrainPlain()
-        Text("mint is offline", style = ts(60, 68, 700, track = -0.015f), modifier = Modifier.offset(EDGE.px, 460.px))
+        Column(Modifier.offset(EDGE.px, 400.px)) {
+            Text(
+                if (Api.hasServer) "${Api.nameAtStart} is offline" else "Looking for your server",
+                style = ts(60, 68, 700, track = -0.015f),
+            )
+            Text(
+                if (Api.hasServer) "It comes back here by itself once the server answers."
+                else "Media Core looks for it on this network. Or type its address.",
+                style = ts(29, 40, 400, Pal.InkSoft), modifier = Modifier.padding(top = 16.px),
+            )
+            var focused by remember { mutableStateOf(false) }
+            BasicTextField(
+                address,
+                onValueChange = { address = it },
+                singleLine = true,
+                textStyle = ts(29, 40, 400),
+                cursorBrush = SolidColor(Pal.Ink),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
+                keyboardActions = KeyboardActions(onGo = { if (Api.useAddress(address)) nav.refresh++ }),
+                modifier = Modifier.padding(top = 40.px).width(720.px)
+                    .focusRequester(fr)
+                    .focusProperties { up = FocusRequester.Cancel; down = FocusRequester.Cancel; left = FocusRequester.Cancel; right = FocusRequester.Cancel }
+                    .onFocusChanged { focused = it.isFocused }
+                    .background(if (focused) Pal.Glass else Pal.Raised, Corner)
+                    .border(if (focused) 3.px else 0.px, if (focused) Pal.Ink else Color.Transparent, Corner)
+                    .padding(horizontal = 28.px, vertical = 20.px),
+                decorationBox = { field ->
+                    Box {
+                        if (address.isEmpty()) Text("Server address, like 192.168.1.20", style = ts(29, 40, 400, Pal.Faint))
+                        field()
+                    }
+                },
+            )
+        }
     }
 }
 

@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Api.init(this)
+        Api.connect(intent?.data)
         Speed.start(this) // measures this connection in the background, for Original or Light
         Offline.init(this)
         // always light icons: the app is dark whatever the phone's own theme is
@@ -100,6 +101,12 @@ class MainActivity : ComponentActivity() {
             nav.refresh++
             ui.postDelayed(this, 60_000)
         }
+    }
+
+    // the connect link while the app is already open: start over with its addresses
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (Api.connect(intent.data)) nav.refresh++
     }
 
     override fun onPause() {
@@ -123,7 +130,7 @@ class MainActivity : ComponentActivity() {
         nav.update = code > BuildConfig.VERSION_CODE
     }
 
-    /** Downloads the new APK from mint and hands it to the system installer. */
+    /** Downloads the new APK from the server and hands it to the system installer. */
     private fun installUpdate() {
         if (!packageManager.canRequestPackageInstalls()) {
             Toast.makeText(this, "Allow Media Core to install updates, then tap Update again", Toast.LENGTH_LONG).show()

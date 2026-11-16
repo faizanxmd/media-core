@@ -45,7 +45,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
-            // test builds only (android-testbuild.sh): lets adb run-as push test media into the app
+            // test builds only: lets adb run-as push test media into the app
             isDebuggable = findProperty("debuggable") == "true"
         }
     }

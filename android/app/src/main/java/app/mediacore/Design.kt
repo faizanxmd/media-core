@@ -76,7 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-// The redesign's look (~/redesign-resources/tv-spec, home-brief.md). Every number here is read from the 1920 x 1080
+// The redesign's look (docs/design-system.md). Every number here is read from the 1920 x 1080
 // boards, so screens are written in board pixels: 120.px is 120 board pixels wherever the TV's density puts them.
 // The player keeps its own look in Ui.kt and doesn't use any of this.
 
@@ -119,9 +119,6 @@ object Pal {
     /** The accent, chosen in Settings: Play while focused, progress bars, Settings' headings. */
     var accent by mutableStateOf(AccentColor.Blue)
     val Accent: Color get() = accent.main // big areas: progress, Settings headings
-    val Cobalt = Color(0xFF4F84FE) // small marks
-    val Problem = Color(0xFFF08A84)
-    val ProblemBg = Color(0xFF2A1416)
     val Glass = Color(0xD124272E) // rgba(36,39,46,.82): every resting control over art
     val AccentText: Color get() = accent.text // the accent as words on the dark ground: light enough to read
     val Deep: Color get() = accent.deep // Play and Resume while focused: deep enough not to glow
@@ -177,7 +174,7 @@ fun androidx.compose.foundation.layout.BoxScope.CardProgress(p: () -> Float) {
 /** Under words that sit on art (a title's facts and story): soft and dark, so any picture behind stays readable. */
 val WordShadow get() = androidx.compose.ui.graphics.Shadow(Pal.BaseDeep.copy(alpha = 0.75f), Offset(0f, 2 * Px.screen), 14 * Px.screen)
 
-/** One curve and three speeds for everything that moves (SPEC.md, Motion). */
+/** One curve and three speeds for everything that moves. */
 object Move {
     val Ease = CubicBezierEasing(0.2f, 0f, 0f, 1f) // fast out, gentle stop
     const val Focus = 150
@@ -442,7 +439,7 @@ fun IconButton(
     }
 }
 
-/** A focus-free block shaped like Resume: what mint is doing with a title that isn't ready yet. */
+/** A focus-free block shaped like Resume: what the server is doing with a title that isn't ready yet. */
 @Composable
 fun DownloadBlock(percent: Int, eta: String?, modifier: Modifier = Modifier) {
     val shown by animateFloatAsState(percent / 100f, Move.slide(1000), label = "download")
@@ -488,8 +485,4 @@ fun Modifier.wrapUnbounded(): Modifier = layout { m, c ->
     layout(c.minWidth.coerceAtLeast(0), c.minHeight.coerceAtLeast(0)) { p.place(0, 0) }
 }
 
-fun Modifier.graphicsAlpha(a: Float): Modifier = graphicsLayer { alpha = a }
-
-/** Cards sit this far apart everywhere. */
-val CardGap get() = 20.px
 

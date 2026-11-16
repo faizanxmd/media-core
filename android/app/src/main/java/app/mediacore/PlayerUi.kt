@@ -101,7 +101,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * The player, after Netflix's TV player (docs/player-netflix.md).
+ * The player, after Netflix's TV player.
  * Hidden: just the picture. Seek: a tap of Left/Right; the bar and the picture you'll land on, the film still playing.
  * Scrub: a hold of Left/Right; the film waits while the playhead runs. Full: paused, or asked for with Up/Down.
  */

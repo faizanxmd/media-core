@@ -20,7 +20,7 @@ import java.io.File
 import java.io.RandomAccessFile
 
 /**
- * The scrub pictures of what's playing (mint's thumbs.go makes them). The whole file is
+ * The scrub pictures of what's playing (the server's thumbs.go makes them). The whole file is
  * downloaded once and pictures are read out of it locally, so scrubbing never waits on the network.
  */
 class ThumbStore(ctx: Context, private val scope: CoroutineScope) {

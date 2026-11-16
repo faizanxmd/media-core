@@ -91,7 +91,7 @@ fun rememberMinimalSpec(margin: Dp = 56.dp): BringIntoViewSpec {
     return remember(density, margin) { MinimalSpec(density.run { margin.toPx() }) }
 }
 
-/** Last home seen: shown instantly on a cold start, replaced as soon as mint answers. */
+/** Last home seen: shown instantly on a cold start, replaced as soon as the server answers. */
 fun Nav.restoreHome(cache: java.io.File) {
     if (home != null) return
     runCatching {
@@ -103,7 +103,7 @@ fun Nav.restoreHome(cache: java.io.File) {
 
 /**
  * Keeps [Nav.home] current for every screen, not just Home: the last answer from disk first (off the UI thread),
- * then mint's, again on each [Nav.refresh], and every 5 s while something downloads (a download's page and the
+ * then the server's, again on each [Nav.refresh], and every 5 s while something downloads (a download's page and the
  * offline screen depend on it too).
  */
 @Composable
@@ -128,7 +128,7 @@ fun HomeData(nav: Nav) {
     }
 }
 
-/** Asks mint for Home, off the UI thread. An unchanged answer redraws nothing (every return from the player asks). */
+/** Asks the server for Home, off the UI thread. An unchanged answer redraws nothing (every return from the player asks). */
 suspend fun Nav.loadHome(cache: java.io.File) {
     Api.settled()
     Offline.sync()
@@ -153,7 +153,7 @@ suspend fun Nav.fetchDetail(id: String): Pair<Item, Item?> {
     return d
 }
 
-/** A failed request: mint not answering (show the offline screen) or something else (keep what's on screen). */
+/** A failed request: the server not answering (show the offline screen) or something else (keep what's on screen). */
 fun Nav.failed(e: Exception) {
     if (e is IOException && e !is Api.ServerError) offline = true
 }
@@ -341,7 +341,7 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
                 }
             }
             if (rows.isEmpty()) Text(
-                "Nothing in the library yet. Add links at mint:8780.", style = ts(29, 40, 400, Pal.InkSoft),
+                "Nothing in the library yet. Add links on ${Api.name}'s website, at port 8780.", style = ts(29, 40, 400, Pal.InkSoft),
                 modifier = Modifier.offset(LEFT.px, ROW0.px),
             )
         }
@@ -417,7 +417,7 @@ private fun nearestCard(from: HomeRow, i: Int, to: HomeRow, nav: Nav): String {
     return to.cards.indices.minBy { j -> kotlin.math.abs(j * stepOf(to) + w / 2 - toShift - x) }.let { to.cards[it].key }
 }
 
-/** Settings top-right in the shared control surface, and Update beside it when mint has a newer build. */
+/** Settings top-right in the shared control surface, and Update beside it when the server has a newer build. */
 @Composable
 private fun TopRight(nav: Nav, onUpdate: () -> Unit, settingsFr: FocusRequester, updateFr: FocusRequester, down: FocusRequester, onFocus: (String) -> Unit) {
     Box(Modifier.fillMaxWidth()) {
@@ -655,7 +655,7 @@ fun startPlay(ctx: Context, scope: CoroutineScope, nav: Nav, it: Item, fromStart
             }
             (ctx as? Activity)?.overridePendingTransition(R.anim.player_in, R.anim.hold)
         } catch (e: Exception) {
-            // it never started (no answer from mint, or cancelled): come back from black, Play works again
+            // it never started (no answer from the server, or cancelled): come back from black, Play works again
             nav.inPlayer = false
             nav.black.snapTo(0f)
             if (e is kotlinx.coroutines.CancellationException) throw e

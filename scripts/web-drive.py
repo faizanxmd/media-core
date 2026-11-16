@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive the site in headless Firefox on mint, to check the web player and Manager after a change.
+"""Drive the site in headless Firefox on the server, to check the web player and Manager after a change.
 Usage: scripts/web-drive.py steps.json   (Firefox only; it speaks Marionette itself, nothing to install)
 Always run ["nowatch"] before opening a title: without it a test rewrites the watch progress of what it plays.
 script: [["go", url], ["wait", seconds], ["js", code] -> prints result, ["shot", file], ["size", w, h], ["key", key]]"""

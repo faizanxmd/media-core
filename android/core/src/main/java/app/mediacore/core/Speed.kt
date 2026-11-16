@@ -17,7 +17,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * How fast mint reaches this device, measured in the background so it's known before a title is picked:
+ * How fast the server reaches this device, measured in the background so it's known before a title is picked:
  * a few seconds after the app opens, again when the network changes, and again when a title starts and the
  * last result is over 10 minutes old. One result is kept per network (Wi-Fi, mobile data, ethernet; at home
  * or over Tailscale), so moving between them uses what that network last measured.
@@ -100,7 +100,7 @@ object Speed {
     }
 
     /**
-     * Times a download of test data from mint: the first half second is left out (connections start slowly
+     * Times a download of test data from the server: the first half second is left out (connections start slowly
      * or in a burst), and it stops after 3 s, or sooner once the answer is clear. Mb/s, or null if it failed.
      */
     private fun measure(): Double? = runCatching {
