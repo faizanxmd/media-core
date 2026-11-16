@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -270,7 +271,9 @@ func waitForNoStreams() {
 	}
 }
 
-var pauseTick = 3 * time.Second
+var pauseTick atomic.Int64 // ns between checks; a var so tests can shorten it
+
+func init() { pauseTick.Store(int64(3 * time.Second)) }
 
 // pauseWhileStreaming freezes ffmpeg while someone is watching and lets it go on afterwards.
 func pauseWhileStreaming(pid int, stop <-chan struct{}) {
@@ -283,7 +286,7 @@ func pauseWithTimeout(pid int, stop <-chan struct{}, activeLimit time.Duration, 
 	frozen := false
 	var active time.Duration
 	last := time.Now()
-	tick := time.NewTicker(pauseTick)
+	tick := time.NewTicker(time.Duration(pauseTick.Load()))
 	defer tick.Stop()
 	for {
 		select {

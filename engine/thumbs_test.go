@@ -11,9 +11,9 @@ import (
 )
 
 func TestPauseWithTimeoutIgnoresPausedTime(t *testing.T) {
-	oldTick := pauseTick
-	pauseTick = 20 * time.Millisecond
-	defer func() { pauseTick = oldTick }()
+	oldTick := pauseTick.Load()
+	pauseTick.Store(int64(20 * time.Millisecond))
+	defer func() { pauseTick.Store(oldTick) }()
 
 	playMu.Lock()
 	playing["test/stream"] = time.Now()
