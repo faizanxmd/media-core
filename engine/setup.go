@@ -156,6 +156,9 @@ func (s *setupAPI) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/setup/config", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, currentConfig(s.temp))
 	})
+	mux.HandleFunc("GET /api/setup/busy", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"busy": s.busy()})
+	})
 	mux.HandleFunc("POST /api/setup/config", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Library     *string `json:"library"`

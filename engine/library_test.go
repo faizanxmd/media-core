@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -12,18 +13,18 @@ func TestLibraryTargetRefusesUnsafePaths(t *testing.T) {
 			t.Errorf("%q was accepted (%s)", p, abs)
 		}
 	}
-	// a real, existing item passes and stays inside the library
-	ents, _ := os.ReadDir("/srv/data/media/Movies")
-	if len(ents) == 0 {
-		t.Skip("no movies on this machine")
+	// an existing item passes and stays inside the library
+	name := "Example (2020)"
+	if err := os.MkdirAll(filepath.Join(Media, "Movies", name), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	name := ents[0].Name()
+	defer os.RemoveAll(filepath.Join(Media, "Movies"))
 	if abs, sec, err := libraryTarget("Movies/" + name); err != nil || sec != "Movies" ||
-		abs != "/srv/data/media/Movies/"+name {
+		abs != filepath.Join(Media, "Movies", name) {
 		t.Errorf("%s: %s %s %v", name, abs, sec, err)
 	}
 	// ".." that collapses back inside is just a normal path
-	if abs, _, err := libraryTarget("Movies/x/../" + name); err != nil || abs != "/srv/data/media/Movies/"+name {
+	if abs, _, err := libraryTarget("Movies/x/../" + name); err != nil || abs != filepath.Join(Media, "Movies", name) {
 		t.Errorf("collapsed path: %s %v", abs, err)
 	}
 }

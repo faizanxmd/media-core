@@ -38,6 +38,14 @@ func shutdownSignal(temp bool) <-chan os.Signal {
 
 const usage = `usage: media-core-engine [command]
 
+  install [--library DIR] [--name NAME] [--tmdb-key KEY] [--yes]
+                                 set this computer up as a server and start it (safe to run again)
+  setup [--library DIR] [--name NAME] [--tmdb-key KEY]
+                                 change those settings later
+  upgrade [--version vX.Y.Z] [--force]
+                                 install a release; puts the old one back if the new one doesn't start
+  uninstall [--purge] [--yes]    remove the services and binary (--purge: settings and progress too;
+                                 the library is never touched)
   serve                          run the server (what the installed service does)
   serve --library DIR [--state DIR] [--port N]
                                  a temporary server for DIR, until Ctrl-C; without --state
@@ -142,6 +150,14 @@ func main() {
 		doctorCmd(os.Args[2:])
 	case "backup":
 		backupCmd()
+	case "install":
+		installCmd(installFlags("install", os.Args[2:]))
+	case "setup":
+		setupCmd(installFlags("setup", os.Args[2:]))
+	case "upgrade":
+		upgradeCmd(os.Args[2:])
+	case "uninstall":
+		uninstallCmd(os.Args[2:])
 	case "add":
 		if len(os.Args) < 3 {
 			fail("usage: media-core-engine add <url> [movie|tv|music] [title]")

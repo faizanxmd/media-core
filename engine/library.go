@@ -15,7 +15,7 @@ import (
 // LNode is one folder or file in the media library, as shown on the Library tab.
 type LNode struct {
 	Name     string   `json:"name"`
-	Path     string   `json:"path"` // relative to /srv/data/media
+	Path     string   `json:"path"` // relative to the library
 	Dir      bool     `json:"dir"`
 	Size     int64    `json:"size"`
 	Files    int      `json:"files"`
@@ -113,7 +113,7 @@ func Library() map[string]any {
 var reCover = regexp.MustCompile(`(?i)^(cover|folder|front|album|poster)\.(jpe?g|png|webp)$`)
 
 // libraryTarget checks that p is something inside a library section that may
-// be deleted: never a section root, nothing outside /srv/data/media, no
+// be deleted: never a section root, nothing outside the library, no
 // the engine's work folders.
 func libraryTarget(p string) (abs, section string, err error) {
 	if p == "" || strings.Contains(p, "\x00") {

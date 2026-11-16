@@ -23,9 +23,8 @@ var (
 	DataDir   = defaultDataDir()
 	JobsDir   = filepath.Join(DataDir, "jobs")
 	Aria2Conf = filepath.Join(ConfDir, "aria2.conf")
-	// Media is the library root. MEDIA_CORE_LIBRARY overrides it, e.g. to run
-	// the engine against a small test library on a dev machine.
-	Media    = envOr("MEDIA_CORE_LIBRARY", "/srv/data/media")
+	// Media is the library root: MEDIA_CORE_LIBRARY (install writes it to engine.env), else ~/Media.
+	Media    = envOr("MEDIA_CORE_LIBRARY", filepath.Join(homeDir(), "Media"))
 	DoviTool = envOr("MEDIA_CORE_DOVI_TOOL", defaultDoviTool())
 
 	VideoExt   = set("mkv", "mp4", "m4v", "avi", "mov", "ts", "m2ts", "webm")

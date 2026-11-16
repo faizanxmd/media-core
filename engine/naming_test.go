@@ -24,7 +24,8 @@ func TestGuessMatchesPython(t *testing.T) {
 			t.Errorf("%s: %v", c.Name, err)
 			continue
 		}
-		want := strings.TrimSuffix(c.Final, ".") // Python left a trailing dot on extension-less names
+		// Python left a trailing dot on extension-less names; its library was /srv/data/media
+		want := strings.Replace(strings.TrimSuffix(c.Final, "."), "/srv/data/media", Media, 1)
 		if p.Kind != c.Kind || p.Title != c.Title || string(p.Year) != c.Year ||
 			string(p.Season) != c.Season || string(p.Episode) != c.Episode || final != want {
 			t.Errorf("%s:\n got  %+v %s\n want %+v", c.Name, p, final, c)
