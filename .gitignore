@@ -9,14 +9,31 @@ local.properties
 *.iml
 captures/
 
-# signing keys and secrets live in ~/.config/media-core, never here
+# Keys and private settings live in ~/.config/media-core, never here
 *.jks
 *.keystore
+*.p12
+*.pem
 *.key
 *.pass
 .env*
+engine.env
+private-denylist
 
-# Go binary (deploy/install.sh builds to ~/.local/bin)
+# Personal working notes and local agent instructions
+/notes/
+CLAUDE.local.md
+
+# Go
 /engine/media-core-engine
+*.test
+coverage.out
 
+# Python
+__pycache__/
+*.pyc
+
+# Editors and OS
+.vscode/
+*.swp
 .DS_Store

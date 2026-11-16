@@ -1,0 +1,44 @@
+# Runs on every push and pull request: engine tests, and a scan for secrets
+# and private details (the same check as the pre-commit hook).
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+      - name: Vet and test
+        working-directory: engine
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -count=1 ./...
+
+  private:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Private details
+        env:
+          # one string per line; set it under Settings > Secrets > Actions
+          DENYLIST: ${{ secrets.MEDIA_CORE_DENYLIST }}
+        run: |
+          printf '%s\n' "$DENYLIST" > "$RUNNER_TEMP/denylist"
+          MEDIA_CORE_DENYLIST="$RUNNER_TEMP/denylist" scripts/check-private.sh --all
+      - name: Secrets (gitleaks)
+        run: |
+          v=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks git --redact --no-banner .
