@@ -24,6 +24,14 @@ cd engine && go run . serve --library ~/Videos --port 28780   # site on :28780, 
 
 Leave out `--port` on a machine with no installed server. A TMDB key the installed server already has is reused.
 
+To install the engine from this tree as the real service (tests, builds, keeps the old binary as `.prev`, then runs `media-core-engine install --yes`):
+
+```sh
+deploy/install.sh
+```
+
+`scripts/test-install.sh` runs the one-line install end to end in a throwaway home, without GitHub or systemd.
+
 ffmpeg, ffprobe, 7z, mkvmerge and dovi_tool are only needed for post-processing, thumbnails and media info. They run at low priority (`ionice` where there is one, else `nice`). The engine builds and runs on Linux and macOS.
 
 `scripts/web-drive.py` drives the site in headless Firefox, to check the web player and Manager after a change.
@@ -54,13 +62,15 @@ android/build.sh --install <tv-ip>  # TV app, then adb install (TV: Developer op
 
 Set `MEDIA_CORE_APK_DIR` to send the build output somewhere else. The engine serves the APKs at `/api/v1/app.apk` and `/api/v1/phone-app.apk`, and each app offers an update when a newer build appears there.
 
-## Versions
+## Releases
 
-Each published app build gets a tag named after its version, such as `tv-2026.11.16-0031` or `phone-2026.10.31-0019`.
+Tag `vX.Y.Z` on `main` and push the tag. [release.yml](../.github/workflows/release.yml) tests, builds the server for Linux and macOS (amd64, arm64), builds and signs both apps, and publishes them with `SHA256SUMS`, `APPS.SHA256SUMS`, build attestations and the notes from `CHANGELOG.md`. A tag with a suffix (`v1.1.0-rc.1`) makes a pre-release.
+
+`scripts/ci-build.sh` is for trying app builds on your own server between releases.
 
 ## Checks
 
-The [Check workflow](../.github/workflows/check.yml) runs on every push: gofmt, vet and the engine tests, `scripts/check-private.sh --all` with a denylist from the `MEDIA_CORE_DENYLIST` secret, and gitleaks over the whole history.
+The [Check workflow](../.github/workflows/check.yml) runs on every push: gofmt, vet (also for macOS and 32-bit ARM) and the engine tests; a compile of both apps; shellcheck and the one-line install on Debian, Fedora and Arch; `scripts/check-private.sh --all` with a denylist from the `MEDIA_CORE_DENYLIST` secret; and gitleaks over the whole history.
 
 ## Design
 

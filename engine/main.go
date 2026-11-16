@@ -193,6 +193,8 @@ func main() {
 		}
 		tw.Flush()
 		fmt.Printf("%d GB free\n", st.FreeGB)
+	case "help", "-h", "--help":
+		fmt.Println(usage)
 	default:
 		fail(usage)
 	}

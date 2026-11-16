@@ -1,143 +1,119 @@
 # Setting up Media Core
 
-This sets up the engine on a Linux box and connects the apps to it. Each step says what to run and how to check it worked. `<server>` means the box's host name or IP address (`hostname -I` shows the address).
+This turns a Linux computer at home into a Media Core server and connects the TV, phone and browser to it. Each step says what to run and how to check it worked. An AI agent doing this for someone should read [AGENTS.md](../AGENTS.md) first.
 
-## 0. Get the code
+## 1. Install
 
-```sh
-git clone https://github.com/faizanxmd/media-core.git && cd media-core
-```
-
-Every later command runs from this folder.
-
-## 1. Install what the engine uses
-
-On Debian or Ubuntu:
+On the computer that will be the server:
 
 ```sh
-sudo apt install aria2 ffmpeg p7zip-full mkvtoolnix
+curl -fsSL https://github.com/faizanxmd/media-core/releases/latest/download/install.sh | sh
 ```
 
-Skip Intro needs ffmpeg's chromaprint support, which Debian and Ubuntu include. Check: `ffmpeg -hide_banner -muxers | grep chromaprint` prints a line.
-
-You also need:
-
-- **Go 1.27 or newer**, to build the engine:
-  ```sh
-  curl -LO https://go.dev/dl/go1.27.0.linux-amd64.tar.gz && mkdir -p ~/.local && tar -C ~/.local -xzf go1.27.0.linux-amd64.tar.gz
-  ~/.local/go/bin/go version
-  ```
-  On an ARM box, use the `linux-arm64` file instead.
-- **dovi_tool**, optional. It converts Dolby Vision profile 7 files (Blu-ray remuxes) so Android TVs play them in Dolby Vision; without it they play as HDR10. Skip it unless you have such files. Otherwise download the Linux release from github.com/quietvoid/dovi_tool and put the `dovi_tool` binary in `~/.local/bin/`.
-
-## 2. Make the library folder
+It downloads the engine for this computer, checks it against the release's checksums, puts it in `~/.local/bin`, and asks one question: where the library goes (default `~/Media`, with `Movies`, `TV Shows` and `Music` inside). It then starts the server as a background service and fetches the TV and phone apps. It never uses sudo. What needs sudo is printed at the end for you to run. Usually that's this:
 
 ```sh
-sudo mkdir -p /srv/data/media/{Movies,"TV Shows",Music}
-sudo chown -R "$USER": /srv/data/media
+sudo apt install aria2 ffmpeg p7zip-full mkvtoolnix   # or the dnf, pacman, zypper or brew line it prints
+sudo loginctl enable-linger "$USER"                    # keeps the server running after you log out
 ```
 
-Any folder works. If you use another, set `MEDIA_CORE_LIBRARY` in step 4.
-
-## 3. Add a TMDB key
-
-Posters and titles come from TMDB. Get a free v3 API key at themoviedb.org, then:
-
-```sh
-mkdir -p ~/.config/media-core && chmod 700 ~/.config/media-core
-printf '%s' 'YOUR_KEY' > ~/.config/media-core/tmdb.key && chmod 600 ~/.config/media-core/tmdb.key
-```
-
-## 4. Settings (optional)
-
-The engine works without a settings file. To change something, copy the example and edit it:
-
-```sh
-cp deploy/engine.env.example ~/.config/media-core/engine.env
-```
-
-It holds plain `KEY=value` lines:
-
-| Key | Default | What it is |
-| --- | --- | --- |
-| `MEDIA_CORE_LIBRARY` | `/srv/data/media` | the library folder |
-| `MEDIA_CORE_NAME` | the host name | the server's name in the apps ("mint is offline") |
-| `MEDIA_CORE_LISTEN` | `:8780` | the website and Manager |
-| `MEDIA_CORE_PLAYER_LISTEN` | `:8790` | the apps' API, and the UDP port the apps search on |
-| `MEDIA_CORE_DOVI_TOOL` | `dovi_tool` on the PATH, else `~/.local/bin/dovi_tool` | the Dolby Vision tool |
-
-A value set in the environment wins over the file. Write full paths: `~` isn't expanded. Two more settings work only as environment variables, since they say where this file lives: `MEDIA_CORE_CONFIG_DIR` (default `~/.config/media-core`) and `MEDIA_CORE_DATA_DIR` (default `~/.local/share/media-core`, for jobs, watch progress and caches). Leave both alone on a real install: `install.sh`, the downloader and the nightly backup always use the default folders.
-
-## 5. Install and start the engine
-
-```sh
-sudo loginctl enable-linger "$USER"   # user services keep running after you log out
-deploy/install.sh
-```
-
-`deploy/install.sh` builds and tests the engine, installs the binary to `~/.local/bin` and the systemd user units, and starts them. The first time, it also writes `~/.config/media-core/aria2.conf` with a random RPC secret. It never overwrites your settings, secrets or data, so run it again whenever you want new engine code to go live.
+To answer nothing (for scripts), set `MEDIA_CORE_YES=1`, and `MEDIA_CORE_LIBRARY=/path` for the library.
 
 Check it:
 
 ```sh
-systemctl --user status media-core-engine media-core-aria2
-curl -s http://127.0.0.1:8790/api/v1/hello
-curl -sI http://127.0.0.1:8780/ | head -1
+media-core-engine doctor
 ```
 
-Both services say `active (running)`, the second command prints the server's name and addresses, and the third prints `HTTP/1.1 200 OK`.
+Each line says `ok`, `warn` or `FAIL`, with the fix underneath. It exits 0 when all is well, 1 for warnings, 2 when something is broken. `--json` prints the same for a program to read.
 
-## 6. Firewall
+## 2. Set it up in a browser
 
-Port 8780 is the website and Manager; port 8790 is the apps' API (TCP) and how the apps search for the server (UDP). Allow both from the home network only. With ufw (`sudo ufw status` shows whether it's on), where `192.168.1.0/24` is your home network:
+The install ends by printing a link and a setup code:
+
+```
+  http://192.168.1.20:8780/#/setup
+  and enter the setup code K7MQ-2XPA
+```
+
+Open the link on a computer or phone at home and enter the code. That browser becomes the server's admin. The code lasts 24 hours and works once; `media-core-engine setup-code` makes a new one.
+
+In Settings, Server, add a TMDB key (free at [themoviedb.org](https://www.themoviedb.org/settings/api)) so titles get posters and details. You can change the library folder and the server's name there too, or on the command line:
+
+```sh
+media-core-engine setup --tmdb-key KEY --name "Living room"
+```
+
+## 3. Firewall
+
+Port 8780 is the website. Port 8790 is the apps' API (TCP) and how the apps find the server (UDP). If a firewall is on (`sudo ufw status`), allow both from the home network only, where `192.168.1.0/24` is yours:
 
 ```sh
 sudo ufw allow from 192.168.1.0/24 to any port 8780 proto tcp
 sudo ufw allow from 192.168.1.0/24 to any port 8790
 ```
 
-With another firewall, open the same ports.
+Never forward either port to the internet. The server refuses anyone outside the home network anyway, but there's no reason to let them knock. See [SECURITY.md](../SECURITY.md).
 
-Never open either port to the internet. There are no accounts, so the engine refuses anything that isn't the home network or the box itself.
+## 4. Connect the TV and phone
 
-## 7. Connect the apps
+On the phone, open `http://<server>:8790/` and install the app from there. On an Android TV, install it with a downloader app from `http://<server>:8790/api/v1/app.apk`. The app finds the server on the home network by itself.
 
-On a phone, open `http://<server>:8790/` and install the app from there. On a TV, use a downloader app or `adb install` with `http://<server>:8790/api/v1/app.apk`. The app finds the server on the home network by itself. If it doesn't, type the server's address on the app's offline screen. Use away from home isn't supported yet.
+Each app then shows a code. On the admin browser, open Settings, Devices and enter it, or scan the TV's QR code with the phone. The app goes on to Home by itself. Pair another browser the same way: open the site and it shows a code.
 
-Each app offers an update when a newer build is published on the server.
+The apps offer an update whenever the server has a newer one.
 
-## 8. Add something
+## 5. Add something
 
-Open `http://<server>:8780/`, go to Manager, and paste a link. It shows what the link is before anything downloads. When the download finishes, the title appears in the apps within a minute.
+Open `http://<server>:8780/`, go to Manager and paste a link. It shows what the link is before anything downloads. When the download finishes, the title shows up in the apps within a minute.
+
+## Upgrading
+
+```sh
+media-core-engine upgrade
+```
+
+It waits for nothing to be playing or downloading, checks the new release's checksums, keeps the old version as `media-core-engine.prev`, and puts it back by itself if the new one doesn't start. It also fetches the matching apps. `--version v1.2.0` picks a release.
+
+## Removing it
+
+```sh
+media-core-engine uninstall           # the services and the program; settings and progress stay
+media-core-engine uninstall --purge   # those too (it asks you to type "delete")
+```
+
+Neither ever touches the library.
 
 ## Where things live
 
-None of this is in git.
+- `~/.local/bin/media-core-engine`: the program.
+- `~/.config/media-core/`: settings and secrets. `engine.env` (settings, see [engine.env.example](../deploy/engine.env.example)), `devices.json` (paired devices; their keys are stored only as hashes), `tmdb.key`, `aria2.conf` (the downloader's settings and password) and `webdav.pass`.
+- `~/.local/share/media-core/`: watch progress, downloads in progress, the TMDB cache, thumbnails, the apps it hands out, and backups.
+- Three systemd user services: `media-core-engine`, `media-core-aria2` (the downloader) and `media-core-backup.timer`.
 
-- `~/.config/media-core/` holds settings and secrets: `engine.env`, `aria2.conf` (the downloader's settings, with the password the engine uses to talk to it), `tmdb.key`, `webdav.pass`, and, on the machine that builds the apps, the signing key `app.jks` with `app.jks.pass`.
-- `webdav.pass` is made by the engine. With the user `media-core` and that password, players such as Infuse or VLC can browse the library read-only at `http://<server>:8790/dav`.
-- `~/.local/share/media-core/` holds the runtime data: jobs, watch state, the TMDB cache, thumbnails, intros and the published APKs.
-- `~/.local/bin/media-core-engine` is the engine.
-
-Three systemd user units do the work: `media-core-engine`, `media-core-aria2`, and `media-core-backup.timer` for the nightly backup.
+Logs: `journalctl --user -u media-core-engine -f`.
 
 ## Backups
 
-Every night `media-core-backup` saves watch progress, the download settings, intro data and title matches to `~/.local/share/media-core/backups/state/`, and keeps 30 days. It does not include `engine.env`, `tmdb.key` or the signing key. If a USB stick is mounted at `/mnt/media-core-usb` (or `MEDIA_CORE_BACKUP_USB`), it saves a copy there too. Without the stick, the unit shows as failed each night, but the local copy is still made.
+Every night at 4:00 the server saves watch progress, settings, paired devices and title matches to `~/.local/share/media-core/backups/state/`, keeping 30. Secrets aren't included. Set `MEDIA_CORE_BACKUP_DIR` in `engine.env` to a USB stick or network share for a second copy that survives the disk; if it isn't there one night, only the local copy is made and the timer shows as failed. `media-core-engine backup` runs one now.
 
-To restore, stop the engine, unpack the newest `state-*.tgz` into `~/.local/share/media-core/` and start the engine again.
-
-A USB stick keeps the backup safe if the main disk dies. Find its UUID and filesystem type with `lsblk -f`, then add a line like this to `/etc/fstab`, with your own uid and gid:
-
-```
-UUID=<uuid> /mnt/media-core-usb exfat noauto,nofail,x-systemd.automount,x-systemd.idle-timeout=60,x-systemd.device-timeout=5,uid=1000,gid=1000,umask=077 0 0
-```
+To restore, stop the server, unpack the newest `state-*.tgz` and copy its `data/` into `~/.local/share/media-core/` and its `config/` into `~/.config/media-core/`, then start it:
 
 ```sh
-sudo mkdir -p /mnt/media-core-usb
-sudo systemctl daemon-reload && sudo systemctl start "$(systemd-escape -p --suffix=automount /mnt/media-core-usb)"
+systemctl --user stop media-core-engine
+mkdir /tmp/restore && tar -xzf ~/.local/share/media-core/backups/state/state-2026-01-02.tgz -C /tmp/restore
+cp -r /tmp/restore/data/. ~/.local/share/media-core/ && cp -r /tmp/restore/config/. ~/.config/media-core/
+systemctl --user start media-core-engine
 ```
 
-## The signing key
+## Trying it without installing
 
-If you build the apps, **keep `app.jks` and `app.jks.pass` safe, with a copy off the box.** Every build must be signed with them. If the key is lost, installed apps won't take updates and have to be uninstalled, which wipes their offline downloads. The nightly backup does not include the key.
+`media-core-engine serve --library ~/Videos` runs a temporary server for one folder until you press Ctrl-C. It keeps its settings in a temporary folder and removes them when it stops; `--state DIR` keeps them, and `--port N` moves it off 8780/8790 (the apps' port is N+10).
+
+## macOS
+
+The same one-liner works. The server runs as a LaunchAgent and starts aria2 itself. Install the tools with `brew install aria2 ffmpeg p7zip mkvtoolnix`.
+
+## Building from source
+
+See [docs/development.md](development.md). `deploy/install.sh` tests and builds the engine from this tree, then runs the same `install`.

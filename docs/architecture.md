@@ -31,7 +31,9 @@ An app races every address it knows. It learns them from the server: `GET /api/v
 
 ## Who can use it
 
-There are no accounts. The engine answers only this machine and the home network (`engine/gate.go`) and refuses everything else, whatever the firewall allows. Anyone on the home network can use the site and the apps' API, so never expose either port to the internet.
+Two checks guard every request. The first is the network: the engine answers only this machine and the home network (`engine/gate.go`), whatever the firewall allows, and only when the request names the server by an address or a home-network name. The second is a device key (`engine/auth.go`): every TV, phone and browser is paired once with a code, and an admin device approves it (`engine/pair.go`). Keys are stored only as hashes; roles are player (watch) and admin (everything). [SECURITY.md](../SECURITY.md) has the whole model.
+
+Reaching the server away from home is a hook for a later add-on: `RegisterRemote` in `gate.go` ([remote.md](remote.md)).
 
 ## The library
 
@@ -45,17 +47,4 @@ Music/<Artist>/<Album>/
 
 ## Engine API
 
-The main routes. Adding a download takes two calls. `POST /api/probe {url}` says what a link is, including the video details, and returns a probe and a plan. `POST /api/jobs {probe,plan[,light]}` starts the download. `POST /api/quick {url[,kind,title]}` does both in one step.
-
-`GET /api/jobs` lists the downloads, `GET /api/system` reports the server's disk and health, and `/api/events` sends live events. `GET /api/library` lists the library's files.
-
-Manager uses `GET /api/manager/titles`, `POST /api/manager/light {id,probe}` and `POST /api/manager/light/delete`.
-
-The apps use `/api/v1/…` on port 8790: `hello`, `home`, `movies`, `shows`, `search`, `item/<id>`, `progress`, `watched`, `stream/<id>`, `sub/<id>/<n>`, `thumbs/<id>`, `img/…`, `speedtest`, and the APKs at `app.apk` and `phone-app.apk` (their versions at `app` and `phone-app`). The website also uses `hls/…` and `web/…` for repackaged playback.
-
-There is a small command line too:
-
-```sh
-media-core-engine add <url> [movie|tv|music] [title]
-media-core-engine ls
-```
+[api.md](api.md) lists the routes. The command line (`media-core-engine help`) covers installing, upgrading, devices, downloads and backups.
