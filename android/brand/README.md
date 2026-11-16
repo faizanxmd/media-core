@@ -10,8 +10,7 @@ core with its glow. The phone, web and engine copies still draw the older mark.
 
 Third-party:
 - Source Sans 3, SIL Open Font License 1.1, Copyright 2010-2020 Adobe, with Reserved Font Name 'Source'. The TV app's type (`res/font/source_sans.ttf`, the variable font, weights 200-900); licence text in `android/app/brand-fonts-OFL.txt`.
+- Inter, SIL Open Font License 1.1, Copyright 2016 The Inter Project Authors. The player's and the phone's type, and the site's (`res/font/inter.ttf`, `engine/web/fonts/inter.woff2`).
 - Montserrat, SIL Open Font License 1.1, Copyright 2024 The Montserrat.Git Project Authors. Used only to draw the logo.
 - Fluent UI System Icons, MIT License, Copyright (c) 2020 Microsoft Corporation. The TV's icons, and every icon on the phone and the web.
 - hls.js, Apache License 2.0 (`engine/web/vendor/hls.LICENSE`). The web player's streaming engine.
-- Solar icons, CC BY 4.0, by 480 Design. Unused, left in the TV's `AppIcons.kt` from the old phone app.
-- Phosphor Icons, MIT License, Copyright (c) 2023 Phosphor Icons. Unused, left in the same file.
