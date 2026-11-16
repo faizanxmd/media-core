@@ -44,7 +44,17 @@ type Thumbs struct {
 func NewThumbs() *Thumbs {
 	t := &Thumbs{dir: filepath.Join(DataDir, "thumbs"), counts: map[string]int{}, failed: map[string]bool{}}
 	os.MkdirAll(t.dir, 0o755)
+	t.cleanTmp()
 	return t
+}
+
+func (t *Thumbs) cleanTmp() {
+	ents, _ := os.ReadDir(t.dir)
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".tmp-") {
+			os.RemoveAll(filepath.Join(t.dir, e.Name()))
+		}
+	}
 }
 
 // path is keyed on the video's size and date, so a replaced file gets new pictures.
@@ -123,14 +133,17 @@ func (t *Thumbs) Generate(items map[string]*Item, onDone func()) {
 		return
 	}
 	defer t.run.Unlock()
+	t.cleanTmp()
 	var todo []*Item
 	want := map[string]bool{}
+	wantPaths := map[string]bool{}
 	for _, it := range items {
 		if it.file == "" {
 			continue
 		}
 		if p, ok := t.path(it.file); ok {
 			want[filepath.Base(p)] = true
+			wantPaths[p] = true
 		}
 		if t.due(it) {
 			todo = append(todo, it)
@@ -160,6 +173,18 @@ func (t *Thumbs) Generate(items map[string]*Item, onDone func()) {
 			os.Remove(filepath.Join(t.dir, e.Name()))
 		}
 	}
+	t.mu.Lock()
+	for p := range t.counts {
+		if !wantPaths[p] {
+			delete(t.counts, p)
+		}
+	}
+	for p := range t.failed {
+		if !wantPaths[p] {
+			delete(t.failed, p)
+		}
+	}
+	t.mu.Unlock()
 }
 
 func (t *Thumbs) make(it *Item) error {
@@ -178,7 +203,7 @@ func (t *Thumbs) make(it *Item) error {
 	if it.Info.HDR != "" { // PQ/HLG pictures look washed out unless mapped to normal range
 		vf += ",zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "ionice", "-c3", "nice", "-n", "19", "ffmpeg", "-nostdin", "-v", "error",
 		"-skip_frame", "nokey", "-i", it.file, "-map", "0:v:0", "-an", "-sn", "-dn", "-fps_mode", "passthrough",
@@ -190,7 +215,7 @@ func (t *Thumbs) make(it *Item) error {
 	}
 	stop := make(chan struct{})
 	defer close(stop)
-	go pauseWhileStreaming(cmd.Process.Pid, stop)
+	go pauseWithTimeout(cmd.Process.Pid, stop, 3*time.Hour, cancel)
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(errOut.String()))
 	}
@@ -245,16 +270,42 @@ func waitForNoStreams() {
 	}
 }
 
+var pauseTick = 3 * time.Second
+
 // pauseWhileStreaming freezes ffmpeg while someone is watching and lets it go on afterwards.
 func pauseWhileStreaming(pid int, stop <-chan struct{}) {
+	pauseWithTimeout(pid, stop, 0, nil)
+}
+
+// pauseWithTimeout freezes pid while streaming and cancels after activeLimit of
+// unpaused runtime (when > 0), so paused time doesn't count toward timeouts.
+func pauseWithTimeout(pid int, stop <-chan struct{}, activeLimit time.Duration, cancel context.CancelFunc) {
 	frozen := false
-	tick := time.NewTicker(3 * time.Second)
+	var active time.Duration
+	last := time.Now()
+	tick := time.NewTicker(pauseTick)
 	defer tick.Stop()
 	for {
 		select {
 		case <-stop:
+			if frozen {
+				syscall.Kill(pid, syscall.SIGCONT)
+			}
 			return
 		case <-tick.C:
+			now := time.Now()
+			if !frozen {
+				active += now.Sub(last)
+			}
+			last = now
+			if activeLimit > 0 && active >= activeLimit && cancel != nil {
+				if frozen {
+					syscall.Kill(pid, syscall.SIGCONT)
+					frozen = false
+				}
+				cancel()
+				return
+			}
 			busy := playingNow() > 0
 			if busy != frozen {
 				sig := syscall.SIGCONT
