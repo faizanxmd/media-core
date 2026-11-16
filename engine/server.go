@@ -153,8 +153,8 @@ func (s *Server) routes() http.Handler {
 			UA     string   `json:"ua"`
 			Events []string `json:"events"`
 		}
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&b) != nil {
-			w.WriteHeader(400)
+		r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+		if !readJSON(w, r, &b) {
 			return
 		}
 		who := browserName(b.UA)
@@ -162,8 +162,8 @@ func (s *Server) routes() http.Handler {
 			if i == 40 {
 				break
 			}
-			if len(e) > 400 {
-				e = e[:400] + "…"
+			if rs := []rune(e); len(rs) > 400 {
+				e = string(rs[:400]) + "…"
 			}
 			log.Printf("web %s: %s", who, strings.ReplaceAll(e, "\n", " "))
 		}
@@ -340,19 +340,23 @@ func (s *Server) routes() http.Handler {
 		if !readJSON(w, r, &b) {
 			return
 		}
-		writeJSON(w, 200, s.e.SetSettings(func(st *Settings) {
-			// only the fields sent are changed
-			cur, _ := json.Marshal(st)
-			var m map[string]json.RawMessage
-			json.Unmarshal(cur, &m)
-			for k, v := range b {
-				if k != "avg_bps" {
-					m[k] = v
-				}
+		// only the fields sent are changed
+		cur := s.e.settings.get()
+		raw, _ := json.Marshal(cur)
+		var m map[string]json.RawMessage
+		json.Unmarshal(raw, &m)
+		for k, v := range b {
+			if k != "avg_bps" {
+				m[k] = v
 			}
-			merged, _ := json.Marshal(m)
-			json.Unmarshal(merged, st)
-		}))
+		}
+		merged, _ := json.Marshal(m)
+		var next Settings
+		if err := json.Unmarshal(merged, &next); err != nil {
+			errJSON(w, 400, "bad settings: "+err.Error())
+			return
+		}
+		writeJSON(w, 200, s.e.SetSettings(func(st *Settings) { *st = next }))
 	})
 	return logRequests(mux)
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -244,6 +245,28 @@ func lastBackup() int64 {
 	return best
 }
 
+var (
+	secSizeMu   sync.Mutex
+	secSizeAt   time.Time
+	secSizeRoot string
+	secSizes    [3]int64
+)
+
+func sectionSizes() (films, shows, music int64) {
+	secSizeMu.Lock()
+	defer secSizeMu.Unlock()
+	if secSizeRoot == Media && time.Since(secSizeAt) < 5*time.Minute {
+		return secSizes[0], secSizes[1], secSizes[2]
+	}
+	films = scanTree(filepath.Join(Media, "Movies")).Size
+	shows = scanTree(filepath.Join(Media, "TV Shows")).Size
+	music = scanTree(filepath.Join(Media, "Music")).Size
+	secSizes = [3]int64{films, shows, music}
+	secSizeRoot = Media
+	secSizeAt = time.Now()
+	return films, shows, music
+}
+
 func (s *Server) system() map[string]any {
 	free, total := disk()
 	dfree, dtotal := diskAt(DataDir)
@@ -256,7 +279,9 @@ func (s *Server) system() map[string]any {
 	avail, mem := meminfo()
 	up := 0.0
 	if b, err := os.ReadFile("/proc/uptime"); err == nil {
-		up, _ = strconv.ParseFloat(strings.Fields(string(b))[0], 64)
+		if f := strings.Fields(string(b)); len(f) > 0 {
+			up, _ = strconv.ParseFloat(f[0], 64)
+		}
 	}
 	s.e.mu.Lock()
 	ariaOK := s.e.ariaOK
@@ -270,13 +295,14 @@ func (s *Server) system() map[string]any {
 	if devs == nil {
 		devs = []Device{}
 	}
+	films, shows, music := sectionSizes()
 	return map[string]any{
 		"load": load, "cores": cores,
 		"now":     now,  // what's playing, and on what
 		"devices": devs, // the owner's other machines, and whether each reaches mint directly
 		"library": map[string]any{"free": free, "total": total,
-			"films": scanTree(filepath.Join(Media, "Movies")).Size, "shows": scanTree(filepath.Join(Media, "TV Shows")).Size,
-			"music": scanTree(filepath.Join(Media, "Music")).Size, "light": light},
+			"films": films, "shows": shows,
+			"music": music, "light": light},
 		"data":      map[string]any{"free": dfree, "total": dtotal, "web": dirSize(filepath.Join(DataDir, "web"))},
 		"aria2":     ariaOK,
 		"playing":   playingNow(),

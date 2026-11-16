@@ -55,12 +55,10 @@ func main() {
 			os.Exit(1)
 		}
 	case "ls":
-		var st Status
-		resp, err := http.Get(local + "/api/jobs")
+		st, err := fetchStatus(local)
 		if err != nil {
 			fail(err.Error())
 		}
-		json.NewDecoder(resp.Body).Decode(&st)
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "ID\tSTATE\tPROGRESS\tSPEED\tETA\tDEST")
 		for _, j := range st.Jobs {
@@ -73,15 +71,44 @@ func main() {
 	}
 }
 
-func post(path string, body, out any) {
-	b, _ := json.Marshal(body)
-	c := &http.Client{Timeout: 90 * time.Second}
-	resp, err := c.Post(local+path, "application/json", bytes.NewReader(b))
+func fetchStatus(base string) (Status, error) {
+	var st Status
+	c := &http.Client{Timeout: 10 * time.Second}
+	resp, err := c.Get(base + "/api/jobs")
 	if err != nil {
-		fail(err.Error())
+		return st, err
 	}
 	defer resp.Body.Close()
-	json.NewDecoder(resp.Body).Decode(out)
+	if resp.StatusCode != http.StatusOK {
+		return st, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		return st, err
+	}
+	return st, nil
+}
+
+func postJSON(base, path string, body, out any) error {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	c := &http.Client{Timeout: 90 * time.Second}
+	resp, err := c.Post(base+path, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func post(path string, body, out any) {
+	if err := postJSON(local, path, body, out); err != nil {
+		fail(err.Error())
+	}
 }
 
 func fail(msg string) {

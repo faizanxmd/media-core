@@ -127,37 +127,59 @@ func (t *TMDB) save() {
 	writeJSONFile(filepath.Join(t.dir, "seasons.json"), t.seasons)
 }
 
+var tmdbRetryDelay = 2 * time.Second
+
 func (t *TMDB) get(ctx context.Context, p string, q url.Values, out any) error {
 	if t.key == "" {
 		return errors.New("no TMDB key in ~/.config/media-core/tmdb.key")
 	}
 	if q == nil {
 		q = url.Values{}
-	}
-	req, _ := http.NewRequestWithContext(ctx, "GET", "", nil)
-	if len(t.key) > 40 { // v4 read access token
-		req.Header.Set("Authorization", "Bearer "+t.key)
 	} else {
+		q = qCopy(q)
+	}
+	if len(t.key) <= 40 {
 		q.Set("api_key", t.key)
 	}
-	req.URL, _ = url.Parse("https://api.themoviedb.org/3" + p + "?" + q.Encode())
-	resp, err := t.hc.Do(req)
-	if err != nil {
-		var ue *url.Error
-		if errors.As(err, &ue) {
-			return ue.Err // the URL holds the API key: keep it out of the logs
+	rawURL := "https://api.themoviedb.org/3" + p + "?" + q.Encode()
+	for attempt := 0; ; attempt++ {
+		req, _ := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+		if len(t.key) > 40 { // v4 read access token
+			req.Header.Set("Authorization", "Bearer "+t.key)
 		}
-		return err
+		resp, err := t.hc.Do(req)
+		if err != nil {
+			var ue *url.Error
+			if errors.As(err, &ue) {
+				return ue.Err // the URL holds the API key: keep it out of the logs
+			}
+			return err
+		}
+		if resp.StatusCode == 429 && attempt < 3 {
+			resp.Body.Close()
+			tm := time.NewTimer(tmdbRetryDelay)
+			select {
+			case <-ctx.Done():
+				tm.Stop()
+				return ctx.Err()
+			case <-tm.C:
+			}
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("TMDB %s: HTTP %d", p, resp.StatusCode)
+		}
+		return json.NewDecoder(resp.Body).Decode(out)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == 429 { // rate limited: back off once
-		time.Sleep(2 * time.Second)
-		return t.get(ctx, p, q, out)
+}
+
+func qCopy(q url.Values) url.Values {
+	out := make(url.Values, len(q))
+	for k, v := range q {
+		out[k] = append([]string(nil), v...)
 	}
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("TMDB %s: HTTP %d", p, resp.StatusCode)
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return out
 }
 
 // Attach hangs cached metadata on the catalog's items. It never touches the
@@ -361,8 +383,9 @@ func (t *TMDB) FetchMissing(movies, shows []*Item) bool {
 					sm.Wait = 180
 				}
 				t.mu.Unlock()
+			} else {
+				changed = true
 			}
-			changed = true
 		}
 	}
 	if changed {
@@ -770,22 +793,40 @@ func yearOf(date string) int {
 	return 0
 }
 
+type imgLockEntry struct {
+	mu   sync.Mutex
+	refs int
+}
+
 var (
 	reImgFile  = regexp.MustCompile(`^[A-Za-z0-9_-]{5,64}\.(jpg|png)$`)
 	imgSizes   = set("w92", "w154", "w185", "w300", "w342", "w500", "w780", "w1280", "original")
 	imgFetchMu sync.Mutex
-	imgFetches = map[string]*sync.Mutex{} // one lock per image: a cold home screen fetches them in parallel
+	imgFetches = map[string]*imgLockEntry{} // one lock per in-flight image: cleaned up when done
+	imgClient  = &http.Client{Timeout: 30 * time.Second}
 )
 
-func imgLock(p string) *sync.Mutex {
+func acquireImgLock(p string) *imgLockEntry {
 	imgFetchMu.Lock()
-	defer imgFetchMu.Unlock()
-	m := imgFetches[p]
-	if m == nil {
-		m = &sync.Mutex{}
-		imgFetches[p] = m
+	e := imgFetches[p]
+	if e == nil {
+		e = &imgLockEntry{}
+		imgFetches[p] = e
 	}
-	return m
+	e.refs++
+	imgFetchMu.Unlock()
+	e.mu.Lock()
+	return e
+}
+
+func releaseImgLock(p string, e *imgLockEntry) {
+	e.mu.Unlock()
+	imgFetchMu.Lock()
+	e.refs--
+	if e.refs == 0 {
+		delete(imgFetches, p)
+	}
+	imgFetchMu.Unlock()
 }
 
 // serveImage proxies TMDB artwork and keeps every size it was asked for on
@@ -798,17 +839,16 @@ func (t *TMDB) serveImage(w http.ResponseWriter, r *http.Request) {
 	}
 	p := filepath.Join(t.dir, "img", size+"_"+file)
 	if _, err := os.Stat(p); err != nil {
-		mu := imgLock(p)
-		mu.Lock() // the second caller for the same image waits, then finds the file
+		e := acquireImgLock(p)
 		if _, err := os.Stat(p); err != nil {
 			err = fetchTo(r.Context(), "https://image.tmdb.org/t/p/"+size+"/"+file, p)
 			if err != nil {
-				mu.Unlock()
+				releaseImgLock(p, e)
 				http.Error(w, err.Error(), http.StatusBadGateway)
 				return
 			}
 		}
-		mu.Unlock()
+		releaseImgLock(p, e)
 	}
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	http.ServeFile(w, r, p)
@@ -816,7 +856,7 @@ func (t *TMDB) serveImage(w http.ResponseWriter, r *http.Request) {
 
 func fetchTo(ctx context.Context, src, dst string) error {
 	req, _ := http.NewRequestWithContext(ctx, "GET", src, nil)
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	resp, err := imgClient.Do(req)
 	if err != nil {
 		return err
 	}

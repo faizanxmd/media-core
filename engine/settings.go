@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -49,9 +50,19 @@ func (st *settingsStore) update(fn func(*Settings)) Settings {
 	s := &st.s
 	s.MaxConcurrent = min(max(s.MaxConcurrent, 1), 3)
 	s.LimitMBps = max(s.LimitMBps, 0)
-	b, _ := json.MarshalIndent(st.s, "", " ")
-	os.WriteFile(settingsPath+".tmp", b, 0o644)
-	os.Rename(settingsPath+".tmp", settingsPath)
+	b, err := json.MarshalIndent(st.s, "", " ")
+	if err != nil {
+		log.Printf("settings: marshal: %v", err)
+		return st.s
+	}
+	if err := os.WriteFile(settingsPath+".tmp", b, 0o644); err != nil {
+		log.Printf("settings: write %s: %v", settingsPath, err)
+		return st.s
+	}
+	if err := os.Rename(settingsPath+".tmp", settingsPath); err != nil {
+		os.Remove(settingsPath + ".tmp")
+		log.Printf("settings: rename %s: %v", settingsPath, err)
+	}
 	return st.s
 }
 

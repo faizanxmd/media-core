@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -102,6 +104,7 @@ func serveAPK(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.apk"`)
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, filepath.Join(DataDir, "app", name+".apk"))
 	}
 }
@@ -133,6 +136,42 @@ func slimCast(it *Item) *Item {
 	return it
 }
 
+const defaultMagicDNS = "mint.tail25d09d.ts.net"
+
+var (
+	magicDNSMu   sync.Mutex
+	magicDNSAt   time.Time
+	magicDNSName string
+)
+
+func magicDNS() string {
+	magicDNSMu.Lock()
+	defer magicDNSMu.Unlock()
+	if magicDNSName != "" && time.Since(magicDNSAt) < 5*time.Minute {
+		return magicDNSName
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "tailscale", "status", "--json").Output(); err == nil {
+		var r struct {
+			Self struct {
+				DNSName string
+			}
+		}
+		if json.Unmarshal(out, &r) == nil {
+			if dns := strings.TrimSuffix(strings.TrimSpace(r.Self.DNSName), "."); dns != "" {
+				magicDNSName = dns
+				magicDNSAt = time.Now()
+				return magicDNSName
+			}
+		}
+	}
+	if magicDNSName != "" {
+		return magicDNSName
+	}
+	return defaultMagicDNS
+}
+
 // hello lets the app find every address this server answers on, so it can
 // switch between home Wi-Fi and Tailscale without asking.
 func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +197,7 @@ func (p *Player) hello(w http.ResponseWriter, r *http.Request) {
 	}
 	host, _ := os.Hostname()
 	writeJSON(w, 200, map[string]any{"name": host, "lan": lan, "tailscale": ts,
-		"magicdns": "http://mint.tail25d09d.ts.net" + PlayerListen, "app": readAppInfo("media-core")})
+		"magicdns": "http://" + magicDNS() + PlayerListen, "app": readAppInfo("media-core")})
 }
 
 type dlRow struct {
@@ -308,7 +347,7 @@ func (p *Player) progress(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "unknown item")
 		return
 	}
-	if !b.Ended {
+	if !b.Ended && b.At <= 0 {
 		touchPlaying(r, b.ID)
 	}
 	writeJSON(w, 200, p.w.Progress(b.ID, b.Pos, b.Dur, b.Ended, b.At))
@@ -332,7 +371,7 @@ func (p *Player) watched(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, e.ID)
 	}
 	p.w.SetWatched(ids, b.Watched)
-	writeJSON(w, 200, map[string]any{"ok": true, "item": p.w.decorate(it, true)})
+	writeJSON(w, 200, map[string]any{"ok": true, "item": p.withShow(p.w.decorate(it, true))})
 }
 
 var videoMime = map[string]string{"mkv": "video/x-matroska", "mp4": "video/mp4", "m4v": "video/mp4", "webm": "video/webm",
@@ -460,6 +499,9 @@ func speedTest(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "no-store")
 	h.Set("Content-Length", strconv.FormatInt(n, 10))
 	for n > 0 {
+		if r.Context().Err() != nil {
+			return
+		}
 		k := min(n, int64(len(speedBlock)))
 		if _, err := w.Write(speedBlock[:k]); err != nil {
 			return
