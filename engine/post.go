@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -555,8 +556,15 @@ func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
 	if fps == "" {
 		fps = "24000/1001"
 	}
-	durUS, _ := strconv.ParseFloat(ffprobe(ctx, path, "-show_entries", "format=duration"), 64)
-	durUS *= 1e6
+	srcDur, _ := strconv.ParseFloat(ffprobe(ctx, path, "-show_entries", "format=duration"), 64)
+	durUS := srcDur * 1e6
+	origStreams, origStreamsErr := probeStreams(ctx, path)
+	origAudio := 0
+	for _, s := range origStreams {
+		if s.Type == "audio" {
+			origAudio++
+		}
+	}
 
 	ff := lowPrio(ctx, "ffmpeg", "-nostdin", "-loglevel", "error", "-nostats", "-progress", "pipe:2",
 		"-i", path, "-map", "0:v:0", "-c:v", "copy", "-bsf:v", "hevc_mp4toannexb", "-f", "hevc", "-")
@@ -568,12 +576,25 @@ func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
 	ff.Stdout, dv.Stdin = pw, pr
 	var dvErr bytes.Buffer
 	dv.Stderr = &dvErr
-	ffErrPipe, _ := ff.StderrPipe()
+	ffErrPipe, err := ff.StderrPipe()
+	if err != nil {
+		pr.Close()
+		pw.Close()
+		return "", err
+	}
 	if err := ff.Start(); err != nil {
+		pr.Close()
+		pw.Close()
+		ffErrPipe.Close()
 		return "", err
 	}
 	if err := dv.Start(); err != nil {
-		ff.Process.Kill()
+		pw.Close()
+		pr.Close()
+		if ff.Process != nil {
+			ff.Process.Kill()
+		}
+		ff.Wait()
 		return "", err
 	}
 	pw.Close()
@@ -600,9 +621,13 @@ func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
 	c.phase(Converting, "Dolby Vision 7 → 8.1: remuxing with audio and subtitles")
 	mk := lowPrio(ctx, "mkvmerge", "--gui-mode", "-o", out, "--default-duration", "0:"+fps+"p",
 		"--language", "0:und", hevc, "-D", path)
-	mkOut, _ := mk.StdoutPipe()
+	mkOut, err := mk.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
 	var mkTail bytes.Buffer
 	if err := mk.Start(); err != nil {
+		mkOut.Close()
 		return "", err
 	}
 	scanProgress(mkOut, regexp.MustCompile(`#GUI#progress (\d+)%`), c.progressFn(), &mkTail)
@@ -615,18 +640,49 @@ func dvConvert(ctx context.Context, c jobCtx, path string) (string, error) {
 		}
 		return "", fmt.Errorf("remux failed: %s", last(mkTail.String(), 300))
 	}
+	if outDur := duration(ctx, out); srcDur <= 0 || outDur <= 0 || math.Abs(outDur-srcDur) > 1.0 {
+		return "", fmt.Errorf("verify failed: converted file runs %.1f s, original %.1f s; kept original", outDur, srcDur)
+	}
+	outStreams, err := probeStreams(ctx, out)
+	if err != nil {
+		return "", fmt.Errorf("verify failed: %w; kept original", err)
+	}
+	outVideo, outAudio := 0, 0
+	for _, s := range outStreams {
+		switch {
+		case s.Type == "video" && s.Disp.Pic == 0:
+			outVideo++
+		case s.Type == "audio":
+			outAudio++
+		}
+	}
+	if outVideo == 0 {
+		return "", errors.New("verify failed: converted file has no video stream; kept original")
+	}
+	if origStreamsErr != nil {
+		return "", fmt.Errorf("verify failed: original streams unreadable (%w); kept original", origStreamsErr)
+	}
+	if outAudio != origAudio {
+		return "", fmt.Errorf("verify failed: converted file has %d audio stream%s, original %d; kept original", outAudio, plural(outAudio), origAudio)
+	}
 	if p := dvProfile(ctx, out); p != 8 {
-		return "", fmt.Errorf("verify failed: converted file reports DV profile %d", p)
+		return "", fmt.Errorf("verify failed: converted file reports DV profile %d; kept original", p)
 	}
 	final := strings.TrimSuffix(path, filepath.Ext(path)) + ".mkv"
 	if final != path && exists(final) {
 		return "", fmt.Errorf("%s already exists", filepath.Base(final))
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
 	}
 	if err := os.Rename(out, final); err != nil {
 		return "", err
 	}
 	if final != path {
 		os.Remove(path)
+		if c.e != nil && c.e.onMoved != nil && !strings.Contains(rel(path), "/.") {
+			c.e.onMoved(path, final)
+		}
 	}
 	log.Printf("[%s] converted %s", c.id, final)
 	c.log("Converted to Dolby Vision 8.1")
