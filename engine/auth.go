@@ -397,6 +397,13 @@ func (a *authGate) wrap(h http.Handler) http.Handler {
 		ctx, cancel := context.WithCancel(context.WithValue(r.Context(), ctxKey{}, d))
 		done := a.track(d.ID, cancel)
 		defer done()
+		// A revoke between the lookup and track would miss this request: look again now that it's tracked.
+		if again := a.dev.lookup(requestToken(r)); again == nil || again.ID != d.ID {
+			cancel()
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "pair",
+				"message": "This device isn't paired with the server."})
+			return
+		}
 		h.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

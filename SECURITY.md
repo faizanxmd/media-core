@@ -15,7 +15,7 @@ Media Core is made for one home: a server on the home network, and the TVs, phon
 - A key is 32 random bytes. The server keeps only its SHA-256, in `~/.config/media-core/devices.json` (readable only by the server's user).
 - Apps send it as `Authorization: Bearer`. Browsers keep it in an HttpOnly, SameSite=Strict cookie that page scripts can't read.
 - A device gets its key by **pairing**: it shows a 6-letter code for 10 minutes, someone on an admin device approves it, and only the device that asked (which holds a secret of its own) can collect the key. Seeing the code isn't enough.
-- The **first admin** comes from a setup code the server prints when it's installed. It works once, lasts 24 hours, and locks for 15 minutes after 10 wrong tries.
+- The **first admin** comes from a setup code the server prints when it's installed. It works once and lasts 24 hours. Ten wrong tries from one address lock that address out for 15 minutes, and a hundred from everywhere together lock setup for everyone.
 - Two roles. A **player** can watch (the apps' API). An **admin** can do everything: downloads, deleting files, settings and devices. The server's own command line has an admin key in `cli.token`.
 - An app sends its key only to a server that first proves it knows that key (an HMAC of a random challenge, keyed by the key's hash). Another box that answers on the same address, say on a different Wi-Fi, never sees it.
 - Removing a device ends its key at once, including streams it has running.

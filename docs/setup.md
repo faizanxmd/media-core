@@ -97,7 +97,7 @@ Logs: `journalctl --user -u media-core-engine -f`.
 
 Every night at 4:00 the server saves watch progress, settings, paired devices and title matches to `~/.local/share/media-core/backups/state/`, keeping 30. Secrets aren't included. Set `MEDIA_CORE_BACKUP_DIR` in `engine.env` to a USB stick or network share for a second copy that survives the disk; if it isn't there one night, only the local copy is made and the timer shows as failed. `MEDIA_CORE_BACKUP_KEEP` changes how many are kept. `media-core-engine backup` runs one now.
 
-To restore one, stop the server, put the backup back and start it again. `restore` checks every file against the backup's list first, and saves the current files as `pre-restore-*.tgz` before replacing them.
+To restore one, stop the server, put the backup back and start it again. `restore` checks every file against the backup's list first, and saves the current files as `pre-restore-*.tgz` before replacing them. Secrets aren't in backups: on a new computer, set the TMDB key again with `setup`.
 
 ```sh
 media-core-engine backup list

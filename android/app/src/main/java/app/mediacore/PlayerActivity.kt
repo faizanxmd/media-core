@@ -208,7 +208,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     /**
-     * A press of Left/Right, as Netflix does it: the film jumps 10 s at once and plays on. Nothing else appears,
+     * A press of Left/Right, as streaming apps do it: the film jumps 10 s at once and plays on. Nothing else appears,
      * only the turning mark with the seconds; taps add up. Each jump goes to the nearest keyframe, so it's instant.
      */
     private fun tapSkip(dir: Int) {
@@ -557,7 +557,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val load = DefaultLoadControl.Builder()
             // start (and resume after a seek) at 0.5 s buffered; keep up to ~50 s ahead and the last
             // 20 s behind, so skips both ways stay in memory instead of reloading from the server.
-            // Capped at 128 MB (largeHeap, about what Netflix uses): all 70 s of a 15 Mb/s WEB-DL
+            // Capped at 128 MB (largeHeap, about what big streaming apps use): all 70 s of a 15 Mb/s WEB-DL
             .setBufferDurationsMs(15_000, 50_000, 500, 2_000)
             .setBackBuffer(20_000, true)
             .setTargetBufferBytes(128 * 1024 * 1024)
@@ -638,7 +638,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     /**
-     * Netflix's pills under the bar: the likely pairs, picked in one press. Each of the first two audio languages
+     * Pills under the bar, as streaming apps show them: the likely pairs, picked in one press. Each of the first two audio languages
      * on its own, then the language playing with its own subtitles and with English ones. Other... has the rest.
      */
     private fun combos(tracks: Tracks): List<TrackOption> {

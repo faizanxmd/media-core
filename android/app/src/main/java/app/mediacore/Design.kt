@@ -149,7 +149,7 @@ fun ts(size: Number, line: Number, weight: Int, color: Color = Pal.Ink, @Suppres
 )
 
 /**
- * How far along, inside a picture's foot (a card, an episode's still), as Netflix and Apple TV do: it lifts with the
+ * How far along, inside a picture's foot (a card, an episode's still), as streaming apps do: it lifts with the
  * picture. A 6 px bar 16 px in from the sides and 14 up, in the accent, on a dark track, over a dark gradient, so it
  * holds on the brightest art. Call it last inside the picture's Box.
  */

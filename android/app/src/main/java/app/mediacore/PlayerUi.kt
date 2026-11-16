@@ -101,7 +101,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * The player, after Netflix's TV player.
+ * The player, after the big streaming apps' TV players.
  * Hidden: just the picture. Seek: a tap of Left/Right; the bar and the picture you'll land on, the film still playing.
  * Scrub: a hold of Left/Right; the film waits while the playhead runs. Full: paused, or asked for with Up/Down.
  */
@@ -319,7 +319,7 @@ private fun BoxScope.SkipMark(st: PlayerState) {
     }
 }
 
-// ---------- the controls: Netflix's TV player ----------
+// ---------- the controls: as streaming apps lay them out ----------
 //
 // Top left, bare icons: Start over, and for a show Next episode and Episodes; the focused one fills a white disc and
 // names itself underneath. No Back: the remote's Back leaves. Top right, the title and the episode.
@@ -327,7 +327,7 @@ private fun BoxScope.SkipMark(st: PlayerState) {
 // subtitle pairs as small grey buttons, then one icon for the whole Audio & subtitles page.
 // (Mockups agreed 2026-11-15, after advice from a second designer: fewer icons, every one lined up on SIDE.)
 
-private const val SIDE = 112 // the controls sit further in than the rest of the app, as Netflix's do
+private const val SIDE = 112 // the controls sit further in than the rest of the app, as streaming apps' do
 private const val PLAY_D = 92 // the round Play/Pause
 private const val ROW_Y = 896 // the centre of Play/Pause and the bar, on the 1080 board
 private const val PILL_H = 48
@@ -550,7 +550,7 @@ private fun BoxScope.BarRow(
             // read while drawing: the moving playhead redraws the bar and nothing else
             val dur = st.dur.coerceAtLeast(1).toFloat()
             val at = ((st.scrub ?: st.pos) / dur).coerceIn(0f, 1f) * size.width
-            // thicker than Netflix's: it reads from the sofa. No buffered stretch: past the knob it looked like a glitch
+            // thicker than most players': it reads from the sofa. No buffered stretch: past the knob it looked like a glitch
             val h = 8 * Px.screen
             val y = (size.height - h) / 2
             val r = CornerRadius(h / 2)
@@ -577,7 +577,7 @@ private fun Clock(st: PlayerState, left: Boolean) {
  */
 @Composable
 private fun BoxScope.ScrubPreview(st: PlayerState, bar: androidx.compose.runtime.State<Offset>) {
-    val looking = st.mode == Mode.Scrub // only while holding: a tap just jumps, as on Netflix
+    val looking = st.mode == Mode.Scrub // only while holding: a tap just jumps, as in streaming apps
     val shown by animateFloatAsState(if (looking) 1f else 0f, Move.fade(Move.Focus), label = "preview")
     if (shown == 0f) return
     val store = st.thumbs

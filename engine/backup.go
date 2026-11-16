@@ -157,6 +157,27 @@ func mkdirWithin(dir string, d time.Duration) error {
 	}
 }
 
+// statWithin checks dir is there and is a folder, giving up after d.
+func statWithin(dir string, d time.Duration) error {
+	done := make(chan error, 1)
+	go func() {
+		fi, err := os.Stat(dir)
+		if err == nil && !fi.IsDir() {
+			err = fmt.Errorf("%s isn't a folder", dir)
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%s isn't there (is the drive plugged in?)", dir)
+		}
+		return err
+	case <-time.After(d):
+		return fmt.Errorf("%s didn't answer within %s (a drive that isn't plugged in?)", dir, d)
+	}
+}
+
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -221,7 +242,12 @@ func backupCmd(args []string) {
 	res.Pruned = pruneBackups(backupDir(), "state-", *keep)
 	if *to != "" {
 		dst := filepath.Join(*to, "media-core-backup")
-		err := mkdirWithin(dst, 20*time.Second)
+		// The folder itself must exist: an unplugged drive leaves an empty mount point, and making the
+		// folder there would put the "second copy" on the same disk.
+		err := statWithin(*to, 20*time.Second)
+		if err == nil {
+			err = mkdirWithin(dst, 20*time.Second)
+		}
 		if err == nil {
 			err = copyFile(out, filepath.Join(dst, filepath.Base(out)))
 		}
