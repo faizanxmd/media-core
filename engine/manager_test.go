@@ -189,3 +189,28 @@ func TestToMP4AndLight(t *testing.T) {
 		t.Fatalf("a different cut was kept: %v", err)
 	}
 }
+
+func TestSystemCachesSectionSizes(t *testing.T) {
+	oldM, oldD := Media, DataDir
+	Media, DataDir = t.TempDir(), t.TempDir()
+	defer func() { Media, DataDir = oldM, oldD }()
+	os.MkdirAll(filepath.Join(Media, "Movies", "Film"), 0o755)
+	os.MkdirAll(filepath.Join(Media, "TV Shows"), 0o755)
+	os.MkdirAll(filepath.Join(Media, "Music"), 0o755)
+	os.WriteFile(filepath.Join(Media, "Movies", "Film", "f.mkv"), []byte("12345"), 0o644)
+
+	srv := &Server{e: testEngine(t), p: &Player{c: &Catalog{items: map[string]*Item{}}, w: newTestWatch(), t: &TMDB{}}}
+	s1 := srv.system()
+	lib1 := s1["library"].(map[string]any)
+	if lib1["films"].(int64) != 5 {
+		t.Fatalf("films = %v, want 5", lib1["films"])
+	}
+
+	// Add another file; within 5 minutes /api/system must return the cached size without re-walking.
+	os.WriteFile(filepath.Join(Media, "Movies", "Film", "f2.mkv"), []byte("1234567890"), 0o644)
+	s2 := srv.system()
+	lib2 := s2["library"].(map[string]any)
+	if lib2["films"].(int64) != 5 {
+		t.Fatalf("second /api/system walked disk again: films = %v, want cached 5", lib2["films"])
+	}
+}

@@ -3,9 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func testServer(t *testing.T, ariaHandler http.HandlerFunc) (*Server, *httptest.Server) {
@@ -115,5 +119,69 @@ func TestPostQuickSetsJobDest(t *testing.T) {
 	wantDest := "Movies/Film (2020)/Film (2020).mkv"
 	if resp.Job.Dest != wantDest {
 		t.Fatalf("expected job.Dest=%q, got %q", wantDest, resp.Job.Dest)
+	}
+}
+
+func TestWeblogUsesReadJSONAndTruncatesByRunes(t *testing.T) {
+	srv := &Server{e: testEngine(t), p: &Player{c: &Catalog{items: map[string]*Item{}}, w: newTestWatch(), t: &TMDB{}}}
+	h := srv.routes()
+
+	req := httptest.NewRequest("POST", "/api/weblog", bytes.NewBufferString(`{"ua":"x","events":["hi"]}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("weblog without Content-Type got %d, want 415", rec.Code)
+	}
+
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(oldOut)
+
+	msg := strings.Repeat("é", 405)
+	body, _ := json.Marshal(map[string]any{"ua": "x", "events": []string{msg}})
+	req2 := httptest.NewRequest("POST", "/api/weblog", bytes.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != 204 {
+		t.Fatalf("weblog status = %d", rec2.Code)
+	}
+	if !utf8.ValidString(buf.String()) {
+		t.Fatalf("weblog produced invalid UTF-8: %q", buf.String())
+	}
+}
+
+func TestSettingsBadBodyAndWriteError(t *testing.T) {
+	oldS := settingsPath
+	settingsPath = filepath.Join(t.TempDir(), "missing", "settings.json")
+	defer func() { settingsPath = oldS }()
+
+	e := testEngine(t)
+	e.aria = &Aria2{
+		endpoint: "http://mock/jsonrpc",
+		hc: &http.Client{Transport: rtFunc(func(r *http.Request) (*http.Response, error) {
+			return jsonResp(`{"jsonrpc":"2.0","id":"m","result":"OK"}`), nil
+		})},
+	}
+	e.settings.s = Settings{MaxConcurrent: 1}
+	srv := &Server{e: e, p: &Player{c: &Catalog{items: map[string]*Item{}}, w: newTestWatch(), t: &TMDB{}}}
+	h := srv.routes()
+
+	req := httptest.NewRequest("POST", "/api/settings", bytes.NewBufferString(`{"limit_mbps":"not-a-number"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("bad settings body got %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(oldOut)
+	e.settings.update(func(s *Settings) { s.MaxConcurrent = 2 })
+	if !strings.Contains(buf.String(), "settings") {
+		t.Fatalf("expected settings write error in log, got %q", buf.String())
 	}
 }
