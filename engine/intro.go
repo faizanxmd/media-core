@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"log"
@@ -36,30 +37,43 @@ type Span struct {
 }
 
 type introEntry struct {
-	Size  int64   `json:"size"`
-	Mtime int64   `json:"mtime"`
-	Intro *Span   `json:"intro,omitempty"` // nil: analysed, no intro found
-	V     int     `json:"v"`
-	At    float64 `json:"at"`
+	Size   int64   `json:"size"`
+	Mtime  int64   `json:"mtime"`
+	Intro  *Span   `json:"intro,omitempty"` // nil: analysed, no intro found
+	Failed bool    `json:"failed,omitempty"`
+	V      int     `json:"v"`
+	At     float64 `json:"at"`
 }
 
 type Intros struct {
-	mu   sync.Mutex
-	m    map[string]*introEntry // episode file -> result
-	path string
-	run  sync.Mutex
+	mu    sync.Mutex
+	m     map[string]*introEntry // episode file -> result
+	path  string
+	fpDir string
+	run   sync.Mutex
 }
 
 var introsPath = filepath.Join(DataDir, "intros.json")
 
 func NewIntros() *Intros {
-	in := &Intros{m: map[string]*introEntry{}, path: introsPath}
+	fpDir := filepath.Join(DataDir, "fp")
+	in := &Intros{m: map[string]*introEntry{}, path: introsPath, fpDir: fpDir}
 	readJSONFile(in.path, &in.m)
 	if in.m == nil {
 		in.m = map[string]*introEntry{}
 	}
-	os.MkdirAll(filepath.Join(DataDir, "fp"), 0o755)
+	os.MkdirAll(fpDir, 0o755)
 	return in
+}
+
+func (in *Intros) getFPDir() string {
+	if in.fpDir != "" {
+		return in.fpDir
+	}
+	if in.path != "" {
+		return filepath.Join(filepath.Dir(in.path), "fp")
+	}
+	return ""
 }
 
 func fileKey(p string) (int64, int64, bool) {
@@ -82,6 +96,14 @@ func (in *Intros) Get(file string) *Span {
 	return &cp
 }
 
+func fileSettled(p string) (int64, int64, bool) {
+	fi, err := os.Stat(p)
+	if err != nil || time.Since(fi.ModTime()) < thumbSettle {
+		return 0, 0, false
+	}
+	return fi.Size(), fi.ModTime().Unix(), true
+}
+
 func (in *Intros) known(file string) bool {
 	size, mtime, ok := fileKey(file)
 	in.mu.Lock()
@@ -90,8 +112,62 @@ func (in *Intros) known(file string) bool {
 	return ok && e != nil && e.V == introVersion && e.Size == size && e.Mtime == mtime
 }
 
-// Pending reports whether any season has episodes not analysed yet.
+func (in *Intros) isFailed(file string) bool {
+	size, mtime, ok := fileKey(file)
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	e := in.m[file]
+	return ok && e != nil && e.V == introVersion && e.Size == size && e.Mtime == mtime && e.Failed
+}
+
+// pruneLocked removes intros.json and fp/*.fp entries for files no longer in shows.
+// Call with in.run held.
+func (in *Intros) pruneLocked(shows []*Item) {
+	seen := map[string]bool{}
+	wantFP := map[string]bool{}
+	for _, sh := range shows {
+		for _, sn := range sh.Seasons {
+			for _, ep := range sn.Eps {
+				if ep.file == "" {
+					continue
+				}
+				seen[ep.file] = true
+				wantFP[pathID(rel(ep.file))+".fp"] = true
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return // library not mounted? keep everything
+	}
+	in.mu.Lock()
+	pruned := false
+	for f := range in.m {
+		if !seen[f] {
+			delete(in.m, f)
+			pruned = true
+		}
+	}
+	if pruned && in.path != "" {
+		writeJSONFile(in.path, in.m)
+	}
+	in.mu.Unlock()
+	if fpDir := in.getFPDir(); fpDir != "" {
+		ents, _ := os.ReadDir(fpDir)
+		for _, e := range ents {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".fp") && !wantFP[e.Name()] {
+				os.Remove(filepath.Join(fpDir, e.Name()))
+			}
+		}
+	}
+}
+
+// Pending reports whether any season has settled episodes not analysed yet,
+// and prunes entries for deleted files.
 func (in *Intros) Pending(shows []*Item) bool {
+	if in.run.TryLock() {
+		in.pruneLocked(shows)
+		in.run.Unlock()
+	}
 	for _, sh := range shows {
 		for _, sn := range sh.Seasons {
 			if len(sn.Eps) < 2 {
@@ -99,7 +175,9 @@ func (in *Intros) Pending(shows []*Item) bool {
 			}
 			for _, ep := range sn.Eps {
 				if !in.known(ep.file) {
-					return true
+					if _, _, ok := fileSettled(ep.file); ok {
+						return true
+					}
 				}
 			}
 		}
@@ -114,6 +192,7 @@ func (in *Intros) Analyse(shows []*Item) bool {
 		return false
 	}
 	defer in.run.Unlock()
+	in.pruneLocked(shows)
 	changed := false
 	for _, sh := range shows {
 		for _, sn := range sh.Seasons {
@@ -124,7 +203,9 @@ func (in *Intros) Analyse(shows []*Item) bool {
 			todo := false
 			for _, ep := range eps {
 				if !in.known(ep.file) {
-					todo = true
+					if _, _, ok := fileSettled(ep.file); ok {
+						todo = true
+					}
 				}
 			}
 			if !todo {
@@ -133,11 +214,24 @@ func (in *Intros) Analyse(shows []*Item) bool {
 			start := time.Now()
 			fps := make([][]uint32, len(eps))
 			for i, ep := range eps {
-				fps[i] = fingerprint(ep.file)
+				if !in.isFailed(ep.file) {
+					fps[i] = fingerprint(ep.file)
+				}
 			}
 			found := 0
 			for i, ep := range eps {
-				if in.known(ep.file) || fps[i] == nil {
+				if in.known(ep.file) {
+					continue
+				}
+				size, mtime, settled := fileSettled(ep.file)
+				if !settled {
+					continue
+				}
+				if fps[i] == nil {
+					in.mu.Lock()
+					in.m[ep.file] = &introEntry{Size: size, Mtime: mtime, Failed: true, V: introVersion, At: now()}
+					in.mu.Unlock()
+					changed = true
 					continue
 				}
 				// best match against up to two neighbours on each side
@@ -150,7 +244,6 @@ func (in *Intros) Analyse(shows []*Item) bool {
 						best = a
 					}
 				}
-				size, mtime, _ := fileKey(ep.file)
 				in.mu.Lock()
 				in.m[ep.file] = &introEntry{Size: size, Mtime: mtime, Intro: best, V: introVersion, At: now()}
 				in.mu.Unlock()
@@ -163,7 +256,7 @@ func (in *Intros) Analyse(shows []*Item) bool {
 				time.Since(start).Round(time.Second))
 		}
 	}
-	if changed {
+	if changed && in.path != "" {
 		in.mu.Lock()
 		writeJSONFile(in.path, in.m)
 		in.mu.Unlock()
@@ -173,7 +266,7 @@ func (in *Intros) Analyse(shows []*Item) bool {
 
 // fingerprint returns the chromaprint of a file's first minutes, cached on disk.
 func fingerprint(file string) []uint32 {
-	size, mtime, ok := fileKey(file)
+	size, mtime, ok := fileSettled(file)
 	if !ok {
 		return nil
 	}
@@ -182,11 +275,22 @@ func fingerprint(file string) []uint32 {
 		int64(binary.LittleEndian.Uint64(b)) == size && int64(binary.LittleEndian.Uint64(b[8:])) == mtime {
 		return decodeFP(b[16:])
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	waitForNoStreams()
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd := lowPrio(ctx, "ffmpeg", "-nostdin", "-v", "error", "-t", itoa(introScanSecs), "-i", file,
 		"-map", "0:a:0", "-ac", "1", "-f", "chromaprint", "-fp_format", "raw", "-")
-	out, err := cmd.Output()
+	var outBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	if err := cmd.Start(); err != nil {
+		log.Printf("intros: fingerprint %s: %v", rel(file), err)
+		return nil
+	}
+	stop := make(chan struct{})
+	go pauseWithTimeout(cmd.Process.Pid, stop, 4*time.Minute, cancel)
+	err := cmd.Wait()
+	close(stop)
+	out := outBuf.Bytes()
 	if err != nil || len(out) < 4*100 {
 		log.Printf("intros: fingerprint %s: %v", rel(file), err)
 		return nil
@@ -281,8 +385,20 @@ func sharedRun(a, b []uint32) (inA, inB *Span) {
 
 // chapterCredits finds an end-credits chapter (starts the Up Next prompt early).
 func chapterCredits(chs []Chapter) *Span {
+	var runtime float64
+	for _, c := range chs {
+		if c.End > runtime {
+			runtime = c.End
+		}
+	}
 	for _, c := range chs {
 		t := strings.ToLower(c.Title)
+		if strings.Contains(t, "opening") {
+			continue
+		}
+		if runtime > 0 && c.Start < runtime*0.25 {
+			continue
+		}
 		if strings.Contains(t, "credits") || t == "ed" || strings.Contains(t, "ending") {
 			return &Span{c.Start, c.End}
 		}
