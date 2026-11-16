@@ -8,12 +8,12 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Where a video can be cut: the times of its keyframes, in seconds, as ffmpeg
@@ -25,19 +25,29 @@ import (
 // once with ffprobe, which takes minutes on mint's disk, so that answer is kept
 // in DataDir/keys.
 
+const maxKeyCache = 2000
+
 var (
 	keyMu    sync.Mutex
 	keyCache = map[string]keyEntry{}
 	keyBusy  = map[string]bool{} // files being read through by ffprobe
+	keySeq   int64
+
+	keyProbeTimeout = 30 * time.Minute
+	keyProbe        = probeKeyframes
 )
 
 type keyEntry struct {
 	Size  int64     `json:"size"`
 	Mtime int64     `json:"mtime"`
 	Keys  []float64 `json:"keys"`
+	used  int64
 }
 
-var errKeysPending = errors.New("still reading the file's keyframes")
+var (
+	errKeysPending = errors.New("still reading the file's keyframes")
+	ErrNoKeyframes = errors.New("this file has no keyframes to cut at")
+)
 
 // keyframes returns the file's keyframe times. errKeysPending means a slow
 // read was started (or is running): ask again later.
@@ -48,7 +58,13 @@ func keyframes(path string) ([]float64, error) {
 	}
 	keyMu.Lock()
 	if e, ok := keyCache[path]; ok && e.Size == size && e.Mtime == mtime {
+		keySeq++
+		e.used = keySeq
+		keyCache[path] = e
 		keyMu.Unlock()
+		if len(e.Keys) < 2 {
+			return nil, ErrNoKeyframes
+		}
 		return e.Keys, nil
 	}
 	busy := keyBusy[path]
@@ -58,7 +74,19 @@ func keyframes(path string) ([]float64, error) {
 	}
 	keep := func(keys []float64) {
 		keyMu.Lock()
-		keyCache[path] = keyEntry{size, mtime, keys}
+		keySeq++
+		keyCache[path] = keyEntry{Size: size, Mtime: mtime, Keys: keys, used: keySeq}
+		for len(keyCache) > maxKeyCache {
+			var oldestKey string
+			var oldestUsed int64
+			first := true
+			for k, v := range keyCache {
+				if first || v.used < oldestUsed {
+					oldestKey, oldestUsed, first = k, v.used, false
+				}
+			}
+			delete(keyCache, oldestKey)
+		}
 		keyMu.Unlock()
 	}
 	var keys []float64
@@ -88,17 +116,22 @@ func keyframes(path string) ([]float64, error) {
 	keyBusy[path] = true
 	keyMu.Unlock()
 	go func() {
-		keys, err := probeKeyframes(path)
-		keyMu.Lock()
-		delete(keyBusy, path)
-		keyMu.Unlock()
+		defer func() {
+			keyMu.Lock()
+			delete(keyBusy, path)
+			keyMu.Unlock()
+		}()
+		keys, err := keyProbe(path)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		if err != nil || len(keys) < 2 {
 			keep(nil) // can't be cut: don't read it through again until it changes
 			return
 		}
 		keep(keys)
 		os.MkdirAll(filepath.Dir(saved), 0o755)
-		if b, err := json.Marshal(keyEntry{size, mtime, keys}); err == nil {
+		if b, err := json.Marshal(keyEntry{Size: size, Mtime: mtime, Keys: keys}); err == nil {
 			os.WriteFile(saved, b, 0o644)
 		}
 	}()
@@ -107,7 +140,9 @@ func keyframes(path string) ([]float64, error) {
 
 // probeKeyframes reads the whole file's packets: the slow way, for files without an index.
 func probeKeyframes(path string) ([]float64, error) {
-	cmd := exec.CommandContext(context.Background(), "ionice", "-c3", "ffprobe", "-v", "error", "-select_streams", "v:0",
+	ctx, cancel := context.WithTimeout(context.Background(), keyProbeTimeout)
+	defer cancel()
+	cmd := lowPrio(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", path)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -128,6 +163,12 @@ func probeKeyframes(path string) ([]float64, error) {
 		}
 	}
 	if err := cmd.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, err
+	}
+	if err := sc.Err(); err != nil {
 		return nil, err
 	}
 	sort.Float64s(keys)
