@@ -4,23 +4,22 @@ What changed for people using Media Core, newest first. The format follows [Keep
 
 ## [Unreleased]
 
-### Added
-
-- `backup list` and `restore FILE`. Backups now carry a manifest with each file's checksum, and `restore` refuses damaged or unexpected files.
-- The data folder has a schema number (`state.json`). An upgrade that changes stored data backs it up first, and an older version refuses newer data instead of damaging it.
-
-### Changed
-
-- App versions follow the release tag (`1.2.3`, code 10203000) instead of the build time. Apps installed before 1.0.0 need one uninstall and reinstall.
-- A release is one draft-then-published GitHub release with every file under a single `SHA256SUMS`; signing the apps needs the owner's approval in the `release` environment.
-
 ## [1.0.0]
 
 The first public release.
 
-- One-line install for Linux and macOS, with `install`, `setup`, `upgrade` (with automatic rollback), `uninstall`, `doctor` and `backup` commands.
-- Every TV, phone and browser pairs with a code; an admin approves it. Two roles: player and admin.
-- First-run setup in the browser with a one-time setup code: library, TMDB key, server name and the tools the server uses.
-- Downloads from links, filed into Movies, TV Shows and Music with TMDB posters and details; Dolby Vision profile 7 converted for Android TVs.
-- Android TV and phone apps that find the server on the home network by themselves, play files as they are, share watch progress, skip intros, and (phone) keep downloads for offline.
-- A website with the TV app's look, a web player and Manager for downloads and files.
+### Added
+
+- Engine: one-line install for Linux with systemd, and the commands `install`, `setup`, `upgrade` (checked against `SHA256SUMS`, with automatic rollback), `uninstall`, `doctor` (with `--json` for scripts and agents), `backup`, `backup list` and `restore`.
+- Engine: downloads from links, filed into Movies, TV Shows and Music with TMDB posters and details; Dolby Vision profile 7 converted for Android TVs.
+- Engine: versioned state. An upgrade that changes stored data backs it up first; an older version refuses newer data instead of damaging it.
+- Engine: a nightly backup of progress, settings and devices, with an optional second copy on a USB stick or share.
+- TV app and Phone app: find the server on the home network by themselves, play files as they are, share watch progress, skip intros; the phone keeps downloads for offline.
+- Site: the TV app's look, a web player, first-run setup with a one-time code, and Manager for downloads and files.
+
+### Security
+
+- Every TV, phone and browser pairs with a code that an admin approves. Two roles: player and admin. Keys are stored only as hashes.
+- The server answers only its home network and refuses unknown host names (DNS rebinding).
+- The apps send their key only to a server that proves it knows it.
+- Releases carry build attestations, and the apps are signed with one key in a protected environment.
