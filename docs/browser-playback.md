@@ -1,12 +1,12 @@
 # Playing in a browser
 
-The web player at `mint:8780` plays what this browser can decode, and the browser says what that is. When the page loads, it asks
+The web player (the site on port 8780) plays what this browser can decode, and the browser says what that is. When the page loads, it asks
 the browser which picture and sound formats it plays (`browserCan` in `web/player.js`: H.264, HEVC, AV1, VP9, HDR, Dolby Vision,
 AAC, Dolby Digital, DD+, FLAC and more, and whether it can switch audio tracks) and sends the list with every question as `?can=`.
 The engine decides with it (`howToPlay` in `engine/play.go`, with a test table of format cases in `play_test.go`).
 
 Two rules hold throughout: a library file is never rewritten to suit a browser, and the picture is never converted while it
-plays (mint's CPU can't).
+plays (a small server's CPU can't).
 
 ## How a browser gets a title, cheapest first
 
@@ -17,7 +17,7 @@ plays (mint's CPU can't).
 3. **Its Light copy**, direct or repackaged, when the browser can't decode the picture itself (`?v=light`).
 4. Otherwise the player says it can't play here and that a Light copy would.
 
-What that means on the user's Mac, tested 2026-11-10 with sample clips and real files:
+What that means for Safari on an Apple Silicon Mac, tested with sample clips and real files:
 
 | | Safari | Chrome |
 |---|---|---|
@@ -26,7 +26,7 @@ What that means on the user's Mac, tested 2026-11-10 with sample clips and real 
 | MKV (any) | repackaged; Safari opens no MKV at all | repackaged; Chrome opens MKV but has no Dolby or DTS sound |
 | Dolby Vision 8.1 | plays | plays as HDR10 |
 | Dolby Vision 5 | plays | Light copy (it has no HDR10 underneath) |
-| AV1 | Light copy on an M1 | plays |
+| AV1 | Light copy on an M1 Mac | plays |
 
 A page that sends no `?can=` gets the old fixed rule (`playsInBrowser` in `engine/mp4.go`) and never a stream.
 
@@ -38,7 +38,7 @@ A page that sends no `?can=` gets the old fixed rule (`playsInBrowser` in `engin
 - **Who cuts it.** One ffmpeg per track writes a fragmented MP4 to a pipe; the engine files each fragment under the piece its
   time falls in. So a piece is the same bytes wherever a run started, and the playlists are exact. The flags that keep ffmpeg's
   timestamps the same from run to run are explained at `args` in `stream.go`.
-- **Jumps.** A piece that isn't on its way stops the track's ffmpeg and starts one at that piece. On mint, with the 30 GB
+- **Jumps.** A piece that isn't on its way stops the track's ffmpeg and starts one at that piece. On a small home server, with a 30 GB
   Dolby Vision film: about 0.3 s for the picture and 0.4 s for DTS-HD sound, of which only the plain DTS layer is decoded.
 - **Memory, not disk.** Pieces live in memory, up to 128 MB of picture around the player's position. ffmpeg is held (SIGSTOP)
   once it's 45 s or 64 MB ahead, and stopped after two minutes without requests.
@@ -82,7 +82,7 @@ subtitles from the file as before.
 
 ## Original or Light, by the link
 
-The page times a download from mint (`/api/v1/speedtest`, `Link` in `web/player.js`) a few seconds after it loads and again when
+The page times a download from the server (`/api/v1/speedtest`, `Link` in `web/player.js`) a few seconds after it loads and again when
 that's ten minutes old. A title with a Light copy plays it when the film needs more than about three quarters of what the link
 carries (`?v=light` on `/api/v1/web/{id}`), and says so. A Quality menu (Auto, Original, Light) shows on titles that have one.
 
@@ -90,4 +90,4 @@ carries (`?v=light` on `/api/v1/web/{id}`), and says so. A Quality menu (Auto, O
 
 - Dolby Vision 5 in Safari through the stream is labelled as Dolby Vision (`dvh1`) but hasn't been tried on a real file.
 - Safari and Chrome on the Mac haven't played the finished stream; the first test of this idea there used hand-made pieces.
-  Firefox on mint has: start, jumps, a sound-track switch and two minutes of playback.
+  Firefox on the server has: start, jumps, a sound-track switch and two minutes of playback.
