@@ -437,7 +437,7 @@ func newPlacer(id string) *placer {
 		id:    id,
 		media: media,
 		roots: map[string]bool{
-			media:                             true,
+			media:                            true,
 			filepath.Join(media, "Movies"):   true,
 			filepath.Join(media, "TV Shows"): true,
 			filepath.Join(media, "Music"):    true,
