@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -33,9 +33,19 @@ type embSub struct {
 }
 
 var (
-	subsMu   sync.Mutex
-	subsBusy = map[string]bool{}
-	subsFill sync.Mutex // one background pass at a time
+	subsMu        sync.Mutex
+	subsBusy      = map[string]bool{}
+	subsQueue     []string
+	subsQueued    = map[string]bool{}
+	subsActive    string
+	subsWorking   bool
+	subsFill      sync.Mutex // one background pass at a time
+	subsRun       sync.Mutex // one ffmpeg extraction at a time across worker and fillSubs
+	subsLatest    map[string]*Item
+	subsExtracted = map[string]bool{}
+
+	subsRunFFmpeg = runSubsFFmpeg
+	subsProbe     = probeStreams
 )
 
 // subsDir: where a file's subtitles are kept. The file's change time is part
@@ -61,10 +71,13 @@ func embeddedSubs(it *Item) (ready []embSub, pending bool) {
 		if exists(filepath.Join(dir, "failed")) {
 			return nil, false
 		}
-		go extractSubs(it.file, false)
+		enqueueSubs(it.file)
 		return nil, true
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	for _, line := range strings.Split(strings.TrimRight(string(b), "\r\n"), "\n") {
+		if line == "" {
+			continue
+		}
 		f := strings.SplitN(line, "\t", 5)
 		if len(f) < 5 {
 			continue
@@ -75,8 +88,57 @@ func embeddedSubs(it *Item) (ready []embSub, pending bool) {
 	return ready, false
 }
 
-// extractSubs reads one file's subtitles out. idle: at the lowest disk priority (the background pass).
-func extractSubs(file string, idle bool) {
+func enqueueSubs(file string) {
+	subsMu.Lock()
+	defer subsMu.Unlock()
+	if subsQueued[file] || subsBusy[file] || subsActive == file {
+		return
+	}
+	subsQueued[file] = true
+	subsQueue = append(subsQueue, file)
+	if !subsWorking {
+		subsWorking = true
+		go subsWorker()
+	}
+}
+
+func subsWorker() {
+	for {
+		subsMu.Lock()
+		subsActive = ""
+		if len(subsQueue) == 0 {
+			subsWorking = false
+			subsMu.Unlock()
+			return
+		}
+		file := subsQueue[0]
+		subsQueue = subsQueue[1:]
+		delete(subsQueued, file)
+		subsActive = file
+		subsMu.Unlock()
+		extractSubs(file, true)
+	}
+}
+
+func runSubsFFmpeg(args []string) (string, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := lowPrio(ctx, "ffmpeg", args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	stop := make(chan struct{})
+	go pauseWithTimeout(cmd.Process.Pid, stop, 2*time.Hour, cancel)
+	err := cmd.Wait()
+	close(stop)
+	return out.String(), err
+}
+
+// extractSubs reads one file's subtitles out at low CPU/IO priority while pausing for playback.
+func extractSubs(file string, _ bool) {
 	subsMu.Lock()
 	if subsBusy[file] {
 		subsMu.Unlock()
@@ -89,14 +151,21 @@ func extractSubs(file string, idle bool) {
 		delete(subsBusy, file)
 		subsMu.Unlock()
 	}()
+	subsRun.Lock()
+	defer subsRun.Unlock()
+
+	size0, mtime0, ok := fileKey(file)
+	if !ok {
+		return
+	}
 	dir := subsDir(file)
 	if exists(filepath.Join(dir, "list")) || exists(filepath.Join(dir, "failed")) {
 		return
 	}
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-	defer cancel()
-	streams, err := probeStreams(ctx, file)
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 2*time.Minute)
+	streams, err := subsProbe(probeCtx, file)
+	cancelProbe()
 	if err != nil {
 		return
 	}
@@ -106,43 +175,85 @@ func extractSubs(file string, idle bool) {
 		return
 	}
 	defer os.RemoveAll(tmp)
-	args := []string{"-nostdin", "-loglevel", "error", "-nostats", "-y", "-i", file}
-	var subs []embSub
+
+	type subSpec struct {
+		e    embSub
+		args []string
+		out  string
+	}
+	var specs []subSpec
 	for _, s := range streams {
 		if s.Type != "subtitle" {
 			continue
 		}
 		e := embSub{Index: s.Index, Lang: strings.ToLower(s.Tags.Language), Title: strings.Join(strings.Fields(s.Tags.Title), " "),
 			Forced: s.Disp.Forced == 1 || strings.Contains(strings.ToLower(s.Tags.Title), "forced")}
+		var sa []string
+		var out string
 		switch {
 		case textSubs[s.Codec]:
 			e.Kind = "vtt"
-			args = append(args, "-map", "0:"+itoa(s.Index), "-c:s", "webvtt", "-f", "webvtt", filepath.Join(tmp, fmt.Sprintf("e%d.vtt", s.Index)))
+			out = filepath.Join(tmp, fmt.Sprintf("e%d.vtt", s.Index))
+			sa = []string{"-map", "0:" + itoa(s.Index), "-c:s", "webvtt", "-f", "webvtt", out}
 		case s.Codec == "hdmv_pgs_subtitle":
 			e.Kind = "sup"
-			args = append(args, "-map", "0:"+itoa(s.Index), "-c:s", "copy", "-f", "sup", filepath.Join(tmp, fmt.Sprintf("e%d.sup", s.Index)))
+			out = filepath.Join(tmp, fmt.Sprintf("e%d.sup", s.Index))
+			sa = []string{"-map", "0:" + itoa(s.Index), "-c:s", "copy", "-f", "sup", out}
 		default:
 			continue // VobSub and the like: no way to show them in a browser
 		}
-		subs = append(subs, e)
+		specs = append(specs, subSpec{e: e, args: sa, out: out})
 	}
+
 	fail := func(why string) {
 		log.Printf("subtitles: %s: %s", rel(file), why)
+		fi, err := os.Stat(file)
+		if err != nil || time.Since(fi.ModTime()) < thumbSettle || fi.Size() != size0 || fi.ModTime().Unix() != mtime0 {
+			return // file gone, changed, or still settling: don't write a permanent failed marker
+		}
 		os.MkdirAll(dir, 0o755)
 		os.WriteFile(filepath.Join(dir, "failed"), []byte(why), 0o644)
 	}
-	if len(subs) == 0 {
+
+	var subs []embSub
+	if len(specs) == 0 {
 		os.MkdirAll(tmp, 0o755)
 	} else {
-		name, full := "ffmpeg", args
-		if idle {
-			name, full = "ionice", append([]string{"-c3", "nice", "-n", "15", "ffmpeg"}, args...)
+		baseArgs := []string{"-nostdin", "-loglevel", "error", "-nostats", "-y", "-i", file}
+		allArgs := append([]string(nil), baseArgs...)
+		for _, sp := range specs {
+			allArgs = append(allArgs, sp.args...)
 		}
-		if out, err := exec.CommandContext(ctx, name, full...).CombinedOutput(); err != nil {
-			fail(strings.TrimSpace(lastLine(string(out)) + " " + err.Error()))
+		out, err := subsRunFFmpeg(allArgs)
+		if err == nil {
+			for _, sp := range specs {
+				subs = append(subs, sp.e)
+			}
+		} else if len(specs) > 1 {
+			// One broken subtitle stream should not lose the good streams in the same file.
+			for _, sp := range specs {
+				os.Remove(sp.out)
+			}
+			for _, sp := range specs {
+				oneArgs := append(append([]string(nil), baseArgs...), sp.args...)
+				if _, sErr := subsRunFFmpeg(oneArgs); sErr == nil && exists(sp.out) {
+					subs = append(subs, sp.e)
+				} else {
+					os.Remove(sp.out)
+					log.Printf("subtitles: %s: skipping stream %d (%v)", rel(file), sp.e.Index, sErr)
+				}
+			}
+		}
+		if len(subs) == 0 {
+			fail(strings.TrimSpace(lastLine(out) + " " + err.Error()))
 			return
 		}
 	}
+
+	if size1, mtime1, ok := fileKey(file); !ok || size1 != size0 || mtime1 != mtime0 {
+		return // file changed while reading
+	}
+
 	var list strings.Builder
 	for _, e := range subs {
 		forced := "0"
@@ -159,6 +270,9 @@ func extractSubs(file string, idle bool) {
 		fail(err.Error())
 		return
 	}
+	subsMu.Lock()
+	subsExtracted[filepath.Base(dir)] = true
+	subsMu.Unlock()
 	log.Printf("subtitles: %s: %d kept for browsers (%s)", rel(file), len(subs), time.Since(start).Round(time.Second))
 }
 
@@ -171,18 +285,22 @@ func lastLine(s string) string {
 // first, one at a time, and only while nothing is playing. It also clears out
 // what's kept for files that are gone.
 func fillSubs(items map[string]*Item) {
+	subsMu.Lock()
+	subsLatest = items
+	subsMu.Unlock()
 	if !subsFill.TryLock() {
 		return
 	}
 	defer subsFill.Unlock()
+	subsMu.Lock()
+	subsExtracted = map[string]bool{}
+	subsMu.Unlock()
 	var todo []*Item
-	keep := map[string]bool{}
 	for _, it := range items {
 		if !hasEmbeddedSubs(it) {
 			continue
 		}
 		dir := subsDir(it.file)
-		keep[filepath.Base(dir)] = true
 		if !exists(filepath.Join(dir, "list")) && !exists(filepath.Join(dir, "failed")) {
 			todo = append(todo, it)
 		}
@@ -195,8 +313,26 @@ func fillSubs(items map[string]*Item) {
 		waitForNoStreams()
 		extractSubs(it.file, true)
 	}
-	if len(items) == 0 {
+	subsMu.Lock()
+	latest := subsLatest
+	keep := make(map[string]bool, len(subsExtracted)+len(subsQueued)+len(subsBusy))
+	for k := range subsExtracted {
+		keep[k] = true
+	}
+	for f := range subsQueued {
+		keep[filepath.Base(subsDir(f))] = true
+	}
+	for f := range subsBusy {
+		keep[filepath.Base(subsDir(f))] = true
+	}
+	subsMu.Unlock()
+	if len(latest) == 0 {
 		return // library not mounted? keep everything
+	}
+	for _, it := range latest {
+		if hasEmbeddedSubs(it) {
+			keep[filepath.Base(subsDir(it.file))] = true
+		}
 	}
 	ents, _ := os.ReadDir(filepath.Join(DataDir, "subs"))
 	for _, e := range ents {
