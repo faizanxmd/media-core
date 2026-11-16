@@ -2,7 +2,7 @@
 # The one-line install, end to end, without GitHub or systemd: builds a release's files into a folder, serves
 # them on localhost, runs install.sh in a throwaway home, starts the server, checks it, uninstalls with
 # --purge and checks the library is still there. CI runs it on Debian, Fedora and Arch.
-# Usage: scripts/test-install.sh [prebuilt-binary]
+# Usage: scripts/test-install.sh [binary-0.0.0-test binary-0.0.1-test]   (prebuilt; else built here with Go)
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
@@ -18,7 +18,9 @@ mkdir -p "$D1" "$D2" "$WORK/home" "$WORK/bin"
 if [ -n "${1:-}" ]; then cp "$1" "$D1/$file"; else
   (cd "$ROOT/engine" && CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=${T1#v}" -o "$D1/$file" .)
 fi
-(cd "$ROOT/engine" && CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=${T2#v}" -o "$D2/$file" .)
+if [ -n "${2:-}" ]; then cp "$2" "$D2/$file"; else
+  (cd "$ROOT/engine" && CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=${T2#v}" -o "$D2/$file" .)
+fi
 for d in "$D1" "$D2"; do cp "$ROOT/install.sh" "$d/install.sh"; (cd "$d" && sha256sum "$file" install.sh > SHA256SUMS); done
 echo "$T1" > "$WORK/rel/latest"
 (cd "$WORK/rel" && exec python3 -m http.server 28999 --bind 127.0.0.1 >/dev/null 2>&1) &

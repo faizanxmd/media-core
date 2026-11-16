@@ -87,11 +87,13 @@ jobs:
         run: shellcheck -s sh install.sh deploy/install.sh scripts/test-install.sh
       - name: Build
         working-directory: engine
-        run: CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=0.0.0-test" -o ../media-core-engine-test .
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=0.0.0-test" -o ../media-core-engine-test .
+          CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=0.0.1-test" -o ../media-core-engine-test2 .
       - name: Install on Debian, Fedora and Arch
         run: |
           set -e
-          run() { docker run --rm -v "$PWD:/src:ro" "$1" sh -c "$2 && useradd -m t && su t -c 'sh /src/scripts/test-install.sh /src/media-core-engine-test'"; }
+          run() { docker run --rm -v "$PWD:/src:ro" "$1" sh -c "$2 && useradd -m t && su t -c 'sh /src/scripts/test-install.sh /src/media-core-engine-test /src/media-core-engine-test2'"; }
           run debian:12 "apt-get update -qq && apt-get install -y -qq curl python3 aria2 ffmpeg >/dev/null"
           run fedora:41 "dnf install -y -q curl python3 aria2 ffmpeg-free procps-ng util-linux shadow-utils >/dev/null"
           run archlinux:latest "pacman -Sy --noconfirm --quiet curl python aria2 ffmpeg >/dev/null"
