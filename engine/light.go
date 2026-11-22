@@ -112,8 +112,7 @@ func removeLightSidecars(light string) {
 }
 
 // acceptLight keeps a downloaded Light copy only if it's the same cut as its
-// film, makes it an MP4 if that's what lets it play in browsers, and removes
-// any older Light copy of the same title.
+// film, and removes any older Light copy of the same title.
 func (e *Engine) acceptLight(ctx context.Context, c jobCtx, j Job, videos []string) error {
 	if len(videos) == 0 {
 		return errors.New("no video downloaded")
@@ -131,15 +130,6 @@ func (e *Engine) acceptLight(ctx context.Context, c jobCtx, j Job, videos []stri
 		removeLightSidecars(light)
 		c.set(true, func(j *Job) { j.Placed, j.Downloaded, j.Files = false, false, nil })
 		return fmt.Errorf("not the same cut: the Light copy runs %s, the film %s, so it was removed", dur(int64(a)), dur(int64(b)))
-	}
-	if j.Plan.MP4 && canMP4(probeMediaCtx(ctx, light)) {
-		mctx, mcancel := context.WithTimeout(ctx, convertTimeout)
-		v, err := e.toMP4(mctx, c, light)
-		mcancel()
-		if err != nil {
-			return err
-		}
-		light = v
 	}
 	base := baseName(light)
 	ents, _ := os.ReadDir(filepath.Dir(light))

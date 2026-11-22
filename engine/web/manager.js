@@ -1,6 +1,6 @@
 "use strict";
 // Manager: paste a link and see what it is before it downloads, the downloads themselves, the library's files with
-// where each one plays, and how the server is doing. Words and sizes follow docs/design-system.md.
+// where each one plays, and how the server is doing. Words and sizes follow docs/design.md.
 const Manager = (() => {
   const ACTIVE = ["downloading", "processing", "converting", "paused", "queued"];
   const LIVE = ["downloading", "processing", "converting"];
@@ -415,7 +415,7 @@ const Manager = (() => {
   }
   function planOf(el) {
     const v = n => $(`input[name=${n}]`, el)?.value.trim() ?? "";
-    return { ...el._probe.plan, kind: el._kind, title: v("title"), year: v("year"), season: v("season"), episode: v("episode"), mp4: false };
+    return { ...el._probe.plan, kind: el._kind, title: v("title"), year: v("year"), season: v("season"), episode: v("episode") };
   }
   function refreshPlan(el) {
     const k = el._kind;

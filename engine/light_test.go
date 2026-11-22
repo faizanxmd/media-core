@@ -68,7 +68,7 @@ func TestLightRetryAfterSameCutReject(t *testing.T) {
 		Downloaded: true,
 		URL:        "http://example.com/light.mkv",
 		Filename:   "light.mkv",
-		Plan:       Plan{Kind: "movie", Title: "Clip", Year: "2020", Light: true, Into: rel(dir), Ext: "mkv", MP4: true},
+		Plan:       Plan{Kind: "movie", Title: "Clip", Year: "2020", Light: true, Into: rel(dir), Ext: "mkv"},
 		Log:        []string{},
 	}
 	st.Add(lj)

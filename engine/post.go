@@ -211,26 +211,9 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	switch {
-	case j.Plan.Light:
+	if j.Plan.Light {
 		if err := e.acceptLight(ctx, c, j, videos); err != nil {
 			return err
-		}
-	case j.Plan.MP4:
-		for i, v := range videos {
-			m := probeMediaCtx(ctx, v)
-			if !canMP4(m) {
-				c.log(filepath.Base(v) + ": kept as it is (an MP4 wouldn't help it play in browsers)")
-				continue
-			}
-			mctx, mcancel := context.WithTimeout(ctx, convertTimeout)
-			v2, err := e.toMP4(mctx, c, v)
-			mcancel()
-			if err != nil {
-				return err
-			}
-			videos[i] = v2
-			c.set(true, func(j *Job) { j.Files = append([]string(nil), videos...) })
 		}
 	}
 
@@ -241,7 +224,7 @@ func (e *Engine) post(ctx context.Context, id string) error {
 	if fn == "" && len(videos) > 0 {
 		where = filepath.Dir(videos[0])
 	} else if len(videos) == 1 {
-		where = videos[0] // the MP4 step may have renamed it
+		where = videos[0]
 	}
 	c.set(true, func(j *Job) {
 		j.State, j.Phase, j.Progress, j.Finished = Done, "", 100, now()

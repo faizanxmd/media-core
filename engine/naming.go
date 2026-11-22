@@ -41,10 +41,8 @@ type Plan struct {
 	Episode Flex   `json:"episode"`
 	Ext     string `json:"ext"`
 	Archive bool   `json:"archive"`
-	// Manager's choices. MP4: make an MP4 after downloading (video untouched).
-	// Light: this download is the Light copy of the file or film folder at Into
-	// (a library path).
-	MP4   bool   `json:"mp4,omitempty"`
+	// Manager's choices. Light: this download is the Light copy of the file or
+	// film folder at Into (a library path).
 	Light bool   `json:"light,omitempty"`
 	Into  string `json:"into,omitempty"`
 	Path  string `json:"path,omitempty"`

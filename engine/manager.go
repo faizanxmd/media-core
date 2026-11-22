@@ -85,18 +85,12 @@ func fileOf(it *Item, busy map[string]bool, c Caps) mFile {
 	if p.Light && p.How != "none" {
 		f.Play = "light"
 	}
-	if f.Play == "none" && webCopy(it) != nil {
-		f.Play = "direct" // an old copy made ahead
-	}
 	f.Browser = f.Play != "none"
 	var light *MInfo
 	if it.Light != nil {
 		light = it.Light.Info
 	}
 	f.On = onDevices(it.Info, light, c)
-	if f.Browser && !f.On["here"].OK { // an old copy made ahead
-		f.On["here"] = OnDevice{OK: true, How: "direct"}
-	}
 	if it.Light != nil {
 		f.Size += it.Light.Size
 	}
@@ -150,7 +144,7 @@ func (s *Server) titles(c Caps) []mTitle {
 
 // lightPlan is the plan for a Light copy of the library file or film folder at into.
 func lightPlan(kind, title string, into string, lp Probe) Plan {
-	return Plan{Kind: kind, Title: title, Light: true, Into: into, Ext: lp.Plan.Ext, MP4: true}
+	return Plan{Kind: kind, Title: title, Light: true, Into: into, Ext: lp.Plan.Ext}
 }
 
 func lightPlanFor(it *Item, lp Probe) Plan {
