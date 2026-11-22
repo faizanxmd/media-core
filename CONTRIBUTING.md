@@ -15,15 +15,12 @@ The pre-commit hook runs `scripts/check-private.sh`, which stops a commit that h
 
 ## Before you send a change
 
-- Engine: `cd engine && gofmt -l . && go vet ./... && go test ./...` are clean. Tests never touch real state: `main_test.go` points every path at a temporary folder, and new tests use `t.TempDir()`.
-- A new API route needs a device key unless it's in `openRoute` (`engine/auth.go`); `TestEveryRouteNeedsAKey` checks this.
-- Apps: CI compiles both on every push. Fixes to talking to the server go in `android/core` once; each app keeps its own screens and player, so a player fix goes in both.
-- Watch progress has one source of truth, `engine/watch.go`. Rules about progress belong there, not in an app.
-- Shell scripts pass `shellcheck -s sh`.
-- Add a line to `CHANGELOG.md` under "Unreleased" for anything a user would notice, starting with the part it touches ("Engine:", "TV app:", "Phone app:", "Site:").
-- A change to the shape of a state file needs a migration and a higher `stateSchema` (`engine/migrate.go`), so upgrades move old data forward and older versions refuse the new data.
-- `doctor` check ids, `--json` field names and everything under `/api/v1` are public: add to them, never rename or remove. `docs/api.md` must list every `/api/v1` route (`TestAPIDocListsEveryRoute` checks).
-- The engine uses the Go standard library only, and `go test -race` passes.
+Read [AGENTS.md](AGENTS.md) for the full list of codebase rules and invariants (single source of truth for both humans and AI agents). In short:
+
+- Engine: `cd engine && gofmt -l . && go vet ./... && go test -race ./...` must pass; Go standard library only; tests use `t.TempDir()`.
+- Shell scripts: `shellcheck -s sh`.
+- Apps: CI compiles both on every push (`android/core` for shared API/models; `android/app` and `android/phone` for UI/players).
+- Add a line to `CHANGELOG.md` under "Unreleased" for anything a user would notice, starting with the part it touches (`Engine:`, `TV app:`, `Phone app:`, `Site:`).
 
 ## Pull requests
 
@@ -33,7 +30,7 @@ By contributing you agree that your work is licensed under the [GPL-3.0](LICENSE
 
 ## Using an AI agent
 
-The same rules apply to changes made with an AI agent, and you're responsible for what it writes. An agent must not build or sign the apps, or run anything against a live server. [AGENTS.md](AGENTS.md) has the rules in short form for coding agents; [docs/operating.md](docs/operating.md) is for agents running a server.
+The same rules apply to changes made with an AI agent, and you're responsible for what it writes. [AGENTS.md](AGENTS.md) holds the coding rules; [docs/operating.md](docs/operating.md) is for agents running a server.
 
 ## Releases
 

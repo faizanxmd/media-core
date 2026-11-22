@@ -61,33 +61,23 @@ once when a title is opened in a browser first; the subtitle menu then says they
 where the same language is there as text. They're served as `e<stream>.vtt` and `e<stream>.sup`. The TV and phone read
 subtitles from the file as before.
 
-## Still made ahead of time
+## Light copies
 
 - **A Light copy** is a second, smaller download: H.264 or HEVC, 1080p at most, no HDR. It lives in a hidden `.light` folder beside
   the file, with the same base name (`Movies/X (2020)/.light/X (2020).mp4`). It's kept only if it runs as long as the film (within
   2 s). Deleting the title deletes it too. It's for pictures a device can't decode and for slow connections.
-- **Make it MP4** rewrote a file as an MP4 for good, turning DTS and TrueHD into AAC, which the TV lost. Browsers no longer
-  need it, so Manager no longer offers it and links no longer ask for it. The engine's step is still there (`engine/mp4.go`).
-- **An old HLS browser copy** in `~/.local/share/media-core/web/<id>/`, made by hand before any of this. The one left is True
-  Detective S01E01; the stream replaces it.
 
 ## What the engine tells the web player (`engine/webcopy.go`)
 
-- `GET /api/v1/web`: `{"ready": {"<id>": true}}`, every item this browser can play, by any of the ways above.
+- `GET /api/v1/web`: `{"ready": {"<id>": true}, "blocked": {"<id>": "<reason>"}}`, every item this browser can or cannot play.
 - `GET /api/v1/web/{id}`: `{"state": "ready"}` with `src` (direct) or `hls` (the stream's master playlist), the sound tracks in
   the file's order and the subtitle files; `{"state": "wait", "wait": "…"}` while a file without an index is read; or
   `{"state": "none"}`.
-- `GET /api/v1/web/{id}/{file}`: subtitles (`x<n>.vtt` from the `.srt` files beside the video, `p<n>.sup` for picture subtitles) or
-  an old HLS copy's files.
+- `GET /api/v1/web/{id}/{file}`: subtitles (`e<n>.vtt` / `e<n>.sup` extracted from the video, `x<n>.vtt` from `.srt` sidecars,
+  `p<n>.sup` from `.sup` sidecars).
 
 ## Original or Light, by the link
 
 The page times a download from the server (`/api/v1/speedtest`, `Link` in `web/player.js`) a few seconds after it loads and again when
 that's ten minutes old. A title with a Light copy plays it when the film needs more than about three quarters of what the link
 carries (`?v=light` on `/api/v1/web/{id}`), and says so. A Quality menu (Auto, Original, Light) shows on titles that have one.
-
-## Not done yet
-
-- Dolby Vision 5 in Safari through the stream is labelled as Dolby Vision (`dvh1`) but hasn't been tried on a real file.
-- Safari and Chrome on the Mac haven't played the finished stream; the first test of this idea there used hand-made pieces.
-  Firefox on the server has: start, jumps, a sound-track switch and two minutes of playback.

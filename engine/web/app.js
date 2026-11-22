@@ -1,5 +1,5 @@
 "use strict";
-// Media Core in a browser: the TV app's screens (docs/design-system.md), moved to a mouse and a keyboard.
+// Media Core in a browser: the TV app's screens (docs/design.md), moved to a mouse and a keyboard.
 // Home, Films, Shows, Search and title pages live here, the player in player.js, Manager in manager.js.
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];

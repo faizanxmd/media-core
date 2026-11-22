@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// The phone's look (docs/design-system-phone.md). A value that isn't here doesn't get used.
+// The phone's look (docs/design.md). A value that isn't here doesn't get used.
 val Base = Color(0xFF0E1014) // every page
 val Raised = Color(0xFF181B21) // panels, empty cards
 val Overlay = Color(0xFF262A32) // controls at rest, the search box, hairlines

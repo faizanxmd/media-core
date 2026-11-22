@@ -1,5 +1,5 @@
 "use strict";
-// The player: the TV's (docs/design-system.md), with a mouse added. hls.js does what Media3 does in the apps.
+// The player: the TV's (docs/design.md), with a mouse added. hls.js does what Media3 does in the apps.
 // Nothing on screen while playing. A tap of Left/Right skips with a small mark, holding brings the picture strip,
 // pausing or moving the mouse shows the title, bar and controls.
 // wlog: a short line in the server's journal (POST /api/weblog), so what a browser

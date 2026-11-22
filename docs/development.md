@@ -76,4 +76,4 @@ The [Check workflow](../.github/workflows/check.yml) runs on every push: gofmt, 
 
 ## Design
 
-The UI rules are in [design-system.md](design-system.md) for the TV and [design-system-phone.md](design-system-phone.md) for the phone. The site follows the TV's rules; [browser-playback.md](browser-playback.md) explains how the web player picks what to play.
+The UI principles for TV, phone and web are in [design.md](design.md) (exact tokens live in `Design.kt`, `Theme.kt` and `app.css`). [browser-playback.md](browser-playback.md) explains how the web player picks what to play.
