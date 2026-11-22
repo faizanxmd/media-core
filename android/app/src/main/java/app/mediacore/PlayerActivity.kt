@@ -16,6 +16,8 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -1014,9 +1016,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val overlay = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                CompositionLocalProvider(LocalTv provides tv) {
-                    AppTheme {
-                        DeviceOverlay(st, this@PlayerActivity, tv, onChrome = { lift ->
+                AppTheme {
+                    @kotlin.OptIn(ExperimentalFoundationApi::class)
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides rememberMinimalSpec()) {
+                        PlayerOverlay(st, this@PlayerActivity, tv, onChrome = { lift ->
                             // moved as a whole: image subtitles (PGS) ignore padding
                             view.subtitleView?.let { sv -> sv.animate().translationY(-lift * sv.height).setDuration(if (Move.reduced) 0L else Move.Screen.toLong()).setInterpolator(ease).start() }
                         })

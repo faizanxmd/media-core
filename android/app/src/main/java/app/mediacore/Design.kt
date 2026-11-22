@@ -33,8 +33,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,9 +80,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-// The redesign's look (docs/design-system.md). Every number here is read from the 1920 x 1080
+// The TV app's look (docs/design.md). Every number here is read from the 1920 x 1080
 // boards, so screens are written in board pixels: 120.px is 120 board pixels wherever the TV's density puts them.
-// The player keeps its own look in Ui.kt and doesn't use any of this.
 
 /** Board pixels to dp, set once from the screen's width. */
 object Px {
@@ -483,6 +486,18 @@ val CapsLabel get() = ts(22, 26, 600, Pal.Label, track = 0.08f)
 fun Modifier.wrapUnbounded(): Modifier = layout { m, c ->
     val p = m.measure(c.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity, minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity))
     layout(c.minWidth.coerceAtLeast(0), c.minHeight.coerceAtLeast(0)) { p.place(0, 0) }
+}
+
+@Composable
+fun AppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background = Pal.Base, surface = Pal.Base, primary = Color.White, onPrimary = Pal.Base,
+            onBackground = Pal.Ink, onSurface = Pal.Ink,
+        ),
+    ) {
+        CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = SourceSans, color = Pal.Ink), content = content)
+    }
 }
 
 

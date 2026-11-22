@@ -24,12 +24,6 @@ android {
         ndk { abiFilters += ((findProperty("abis") as String?) ?: "arm64-v8a,armeabi-v7a").split(",") }
     }
 
-    // The TV app. The phone app is its own module, ../phone
-    flavorDimensions += "device"
-    productFlavors {
-        create("tv") { dimension = "device" }
-    }
-
     signingConfigs {
         create("release") {
             storeFile = file(System.getenv("MEDIA_CORE_KEYSTORE") ?: "${System.getProperty("user.home")}/.config/media-core/app.jks")

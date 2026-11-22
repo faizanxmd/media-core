@@ -68,8 +68,8 @@ if [ "${1:-}" = "--phone" ]; then
   exit 0
 fi
 
-nice -n 10 "$GRADLE" --no-daemon -q :app:assembleTvRelease -Pvcode="$VCODE" -Pvname="$VNAME"
-APK=app/build/outputs/apk/tv/release/app-tv-release.apk
+nice -n 10 "$GRADLE" --no-daemon -q :app:assembleRelease -Pvcode="$VCODE" -Pvname="$VNAME"
+APK=app/build/outputs/apk/release/app-release.apk
 cp "$APK" "$OUT/media-core.apk.tmp" && mv "$OUT/media-core.apk.tmp" "$OUT/media-core.apk"
 printf '{"version_code":%s,"version_name":"%s","size":%s}\n' "$VCODE" "$VNAME" "$(wc -c < "$OUT/media-core.apk" | tr -d ' ')" > "$OUT/media-core.json"
 echo "built $VNAME ($VCODE), $(du -h "$OUT/media-core.apk" | cut -f1) -> $OUT/media-core.apk"

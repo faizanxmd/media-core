@@ -54,7 +54,7 @@ jobs:
           cache: gradle
       - name: Compile (no signing, nothing published)
         working-directory: android
-        run: ./gradlew --no-daemon --stacktrace :core:compileDebugKotlin :app:compileTvDebugKotlin :phone:compileDebugKotlin
+        run: ./gradlew --no-daemon --stacktrace :core:compileDebugKotlin :app:compileDebugKotlin :phone:compileDebugKotlin
 
   private:
     runs-on: ubuntu-24.04

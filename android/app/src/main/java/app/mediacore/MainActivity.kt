@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -92,9 +91,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val tv = isTv(this)
         setContent {
-            CompositionLocalProvider(LocalTv provides tv) {
-                AppTheme { if (Api.needsPair) PairScreen { nav.refresh++ } else Root(nav, ::installUpdate) }
-            }
+            AppTheme { if (Api.needsPair) PairScreen { nav.refresh++ } else Root(nav, ::installUpdate) }
         }
         // the TV's Root paints the whole screen itself; the window's own fill under it was one more full-screen pass a frame
         if (tv) window.setBackgroundDrawable(null)
@@ -139,7 +136,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun checkUpdate() {
-        if (BuildConfig.FLAVOR != "tv") return // the server only publishes the TV app for now
         val code = runCatching { Api.get("/api/v1/app").optInt("version_code") }.getOrNull() ?: return
         nav.update = if (code > BuildConfig.VERSION_CODE) code else null
     }
