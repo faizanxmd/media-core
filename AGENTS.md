@@ -1,6 +1,6 @@
 # For AI coding agents
 
-Rules for changing this code. To install or run a server for someone, read [docs/operating.md](docs/operating.md) instead. People: [CONTRIBUTING.md](CONTRIBUTING.md) says the same at more length.
+Rules for changing this code. To install or run a server for someone, read [docs/operating.md](docs/operating.md) instead. People: [CONTRIBUTING.md](CONTRIBUTING.md) says the same at more length. If a `CLAUDE.local.md` sits next to this file, read it too for machine-specific rules.
 
 ## Layout
 

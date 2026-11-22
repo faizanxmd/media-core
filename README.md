@@ -47,6 +47,7 @@ Each [release](https://github.com/faizanxmd/media-core/releases/latest) has the 
 
 ## Credits
 
+- Designed, directed and tested by the maintainer, with the code written collaboratively using AI coding agents (Claude and Gemini).
 - [TMDB](https://www.themoviedb.org) for titles, posters and details. This product uses the TMDB API but is not endorsed or certified by TMDB.
 - [aria2](https://aria2.github.io), [FFmpeg](https://ffmpeg.org), [MKVToolNix](https://mkvtoolnix.download), [7-Zip](https://www.7-zip.org) and [dovi_tool](https://github.com/quietvoid/dovi_tool) do the downloading and file work.
 - [AndroidX Media3](https://developer.android.com/media/media3) plays everything in the apps, and [hls.js](https://github.com/video-dev/hls.js) in the browser. [ZXing](https://github.com/zxing/zxing) draws the TV's pairing QR code.
