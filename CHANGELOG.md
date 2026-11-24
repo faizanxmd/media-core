@@ -4,6 +4,10 @@ What changed for people using Media Core, newest first. The format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- TV app and Phone app: coalesce rapid 10-second skips into a single seek (350 ms debounce) so multi-tap skips don't flood hardware video decoders on high-bitrate 4K/Dolby Vision files; trim back-buffer to 12 s and size the video buffer to 25% of `largeHeap` (64–192 MB).
+
 ## [1.0.0]
 
 The first public release.

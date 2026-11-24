@@ -1,5 +1,6 @@
 package app.mediacore.phone
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -108,7 +109,6 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     private val commit = Runnable { commitScrub() }
     private val clearSkipped = Runnable { st.skipped = 0 }
-    private var seekedTo = -1L // a skip's first tap lands at once; later taps add to it
     private var scrubResume = false
     private var scrubFrom = Mode.Hidden
 
@@ -159,6 +159,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     // ---------- PlayerActions (the overlay calls these) ----------
 
     override fun togglePlay() {
+        if (st.scrub != null && st.mode != Mode.Scrub) commitScrub()
         if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
         if (player.playWhenReady) {
             player.pause()
@@ -170,10 +171,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.playing = player.playWhenReady
     }
 
-    /** A double tap, or one of the 10 s buttons. With nothing on screen it shows only a small mark; taps add up. */
+    /** A double tap, or one of the 10 s buttons. With nothing on screen it shows only a small mark; taps add up and seek once they pause. */
     override fun skip(dir: Int) {
         if (st.dur <= 0) return
-        val first = st.scrub == null
         val from = st.scrub ?: player.currentPosition
         val to = (from + dir * 10_000L).coerceIn(0, maxOf(0, st.dur - 1000))
         st.scrub = to
@@ -182,7 +182,6 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             ui.removeCallbacks(clearSkipped)
             ui.postDelayed(clearSkipped, 1000)
         }
-        if (first) { seekExact(to); seekedTo = to }
         ui.removeCallbacks(commit)
         ui.removeCallbacks(autoHide)
         ui.postDelayed(commit, 350)
@@ -196,7 +195,6 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         st.skipped = 0
         scrubFrom = st.mode
         scrubResume = player.playWhenReady
-        seekedTo = -1
         st.scrub = st.scrub ?: player.currentPosition
         player.playWhenReady = false
         st.mode = Mode.Scrub
@@ -219,8 +217,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private fun commitScrub() {
         ui.removeCallbacks(commit)
         val to = st.scrub ?: return
-        if (to != seekedTo) seekExact(to)
-        seekedTo = -1
+        seekExact(to)
         st.scrub = null
         refresh()
         poke()
@@ -400,14 +397,15 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             // the phone's own decoders first; FFmpeg only for what they can't do (DTS, TrueHD etc.)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             .setEnableDecoderFallback(true)
+        val bufferMb = ((getSystemService(ACTIVITY_SERVICE) as ActivityManager).largeMemoryClass / 4).coerceIn(64, 192)
         val load = DefaultLoadControl.Builder()
-            // keep up to ~50 s ahead and the last 20 s behind, so skips both ways stay in memory.
-            // At home playback starts at 0.5 s buffered; on a thin connection it waits
-            // for more, and for more again after running dry, rather than stopping every few seconds.
-            // Capped at 128 MB (largeHeap): all 70 s of a 15 Mb/s WEB-DL
+            // keep up to ~50 s ahead and the last 12 s behind (enough for a 10 s rewind without
+            // starving forward buffer on high-bitrate 4K). At home playback starts at 0.5 s buffered;
+            // on a thin connection it waits for more, and for more again after running dry.
+            // Sized to ~25% of largeHeap (64–192 MB).
             .setBufferDurationsMs(15_000, 50_000, if (Api.away) 2_500 else 500, if (Api.away) 6_000 else 2_000)
-            .setBackBuffer(20_000, true)
-            .setTargetBufferBytes(128 * 1024 * 1024)
+            .setBackBuffer(12_000, true)
+            .setTargetBufferBytes(bufferMb * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
         val p = ExoPlayer.Builder(this, renderers)
@@ -619,6 +617,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             if (changed) {
                 stall.clear()
                 st.firstFrame = false
+                ui.removeCallbacks(commit)
+                st.scrub = null
                 st.mode = Mode.Hidden
                 // a track picked for one episode doesn't exist in the next; the language preference carries over
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
@@ -666,6 +666,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 network -> "Lost the connection to ${Api.name}. Check that you're on the home Wi-Fi."
                 else -> "Something went wrong while playing."
             }
+            ui.removeCallbacks(commit)
+            st.scrub = null
             st.mode = Mode.Hidden
             st.sheet = null
             st.error = PlayError("Can't play this", hint, "${error.errorCodeName}  ${error.cause?.message ?: error.message ?: ""}".trim())

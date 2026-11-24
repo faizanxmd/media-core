@@ -1,5 +1,6 @@
 package app.mediacore
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -197,6 +198,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     // ---------- PlayerActions (the overlay calls these) ----------
 
     override fun togglePlay() {
+        if (st.scrub != null && st.mode != Mode.Scrub) {
+            ui.removeCallbacks(settle)
+            settle.run()
+        }
         if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
         if (player.playWhenReady) {
             player.pause()
@@ -210,8 +215,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     /**
-     * A press of Left/Right, as streaming apps do it: the film jumps 10 s at once and plays on. Nothing else appears,
-     * only the turning mark with the seconds; taps add up. Each jump goes to the nearest keyframe, so it's instant.
+     * A press of Left/Right, as streaming apps do it: the turning mark adds up 10 s per tap immediately, and a single
+     * keyframe seek fires once the taps pause (350 ms). Coalescing avoids hammering the hardware decoder with
+     * back-to-back flushes on high-bitrate 4K/DV files, and cancels cleanly if the press turns into a hold.
      */
     private fun tapSkip(dir: Int) {
         ui.removeCallbacks(settle)
@@ -226,14 +232,15 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (st.skipped != 0 && (st.skipped > 0) != (dir > 0)) st.skipped = 0 // turned back: count afresh
         st.skipped += ((to - from) / 1000).toInt() // what the film really moves, near its start or end
         st.taps++
-        seekSync(to)
         st.thumbs?.ensure() // ready in case the next press is a hold
         ui.postDelayed(clearSkipped, 900)
-        ui.postDelayed(settle, 600)
+        ui.postDelayed(settle, 350)
     }
 
-    /** The taps have stopped: the film is already there, so only forget the target the taps were adding to. */
+    /** The taps have stopped: land on the accumulated target with one seek. */
     private val settle = Runnable {
+        val to = st.scrub ?: return@Runnable
+        seekSync(to)
         st.scrub = null
         refresh()
         if (st.mode == Mode.Full) poke()
@@ -539,7 +546,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                     st.error != null -> finish()
                     st.sheet != null -> closeSheet()
                     st.scrub != null && st.mode == Mode.Seek -> { ui.removeCallbacks(commit); st.scrub = null; st.mode = Mode.Hidden } // cancel the seek
-                    st.scrub != null -> { ui.removeCallbacks(settle); settle.run(); if (st.mode == Mode.Full && player.playWhenReady) st.mode = Mode.Hidden else if (st.mode == Mode.Hidden) finish() } // taps already landed
+                    st.scrub != null -> {
+                        ui.removeCallbacks(settle)
+                        if (st.mode == Mode.Hidden) { st.scrub = null; finish() }
+                        else { settle.run(); if (st.mode == Mode.Full && player.playWhenReady) st.mode = Mode.Hidden }
+                    }
                     st.mode == Mode.Full && tv -> if (player.playWhenReady) st.mode = Mode.Hidden else finish() // paused: leave
                     st.mode == Mode.Seek -> st.mode = Mode.Hidden
                     st.offer?.kind == "next" || st.offer?.kind == "slow" -> dismissOffer() // keep watching as it is
@@ -556,13 +567,14 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             // the TV's own decoders first (DTS, DD+, Atmos...); FFmpeg only for what it can't do (TrueHD etc.)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             .setEnableDecoderFallback(true)
+        val bufferMb = ((getSystemService(ACTIVITY_SERVICE) as ActivityManager).largeMemoryClass / 4).coerceIn(64, 192)
         val load = DefaultLoadControl.Builder()
             // start (and resume after a seek) at 0.5 s buffered; keep up to ~50 s ahead and the last
-            // 20 s behind, so skips both ways stay in memory instead of reloading from the server.
-            // Capped at 128 MB (largeHeap, about what big streaming apps use): all 70 s of a 15 Mb/s WEB-DL
+            // 12 s behind (enough for a 10 s rewind without starving forward buffer on high-bitrate 4K).
+            // Sized to ~25% of largeHeap (64–192 MB) so low-RAM TVs don't OOM.
             .setBufferDurationsMs(15_000, 50_000, 500, 2_000)
-            .setBackBuffer(20_000, true)
-            .setTargetBufferBytes(128 * 1024 * 1024)
+            .setBackBuffer(12_000, true)
+            .setTargetBufferBytes(bufferMb * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
         val p = ExoPlayer.Builder(this, renderers)
@@ -810,6 +822,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             if (changed) {
                 stall.clear()
                 st.firstFrame = false
+                ui.removeCallbacks(settle)
+                st.scrub = null
                 abandonHold()
                 st.mode = Mode.Hidden
                 // a track picked for one episode doesn't exist in the next; the language preference carries over
@@ -861,6 +875,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 network -> "Lost the connection to ${Api.name}. Check that you're on the home Wi-Fi."
                 else -> "Something went wrong while playing."
             }
+            ui.removeCallbacks(settle)
+            st.scrub = null
             abandonHold()
             st.mode = Mode.Hidden
             st.sheet = null
