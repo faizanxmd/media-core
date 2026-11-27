@@ -216,12 +216,20 @@ private fun ping(): Long {
 /** Megabits per second over a 16 MB download from the server's speed test. */
 private fun measure(alive: () -> Boolean): Double {
     val bytes = 16L shl 20
+    var total = 0L
     val t = SystemClock.elapsedRealtime()
     Api.http.newCall(Request.Builder().url("${Api.base}/api/v1/speedtest?bytes=$bytes").build()).execute().use { r ->
+        check(r.isSuccessful) { "HTTP ${r.code}" }
         val s = r.body!!.byteStream()
         val buf = ByteArray(64 shl 10)
-        while (s.read(buf) >= 0) if (!alive()) error("left Settings") // stop reading once Settings closes
+        while (true) {
+            val n = s.read(buf)
+            if (n < 0) break
+            total += n
+            if (!alive()) error("left Settings") // stop reading once Settings closes
+        }
     }
+    check(total > 0) { "empty response" }
     val sec = (SystemClock.elapsedRealtime() - t).coerceAtLeast(1) / 1000.0
-    return bytes * 8 / sec / 1e6
+    return total * 8 / sec / 1e6
 }

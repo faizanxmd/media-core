@@ -249,6 +249,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     /** Reopens the same title's Light copy where it was, which takes a few seconds. */
     private fun switchToLight() {
         val j = current ?: return
+        ui.removeCallbacks(commit)
+        st.scrub = null
         val index = queue.indexOf(j)
         val pos = player.currentPosition
         lightIds += currentId
@@ -260,6 +262,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     override fun takeOffer() {
+        ui.removeCallbacks(commit)
+        st.scrub = null
         when (st.offer?.kind) {
             "slow" -> switchToLight()
             "intro" -> current?.optJSONObject("intro")?.let { seekExact((it.optDouble("end") * 1000).toLong()) }
@@ -360,11 +364,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
         Api.init(this)
         Speed.start(this)
-        Speed.freshen() // an old result on this network: measure again while it plays
         Offline.init(this)
         val arr = JSONArray(intent.getStringExtra("queue") ?: "[]")
         for (i in 0 until arr.length()) queue += arr.getJSONObject(i)
         if (queue.isEmpty()) { finish(); return }
+        if (queue.any { it.optJSONObject("light") != null }) Speed.freshen()
         val index = intent.getIntExtra("index", 0).coerceIn(0, queue.size - 1)
         val startPos = intent.getLongExtra("pos", 0L)
 
@@ -399,14 +403,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             .setEnableDecoderFallback(true)
         val bufferMb = ((getSystemService(ACTIVITY_SERVICE) as ActivityManager).largeMemoryClass / 4).coerceIn(64, 192)
         val load = DefaultLoadControl.Builder()
-            // keep up to ~50 s ahead and the last 12 s behind (enough for a 10 s rewind without
-            // starving forward buffer on high-bitrate 4K). At home playback starts at 0.5 s buffered;
-            // on a thin connection it waits for more, and for more again after running dry.
-            // Sized to ~25% of largeHeap (64–192 MB).
-            .setBufferDurationsMs(15_000, 50_000, if (Api.away) 2_500 else 500, if (Api.away) 6_000 else 2_000)
-            .setBackBuffer(12_000, true)
+            // guarantee at least 8 s ahead even on high-bitrate 4K so the back buffer can never starve forward
+            // loading into a deadlock, while capping extra buffer at ~25% of largeHeap.
+            .setBufferDurationsMs(8_000, 50_000, if (Api.away) 2_500 else 500, if (Api.away) 6_000 else 2_000)
+            .setBackBuffer(if (bufferMb <= 64) 0 else 8_000, false)
             .setTargetBufferBytes(bufferMb * 1024 * 1024)
-            .setPrioritizeTimeOverSizeThresholds(false)
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         val p = ExoPlayer.Builder(this, renderers)
             .setTrackSelector(DefaultTrackSelector(this))
@@ -448,8 +450,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             if (audio != null) setPreferredAudioLanguage(audio)
             when (text) {
                 null -> {}
-                "off" -> setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT).setPreferredTextLanguage(null)
-                else -> setPreferredTextLanguage(text)
+                "off" -> setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT).setPreferredTextLanguage(null).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                else -> setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setPreferredTextLanguage(text)
             }
         }.build()
     }
@@ -692,8 +694,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val first = down && event.repeatCount == 0
         when (event.keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> { if (first) togglePlay(); return true }
-            KeyEvent.KEYCODE_MEDIA_PLAY -> { if (first && !player.isPlaying) togglePlay(); return true }
-            KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (first && player.isPlaying) togglePlay(); return true }
+            KeyEvent.KEYCODE_MEDIA_PLAY -> { if (first && !player.playWhenReady) togglePlay(); return true }
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (first && player.playWhenReady) togglePlay(); return true }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) skip(1); return true }
             KeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) skip(-1); return true }
             KeyEvent.KEYCODE_MEDIA_NEXT -> { if (first) next(); return true }

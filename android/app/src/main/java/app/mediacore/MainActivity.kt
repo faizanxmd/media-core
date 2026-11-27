@@ -117,6 +117,9 @@ class MainActivity : ComponentActivity() {
         ui.removeCallbacks(keepUp)
     }
 
+    private var started = false
+    private var updating = false
+
     override fun onResume() {
         super.onResume()
         Move.read(this)
@@ -125,7 +128,8 @@ class MainActivity : ComponentActivity() {
             // an animation needs Compose's frame clock: MainScope alone has none, and the app crashed here
             scope.launch(AndroidUiDispatcher.Main) { nav.black.animateTo(0f, Move.fade(Move.Screen)) }
         }
-        keepUp.run()
+        if (started) keepUp.run()
+        else { started = true; ui.postDelayed(keepUp, 60_000) }
         scope.launch { checkUpdate() }
     }
 
@@ -142,33 +146,41 @@ class MainActivity : ComponentActivity() {
 
     /** Downloads the new APK from the server and hands it to the system installer. */
     private fun installUpdate() {
+        if (updating) return
         if (!packageManager.canRequestPackageInstalls()) {
             Toast.makeText(this, "Allow Media Core to install updates, then press Update again", Toast.LENGTH_LONG).show()
             runCatching { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
             return
         }
+        updating = true
         Toast.makeText(this, "Downloading update…", Toast.LENGTH_SHORT).show()
         scope.launch {
-            val f = withContext(Dispatchers.IO) {
-                runCatching {
+            try {
+                val f = withContext(Dispatchers.IO) {
                     val dir = File(cacheDir, "update").apply { mkdirs() }
                     val out = File(dir, "media-core.apk")
-                    Api.http.newCall(Request.Builder().url("${Api.base}/api/v1/app.apk").build()).execute().use { r ->
-                        if (!r.isSuccessful) error("HTTP ${r.code}")
-                        out.outputStream().use { r.body!!.byteStream().copyTo(it) }
-                    }
-                    out
-                }.getOrNull()
+                    val part = File(dir, "media-core.apk.part")
+                    runCatching {
+                        Api.http.newCall(Request.Builder().url("${Api.base}/api/v1/app.apk").build()).execute().use { r ->
+                            if (!r.isSuccessful) error("HTTP ${r.code}")
+                            part.outputStream().use { r.body!!.byteStream().copyTo(it) }
+                        }
+                        if (!part.renameTo(out)) error("rename failed")
+                        out
+                    }.onFailure { part.delete() }.getOrNull()
+                }
+                if (f == null) {
+                    Toast.makeText(this@MainActivity, "Update download failed", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.files", f)
+                startActivity(
+                    Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            } finally {
+                updating = false
             }
-            if (f == null) {
-                Toast.makeText(this@MainActivity, "Update download failed", Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.files", f)
-            startActivity(
-                Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
         }
     }
 

@@ -164,7 +164,7 @@ fun TitlePage(nav: Nav, id: String) {
     )
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pageY }) {
-            SettingsButton(nav, fr("settings"), fr("play")) { focus = "settings" }
+            SettingsButton(nav, fr("settings"), if (target != null) fr("play") else FocusRequester.Cancel) { focus = "settings" }
             FirstScreen(main, show, target, fr = ::fr, onFocus = { focus = it }, onDown = {
                 // a season with no episodes yet: its name, so focus always lands on something
                 if (show && main.seasons.isNotEmpty()) go(Place.Episodes, if (main.seasons.getOrNull(season)?.episodes.isNullOrEmpty()) "season/$season" else "ep/$season/${epOf(season)}")
@@ -301,7 +301,7 @@ private fun EpisodesBlock(
                     .focusProperties {
                         up = if (s > 0) fr("season/${s - 1}") else FocusRequester.Cancel
                         down = if (s < main.seasons.lastIndex) fr("season/${s + 1}") else FocusRequester.Cancel
-                        right = fr("ep/$s/${epOf(s)}")
+                        right = if (it.episodes.isNotEmpty() && s == season) fr("ep/$s/${epOf(s)}") else FocusRequester.Cancel
                         left = FocusRequester.Cancel
                     }
                     .onPreviewKeyEvent { e -> if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionUp && s == 0) { onUp(); true } else false }
@@ -328,9 +328,11 @@ private fun EpisodesBlock(
         val focusedI = epOf(s)
         val top by animateFloatAsState(-focusedI * EP_PITCH * Px.screen, Move.slide(Move.Screen), label = "list")
         Box(Modifier.graphicsLayer { translationY = top }) {
+            val lo = (focusedI - 1).coerceAtLeast(0)
+            val hi = (focusedI + 5).coerceAtMost(eps.lastIndex)
             eps.forEachIndexed { i, ep ->
                 // only the rows near focus are built: a long season doesn't load every still at once
-                if (i < focusedI - 1 || i > focusedI + 5) return@forEachIndexed
+                if (i < lo || i > hi) return@forEachIndexed
                 // keyed by episode: as the built window slides, each row keeps its own focus and state.
                 // Unkeyed, the focused row's slot was handed to the episode above it, and Up went nowhere.
                 key(ep.id) {
@@ -343,8 +345,8 @@ private fun EpisodesBlock(
                         .focusRequester(fr(key))
                         .onFocusChanged { f -> if (f.isFocused) { focusedEpisode = key; onEpisode(s, i) } else if (focusedEpisode == key) focusedEpisode = null }
                         .focusProperties {
-                            up = if (i > 0) fr("ep/$s/${i - 1}") else FocusRequester.Cancel
-                            down = if (i < eps.lastIndex) fr("ep/$s/${i + 1}") else FocusRequester.Cancel
+                            up = if (i > lo) fr("ep/$s/${i - 1}") else FocusRequester.Cancel
+                            down = if (i < hi) fr("ep/$s/${i + 1}") else FocusRequester.Cancel
                             left = fr("season/$s")
                             right = FocusRequester.Cancel
                         }

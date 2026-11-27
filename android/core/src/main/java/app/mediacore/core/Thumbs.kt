@@ -30,15 +30,18 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
     private val wanted = LinkedHashSet<Int>() // newest last
     private var decoding = false
     private var version by mutableIntStateOf(0) // a picture arrived
-    private var raf: RandomAccessFile? = null
-    private var offsets = LongArray(0)
+    private var raf: RandomAccessFile? = null // accessed only on [reader]
+    private var offsets = LongArray(0) // accessed on Main for bounds, passed to [reader]
     private var every = 10
+    private var thumbCount = 0
     private var id = ""
     private var count = 0
     private var job: Job? = null
 
     var ready by mutableStateOf(false)
         private set
+
+    val stepMs: Long get() = every * 1000L
 
     /** Switches to a video. [eager]: fetch its pictures soon; otherwise on the first [ensure]. */
     fun load(id: String, count: Int, eager: Boolean) {
@@ -49,7 +52,7 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
         if (count <= 0) return
         val f = file()
         if (f.exists()) job = scope.launch { open(f) }
-        else if (eager) job = scope.launch { delay(4000); fetch(f) } // after the film's own start
+        else if (eager) job = scope.launch { delay(1000); fetch(f) } // right after the film starts
     }
 
     /** Scrubbing has begun: if the pictures aren't here yet, get them now. */
@@ -61,11 +64,21 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
     /** The picture nearest [ms], or null while it's being read (it then redraws whoever asked). */
     fun at(ms: Long): ImageBitmap? {
         version
-        if (!ready) return null
-        val i = (ms / 1000 / every).toInt().coerceIn(0, offsets.size - 2)
+        if (!ready || thumbCount <= 0) return null
+        val i = (ms / 1000 / every).toInt().coerceIn(0, thumbCount - 1)
         cache.get(i)?.let { return it }
         request(i)
         return null
+    }
+
+    /** Pre-decodes the neighbor frames around [ms] so a 5-frame filmstrip never flashes empty. */
+    fun prefetch(ms: Long) {
+        if (!ready || thumbCount <= 0) return
+        val center = (ms / 1000 / every).toInt().coerceIn(0, thumbCount - 1)
+        for (d in listOf(0, 1, -1, 2, -2)) {
+            val i = center + d
+            if (i in 0 until thumbCount && cache.get(i) == null) request(i)
+        }
     }
 
     private fun request(i: Int) {
@@ -79,7 +92,8 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
                 val next = wanted.last()
                 wanted.remove(next)
                 val forId = id
-                val pic = withContext(reader) { runCatching { decode(next) }.getOrNull() }
+                val offs = offsets
+                val pic = withContext(reader) { runCatching { decode(next, offs) }.getOrNull() }
                 if (pic != null && forId == id) {
                     cache.put(next, pic)
                     version++
@@ -89,10 +103,13 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
         }
     }
 
-    private fun decode(i: Int): ImageBitmap? {
+    private fun decode(i: Int, offs: LongArray): ImageBitmap? {
         val r = raf ?: return null
-        val b = ByteArray((offsets[i + 1] - offsets[i]).toInt())
-        r.seek(offsets[i])
+        if (i < 0 || i + 1 >= offs.size) return null
+        val len = (offs[i + 1] - offs[i]).toInt()
+        if (len <= 0) return null
+        val b = ByteArray(len)
+        r.seek(offs[i])
         r.readFully(b)
         return BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap()
     }
@@ -100,17 +117,19 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
     private fun file() = File(dir, "$id-$count.bin")
 
     private suspend fun fetch(f: File) {
+        val part = File(f.path + ".part")
+        val call = Api.http.newCall(Request.Builder().url("${Api.base}/api/v1/thumbs/$id").build())
         val ok = withContext(Dispatchers.IO) {
+            coroutineContext[Job]?.invokeOnCompletion { if (it != null) call.cancel() }
             runCatching {
-                val part = File(f.path + ".part")
-                Api.http.newCall(Request.Builder().url("${Api.base}/api/v1/thumbs/$id").build()).execute().use { r ->
+                call.execute().use { r ->
                     if (!r.isSuccessful) error("HTTP ${r.code}")
                     part.outputStream().use { out -> r.body!!.byteStream().copyTo(out) }
                 }
-                part.renameTo(f)
+                if (!part.renameTo(f)) error("rename failed")
                 // only the last few videos stay on the device
                 dir.listFiles { x -> x.name.endsWith(".bin") }?.sortedByDescending { it.lastModified() }?.drop(6)?.forEach { it.delete() }
-            }.isSuccess
+            }.onFailure { part.delete() }.isSuccess
         }
         if (ok) open(f)
     }
@@ -118,30 +137,34 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
     private suspend fun open(f: File) {
         val forId = id
         val opened = withContext(reader) {
+            var r: RandomAccessFile? = null
             runCatching {
-                val r = RandomAccessFile(f, "r")
-                val magic = ByteArray(4).also { r.readFully(it) }
+                r = RandomAccessFile(f, "r")
+                val magic = ByteArray(4).also { r!!.readFully(it) }
                 check(String(magic) == "MCT1")
-                val secs = r.readInt()
-                val n = r.readInt()
-                r to Pair(secs, LongArray(n + 1) { r.readLong() })
-            }.getOrNull()
+                val secs = r!!.readInt()
+                val n = r!!.readInt()
+                check(n > 0)
+                val offs = LongArray(n + 1) { r!!.readLong() }
+                runCatching { raf?.close() }
+                raf = r
+                Pair(secs, offs)
+            }.onFailure { runCatching { r?.close() } }.getOrNull()
         } ?: return
-        if (forId != id) { withContext(reader) { opened.first.close() }; return }
-        raf = opened.first
-        every = opened.second.first.coerceAtLeast(1)
-        offsets = opened.second.second
-        ready = true
+        if (forId != id) { withContext(reader) { runCatching { raf?.close() }; raf = null }; return }
+        every = opened.first.coerceAtLeast(1)
+        offsets = opened.second
+        thumbCount = (offsets.size - 1).coerceAtLeast(0)
+        ready = thumbCount > 0
     }
 
     private fun close() {
         job?.cancel()
         ready = false
+        thumbCount = 0
         wanted.clear()
         cache.evictAll()
-        val r = raf
-        raf = null
-        if (r != null) Thread { runCatching { r.close() } }.start() // a read still under way just fails quietly
+        scope.launch(reader) { runCatching { raf?.close() }; raf = null }
     }
 
     fun release() {

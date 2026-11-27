@@ -57,8 +57,12 @@ import app.mediacore.core.StallWatch
 import app.mediacore.core.ThumbStore
 import app.mediacore.core.mins
 import app.mediacore.core.objects
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -99,6 +103,25 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private val scope = MainScope()
     private var showLogo: String? = null // a show's title art: its episodes don't carry it
 
+    // playback resilience: freeze watchdog, staged buffering notes, quiet auto-retry & seek lock
+    private var bufferSince = 0L // when buffering or a silent freeze began
+    private var lastPosSeen = -1L
+    private var lastPosAt = 0L
+    private var lastPingAt = 0L
+    private var pinging = false
+    private var autoRetries = 0
+    private var cleanSince = 0L
+    private var pendingSeekTo: Long? = null
+    private var pendingSeekAt = 0L
+    private var autoPickedAudioFor = "" // item id we already auto-switched off software TrueHD for
+    private val retryRun = Runnable {
+        if (released || st.error != null) return@Runnable
+        val pos = player.currentPosition.coerceAtLeast(0L)
+        player.prepare()
+        if (pos > 0) player.seekTo(pos)
+        player.playWhenReady = true
+    }
+
     // holding Left/Right
     private var holdKey = 0
     private var holdDir = 0
@@ -118,11 +141,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
     }
 
-    /** Keeps the clock, the offers and the next-episode countdown current. Cheap when nothing is shown. */
+    /** Keeps the clock, freeze watchdog, offers and next-episode countdown current. Zero UI churn when hidden. */
     private val tick = object : Runnable {
         override fun run() {
             refresh()
-            ui.postDelayed(this, if (st.mode != Mode.Hidden || st.offer != null) 250 else 1000)
+            val fast = st.mode != Mode.Hidden || st.offer != null || st.buffering || st.stallNote != null
+            ui.postDelayed(this, if (fast) 250 else 1000)
         }
     }
 
@@ -151,18 +175,68 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private val clearSkipped = Runnable { st.skipped = 0 }
 
     private fun refresh() {
-        st.pos = player.currentPosition
-        st.buffered = player.bufferedPosition
-        st.dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
-        st.playing = player.playWhenReady // what you asked for: a moment's loading doesn't flip Pause to Play
-        st.buffering = player.playbackState == Player.STATE_BUFFERING
+        val now = System.currentTimeMillis()
+        val rawPos = player.currentPosition
+        val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
+        val ready = player.playbackState == Player.STATE_READY
+        val wantPlay = player.playWhenReady
+        val exoBuffering = player.playbackState == Player.STATE_BUFFERING
+
+        // Hold the playhead visually at our seek target until ExoPlayer lands (prevents rubber-banding)
+        val pending = pendingSeekTo
+        val shownPos = if (pending != null && now - pendingSeekAt < 2000L && abs(rawPos - pending) > 2000L) {
+            pending
+        } else {
+            if (pending != null) pendingSeekTo = null
+            rawPos
+        }
+
+        // Silent-freeze watchdog: ExoPlayer says READY + playWhenReady, but the clock stopped moving
+        var silentFreeze = false
+        if (st.firstFrame && wantPlay && ready && st.mode != Mode.Scrub && st.error == null) {
+            if (rawPos != lastPosSeen) {
+                lastPosSeen = rawPos
+                lastPosAt = now
+                if (cleanSince == 0L) cleanSince = now
+                if (autoRetries > 0 && now - cleanSince > 5000L) autoRetries = 0
+            } else if (lastPosAt > 0 && now - lastPosAt > 1500L) {
+                silentFreeze = true
+            }
+        } else {
+            lastPosSeen = rawPos
+            lastPosAt = now
+        }
+
+        val stuck = exoBuffering || silentFreeze
+        if (stuck && st.firstFrame && wantPlay && st.mode != Mode.Scrub && st.error == null) {
+            if (bufferSince == 0L) bufferSince = now
+            val waited = now - bufferSince
+            st.stallNote = when {
+                waited >= 10_000L -> "Can't reach ${Api.name} · Retrying…"
+                waited >= 4_000L -> "Slow connection to ${Api.name}…"
+                else -> null
+            }
+            if (waited >= 8_000L && !pinging && now - lastPingAt >= 4_000L) pingAndRecover()
+        } else {
+            bufferSince = 0L
+            if (st.stallNote != null && !exoBuffering) st.stallNote = null
+        }
+
+        st.buffering = stuck
+        st.playing = wantPlay // what you asked for: a moment's loading doesn't flip Pause to Play
         st.hasNext = player.hasNextMediaItem()
-        stall.state(st.buffering, player.playbackState == Player.STATE_READY, player.playWhenReady)
+        if (dur != st.dur) st.dur = dur
+        // Only push playhead updates into Compose when controls or an offer are visible (zero idle recompositions)
+        if (st.mode != Mode.Hidden || st.pos == 0L) {
+            st.pos = shownPos
+            st.buffered = player.bufferedPosition
+        }
+
+        stall.state(stuck, ready && !silentFreeze, wantPlay)
         if (slowFor != currentId && stall.stuck()) checkSlow()
         val o = offer()
         if (o?.kind == "next" && st.offer?.kind != "next") nextLeftMs = 10_000
         st.offer = o
-        val now = System.currentTimeMillis()
         // the countdown runs only while you can see it: not under a panel, nor while the controls hide the card
         if (o?.kind == "next" && player.isPlaying && st.sheet == null && !(tv && st.mode == Mode.Full)) {
             nextLeftMs -= (now - lastTick).coerceIn(0, 1000)
@@ -170,6 +244,29 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
         st.nextLeft = if (st.offer?.kind == "next") nextLeftMs.coerceIn(0, 10_000) else 0
         lastTick = now
+    }
+
+    /** When buffering drags past 8 s or silently freezes, check if the server answers and gently nudge playback. */
+    private fun pingAndRecover() {
+        val base = Api.base
+        if (base.isEmpty() || pinging) return
+        pinging = true
+        lastPingAt = System.currentTimeMillis()
+        scope.launch {
+            val reachable = withContext(Dispatchers.IO) {
+                runCatching {
+                    Api.http.newCall(Request.Builder().url("$base/api/v1/hello").build()).execute().use { it.isSuccessful }
+                }.getOrDefault(false)
+            }
+            pinging = false
+            if (released || st.error != null || !player.playWhenReady) return@launch
+            if (reachable && bufferSince > 0L && System.currentTimeMillis() - bufferSince >= 8_000L) {
+                val at = player.currentPosition.coerceAtLeast(0L)
+                bufferSince = System.currentTimeMillis() - 4_000L // give the recovery a fresh window
+                lastPosAt = System.currentTimeMillis()
+                seekSync(at)
+            }
+        }
     }
 
     /** Skip Intro inside the intro; the next-episode card in the credits / last 40 s of an episode. */
@@ -345,6 +442,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
      * before, which is the freeze a skip used to have.
      */
     private fun seekSync(to: Long) {
+        pendingSeekTo = to
+        pendingSeekAt = System.currentTimeMillis()
+        st.pos = to
         player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
         player.seekTo(to)
     }
@@ -366,9 +466,17 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         slowAt = System.currentTimeMillis()
     }
 
+    /** Cancels any pending skip or scrub timer before an explicit jump or reload. */
+    private fun cancelSkip() {
+        ui.removeCallbacks(settle)
+        ui.removeCallbacks(commit)
+        st.scrub = null
+    }
+
     /** Reopens the same title's Light copy where it was, which takes a few seconds. */
     private fun switchToLight() {
         val j = current ?: return
+        cancelSkip()
         val index = queue.indexOf(j)
         val pos = player.currentPosition
         lightIds += currentId
@@ -382,6 +490,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     override fun takeOffer() {
+        cancelSkip()
         when (st.offer?.kind) {
             "slow" -> switchToLight()
             "intro" -> current?.optJSONObject("intro")?.let { seekSync((it.optDouble("end") * 1000).toLong()) }
@@ -422,6 +531,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     /** Start over: back to the first frame, playing. */
     override fun startOver() {
+        cancelSkip()
         seekSync(0)
         player.playWhenReady = true
         st.mode = Mode.Hidden
@@ -459,7 +569,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     private fun showFull(menu: Boolean = false) {
         ui.removeCallbacks(hideSeek)
-        st.focusTo = if (menu) "pill/0" else null // Down: straight to the audio and subtitle pills
+        st.focusTo = if (menu) "act/0" else null // Down: straight to Audio & Subtitles
         st.mode = Mode.Full
         refresh()
         poke()
@@ -516,11 +626,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         Api.init(this)
         Px.init(this)
         Speed.start(this)
-        Speed.freshen() // an old result on this network: measure again while it plays
         Offline.init(this, overMetered = true)
         val arr = JSONArray(intent.getStringExtra("queue") ?: bigQueue.also { bigQueue = null } ?: "[]")
         for (i in 0 until arr.length()) queue += arr.getJSONObject(i)
         if (queue.isEmpty()) { finish(); return }
+        if (queue.any { it.optJSONObject("light") != null }) Speed.freshen() // only when a Light copy exists to pick from
         val index = intent.getIntExtra("index", 0).coerceIn(0, queue.size - 1)
         val startPos = intent.getLongExtra("pos", 0L)
 
@@ -569,13 +679,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             .setEnableDecoderFallback(true)
         val bufferMb = ((getSystemService(ACTIVITY_SERVICE) as ActivityManager).largeMemoryClass / 4).coerceIn(64, 192)
         val load = DefaultLoadControl.Builder()
-            // start (and resume after a seek) at 0.5 s buffered; keep up to ~50 s ahead and the last
-            // 12 s behind (enough for a 10 s rewind without starving forward buffer on high-bitrate 4K).
-            // Sized to ~25% of largeHeap (64–192 MB) so low-RAM TVs don't OOM.
-            .setBufferDurationsMs(15_000, 50_000, 500, 2_000)
-            .setBackBuffer(12_000, true)
+            // start (and resume after a seek) at 0.5 s buffered; guarantee at least 8 s ahead even on high-bitrate 4K
+            // so the back buffer can never starve forward loading into a deadlock, while capping extra buffer at ~25% of largeHeap.
+            .setBufferDurationsMs(8_000, 50_000, 500, 2_000)
+            .setBackBuffer(if (bufferMb <= 64) 0 else 8_000, false)
             .setTargetBufferBytes(bufferMb * 1024 * 1024)
-            .setPrioritizeTimeOverSizeThresholds(false)
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         val p = ExoPlayer.Builder(this, renderers)
             .setTrackSelector(DefaultTrackSelector(this))
@@ -615,7 +724,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val audio = langPrefs.getString("a:$k", null)
         val text = langPrefs.getString("t:$k", null)
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
-            if (audio != null) setPreferredAudioLanguage(audio)
+            // prefer saved language, otherwise English (ExoPlayer falls back to the file's default if absent)
+            setPreferredAudioLanguage(audio ?: "en")
             when (text) {
                 null -> {}
                 // off stays off, as when it was picked: forced or default tracks don't switch it back on
@@ -674,13 +784,35 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val name = { l: String -> langName(l, null) }
         val out = mutableListOf<TrackOption>()
         val langs = (listOf(now) + audio).distinctBy { it.lang }.take(2)
-        for (a in langs) out += TrackOption(name(a.lang), "", a.lang == now.lang && subOn == null) { pickAudio(a.g, a.i); pickText(null, 0) }
+        for (a in langs) out += TrackOption(name(a.lang), "", a.lang == now.lang && subOn == null) { pickCombo(a.g, a.i, null, 0) }
         val subs = text.filter { !it.forced && (it.lang == now.lang || it.lang == "en") }.distinctBy { it.lang }.sortedBy { if (it.lang == now.lang) 0 else 1 }
         for (t in subs) {
             val words = if (t.lang == now.lang) "${name(now.lang)} with Subtitles" else "${name(now.lang)} with ${name(t.lang)} Subtitles"
-            out += TrackOption(words, "", subOn?.lang == t.lang) { pickAudio(now.g, now.i); pickText(t.g, t.i) }
+            out += TrackOption(words, "", subOn?.lang == t.lang) { pickCombo(now.g, now.i, t.g, t.i) }
         }
         return out.take(4)
+    }
+
+    private fun pickCombo(ag: Tracks.Group, ai: Int, tg: Tracks.Group?, ti: Int) {
+        val aLang = ag.getTrackFormat(ai).language
+        val b = player.trackSelectionParameters.buildUpon()
+            .setOverrideForType(TrackSelectionOverride(ag.mediaTrackGroup, ai))
+            .apply { if (aLang != null) setPreferredAudioLanguage(aLang) }
+        val k = current?.let(::langKey)
+        val ed = if (k != null) langPrefs.edit() else null
+        if (k != null && aLang != null) ed?.putString("a:$k", aLang)
+        if (tg == null) {
+            b.clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            if (k != null) ed?.putString("t:$k", "off")
+        } else {
+            val tLang = tg.getTrackFormat(ti).language
+            b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setIgnoredTextSelectionFlags(0)
+                .setOverrideForType(TrackSelectionOverride(tg.mediaTrackGroup, ti))
+                .setPreferredTextLanguage(tLang)
+            if (k != null && tLang != null) ed?.putString("t:$k", tLang)
+        }
+        ed?.apply()
+        player.trackSelectionParameters = b.build()
     }
 
     private fun pickAudio(g: Tracks.Group, i: Int) {
@@ -821,11 +953,20 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             buildEpisodes()
             if (changed) {
                 stall.clear()
+                bufferSince = 0L
+                st.stallNote = null
+                autoRetries = 0
+                cleanSince = 0L
+                pendingSeekTo = null
+                autoPickedAudioFor = ""
+                ui.removeCallbacks(retryRun)
                 st.firstFrame = false
-                ui.removeCallbacks(settle)
-                st.scrub = null
+                cancelSkip()
                 abandonHold()
                 st.mode = Mode.Hidden
+                val fps = current?.optJSONObject("info")?.optDouble("fps", 0.0) ?: 0.0
+                switchedRate = tv && matchRefreshRate(fps)
+                player.videoChangeFrameRateStrategy = if (switchedRate) C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF else C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS
                 // a track picked for one episode doesn't exist in the next; the language preference carries over
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
             }
@@ -834,11 +975,18 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
         override fun onRenderedFirstFrame() {
             st.firstFrame = true
+            st.thumbs?.ensure() // warm up the 5-frame filmstrip right after the first frame lands
             if (::shade.isInitialized && shade.alpha > 0f) shade.animate().alpha(0f).setDuration(if (Move.reduced) 100 else 300).setInterpolator(ease).start()
         }
 
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) stall.reset() // loading after a skip isn't a stall
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                stall.reset() // loading after a skip isn't a stall
+                bufferSince = 0L
+                st.stallNote = null
+                lastPosSeen = newPosition.positionMs
+                lastPosAt = System.currentTimeMillis()
+            }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -857,26 +1005,68 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         override fun onTracksChanged(tracks: Tracks) {
+            // On TV speakers, prefer a hardware-decoded DD+/AC-3/AAC track over software-decoded TrueHD in the same language
+            if (tv && autoPickedAudioFor != currentId && player.trackSelectionParameters.overrides.none { it.key.type == C.TRACK_TYPE_AUDIO }) {
+                autoPickedAudioFor = currentId
+                var selLang: String? = null
+                var selTrueHd = false
+                for (g in tracks.groups) {
+                    if (g.type != C.TRACK_TYPE_AUDIO) continue
+                    for (i in 0 until g.length) {
+                        if (g.isTrackSelected(i)) {
+                            val f = g.getTrackFormat(i)
+                            selLang = f.language
+                            selTrueHd = f.sampleMimeType == MimeTypes.AUDIO_TRUEHD
+                        }
+                    }
+                }
+                if (selTrueHd) {
+                    for (g in tracks.groups) {
+                        if (g.type != C.TRACK_TYPE_AUDIO) continue
+                        for (i in 0 until g.length) {
+                            if (!g.isTrackSupported(i)) continue
+                            val f = g.getTrackFormat(i)
+                            val sameLang = selLang == null || f.language.equals(selLang, ignoreCase = true)
+                            val isComm = f.label?.contains("commentary", ignoreCase = true) == true
+                            if (sameLang && !isComm && f.sampleMimeType != MimeTypes.AUDIO_TRUEHD) {
+                                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                                    .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
+                                    .build()
+                                return
+                            }
+                        }
+                    }
+                }
+            }
             buildTrackOptions(tracks) // the pills under the bar follow what's playing
             // audio-only files never render a frame
             if (!tracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) st.firstFrame = true
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            val network = error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
+            if (network && autoRetries < 2 && !released) {
+                autoRetries++
+                st.buffering = true
+                st.stallNote = "Connection lost · Reconnecting…"
+                ui.removeCallbacks(retryRun)
+                ui.postDelayed(retryRun, autoRetries * 1200L)
+                return
+            }
             report(false)
             val decoder = error.errorCode in listOf(
                 PlaybackException.ERROR_CODE_DECODING_FAILED, PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
                 PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
                 PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
             )
-            val network = error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
             val hint = when {
                 decoder -> "This TV can't decode this video."
                 network -> "Lost the connection to ${Api.name}. Check that you're on the home Wi-Fi."
                 else -> "Something went wrong while playing."
             }
-            ui.removeCallbacks(settle)
-            st.scrub = null
+            ui.removeCallbacks(retryRun)
+            st.stallNote = null
+            cancelSkip()
             abandonHold()
             st.mode = Mode.Hidden
             st.sheet = null
@@ -932,8 +1122,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         // media keys do the same thing whatever is on screen
         when (event.keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> { if (first) togglePlay(); return true }
-            KeyEvent.KEYCODE_MEDIA_PLAY -> { if (first && !player.isPlaying) togglePlay(); return true }
-            KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (first && player.isPlaying) togglePlay(); return true }
+            KeyEvent.KEYCODE_MEDIA_PLAY -> { if (first && !player.playWhenReady) togglePlay(); return true }
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (first && player.playWhenReady) togglePlay(); return true }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> if (!tv) { if (down) scrub(scrubStep(event.repeatCount) * 3); return true }
             KeyEvent.KEYCODE_MEDIA_REWIND -> if (!tv) { if (down) scrub(-scrubStep(event.repeatCount)); return true }
             KeyEvent.KEYCODE_MEDIA_NEXT -> { if (first) next(); return true }
@@ -962,6 +1152,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                     if (first) when {
                         st.scrub != null && st.mode == Mode.Seek -> commitScrub()
+                        st.scrub != null -> togglePlay()
                         st.offer != null -> takeOffer()
                         else -> togglePlay()
                     }

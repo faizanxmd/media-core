@@ -339,7 +339,7 @@ fun Modifier.control(fr: FocusRequester?, onFocus: (Boolean) -> Unit, onClick: (
 /** A soft dark shadow under a control or card, drawn once as a picture (Shadows) and reused. */
 fun Modifier.softShadow(kind: ShadowKind): Modifier = drawBehind {
     val sh = Shadows.get(kind, size.width.toInt(), size.height.toInt())
-    drawImage(sh.bitmap.asImageBitmap(), Offset(-sh.pad.toFloat(), -sh.pad.toFloat() + sh.dy))
+    drawImage(sh.image, Offset(-sh.pad.toFloat(), -sh.pad.toFloat() + sh.dy))
 }
 
 /** Every button's height. */

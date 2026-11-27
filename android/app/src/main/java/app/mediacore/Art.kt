@@ -2,6 +2,7 @@ package app.mediacore
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
@@ -61,7 +62,11 @@ object Art {
         cache.get(spec)?.let { return it }
         val src = spec.url?.let { load(ctx, it, if (spec.style == ArtStyle.Episode) w * 2 / 3 else w, h) }
         val out = withContext(Dispatchers.Default) {
-            val soft = draw(spec, src, w, h)
+            val soft = try {
+                draw(spec, src, w, h)
+            } finally {
+                src?.recycle()
+            }
             // handed to the GPU now, off the UI thread, so the crossfade's first frame doesn't stall uploading 8 MB
             soft.copy(Bitmap.Config.HARDWARE, false)?.also { soft.recycle() } ?: soft.apply { prepareToDraw() }
         }
@@ -71,6 +76,8 @@ object Art {
     }
 
     fun cached(spec: ArtSpec): Bitmap? = cache.get(spec)
+
+    fun clear() { cache.evictAll() }
 
     /** A picture as plain pixels (not a GPU-only bitmap: it's drawn into another), decoded near the size it's shown. */
     suspend fun load(ctx: Context, url: String, w: Int, h: Int): Bitmap? {
@@ -161,6 +168,7 @@ object Art {
         small.setPixels(pix, 0, sw, 0, 0, sw, sh)
         val p = Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(saturation) }) }
         c.drawBitmap(small, null, dst, p)
+        small.recycle()
     }
 
     private fun horizontal(c: Canvas, w: Int, h: Int, rgb: Int, vararg stops: Pair<Float, Float>) =
@@ -190,28 +198,46 @@ object Art {
 
     /** One horizontal and one vertical box pass over [px]: three of these make a soft Gaussian. Keeps alpha. */
     fun boxBlur(px: IntArray, w: Int, h: Int, r: Int) {
-        if (r <= 0) return
+        if (r <= 0 || w <= 0 || h <= 0) return
         val line = IntArray(maxOf(w, h))
         val d = 2 * r + 1
-        fun run(n: Int, read: (Int) -> Int, write: (Int, Int) -> Unit) {
+        val wMax = w - 1
+        for (y in 0 until h) {
+            val row = y * w
             var a = 0; var rr = 0; var g = 0; var b = 0
             for (k in -r..r) {
-                val p = read(k.coerceIn(0, n - 1))
+                val p = px[row + k.coerceIn(0, wMax)]
                 a += p ushr 24; rr += p shr 16 and 255; g += p shr 8 and 255; b += p and 255
             }
-            for (k in 0 until n) {
-                line[k] = ((a / d) shl 24) or ((rr / d) shl 16) or ((g / d) shl 8) or (b / d)
-                val add = read((k + r + 1).coerceAtMost(n - 1))
-                val del = read((k - r).coerceAtLeast(0))
+            for (x in 0 until w) {
+                line[x] = ((a / d) shl 24) or ((rr / d) shl 16) or ((g / d) shl 8) or (b / d)
+                val add = px[row + (x + r + 1).coerceAtMost(wMax)]
+                val del = px[row + (x - r).coerceAtLeast(0)]
                 a += (add ushr 24) - (del ushr 24)
                 rr += (add shr 16 and 255) - (del shr 16 and 255)
                 g += (add shr 8 and 255) - (del shr 8 and 255)
                 b += (add and 255) - (del and 255)
             }
-            for (k in 0 until n) write(k, line[k])
+            System.arraycopy(line, 0, px, row, w)
         }
-        for (y in 0 until h) run(w, { px[y * w + it] }, { x, v -> px[y * w + x] = v })
-        for (x in 0 until w) run(h, { px[it * w + x] }, { y, v -> px[y * w + x] = v })
+        val hMax = h - 1
+        for (x in 0 until w) {
+            var a = 0; var rr = 0; var g = 0; var b = 0
+            for (k in -r..r) {
+                val p = px[k.coerceIn(0, hMax) * w + x]
+                a += p ushr 24; rr += p shr 16 and 255; g += p shr 8 and 255; b += p and 255
+            }
+            for (y in 0 until h) {
+                line[y] = ((a / d) shl 24) or ((rr / d) shl 16) or ((g / d) shl 8) or (b / d)
+                val add = px[(y + r + 1).coerceAtMost(hMax) * w + x]
+                val del = px[(y - r).coerceAtLeast(0) * w + x]
+                a += (add ushr 24) - (del ushr 24)
+                rr += (add shr 16 and 255) - (del shr 16 and 255)
+                g += (add shr 8 and 255) - (del shr 8 and 255)
+                b += (add and 255) - (del and 255)
+            }
+            for (y in 0 until h) px[y * w + x] = line[y]
+        }
     }
 }
 
@@ -273,11 +299,15 @@ enum class ShadowKind(val layers: List<Triple<Float, Float, Float>>) { // (dy, b
 }
 
 /** A shadow drawn once per size, as a picture placed [pad] px out from the thing it's under. */
-class BakedShadow(val bitmap: Bitmap, val pad: Int, val dy: Int = 0)
+class BakedShadow(val bitmap: Bitmap, val pad: Int, val dy: Int = 0) {
+    val image: ImageBitmap = bitmap.asImageBitmap()
+}
 
 object Shadows {
     // only the recent sizes: a button's width changes with its words, and every new width would stay forever
     private val cache = android.util.LruCache<String, BakedShadow>(40)
+
+    fun clear() = synchronized(cache) { cache.evictAll() }
 
     fun get(kind: ShadowKind, w: Int, h: Int): BakedShadow = synchronized(cache) {
         val k = "$kind/$w/$h"
@@ -287,28 +317,20 @@ object Shadows {
     private fun bake(kind: ShadowKind, w: Int, h: Int): BakedShadow {
         val f = Px.screen // board px to screen px
         val pad = (kind.layers.maxOf { it.first + it.second } * f).toInt() + 2
-        val bw = w + 2 * pad
-        val bh = h + 2 * pad
+        val bw = maxOf(1, w + 2 * pad)
+        val bh = maxOf(1, h + 2 * pad)
         val out = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         val radius = CORNER * f // the shapes it sits under
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
         for ((dy, blur, a) in kind.layers) {
-            // CSS blur radius is two standard deviations; three box passes of r give a deviation of about r
-            val sigma = blur * f / 2
-            val scale = if (sigma > 6) 2 else 1
-            val lw = bw / scale
-            val lh = bh / scale
-            val layer = Bitmap.createBitmap(lw, lh, Bitmap.Config.ARGB_8888)
-            Canvas(layer).drawRoundRect(
-                RectF(pad.toFloat() / scale, (pad + dy * f) / scale, (pad + w).toFloat() / scale, (pad + h + dy * f) / scale),
-                radius / scale, radius / scale, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = argb(a) },
+            val sigma = (blur * f / 2f).coerceAtLeast(0.5f)
+            p.color = argb(a)
+            p.maskFilter = BlurMaskFilter(sigma, BlurMaskFilter.Blur.NORMAL)
+            c.drawRoundRect(
+                RectF(pad.toFloat(), pad + dy * f, (pad + w).toFloat(), pad + h + dy * f),
+                radius, radius, p,
             )
-            val pix = IntArray(lw * lh)
-            layer.getPixels(pix, 0, lw, 0, 0, lw, lh)
-            val r = maxOf(1, (sigma / scale).toInt())
-            repeat(3) { Art.boxBlur(pix, lw, lh, r) }
-            layer.setPixels(pix, 0, lw, 0, 0, lw, lh)
-            c.drawBitmap(layer, null, RectF(0f, 0f, bw.toFloat(), bh.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
         }
         return BakedShadow(out, pad)
     }
@@ -327,35 +349,45 @@ object Logos {
 
     fun cached(url: String, w: Int, h: Int): LogoArt? = cache.get("$url/$w/$h")
 
+    fun clear() { cache.evictAll() }
+
     suspend fun get(ctx: Context, url: String, w: Int, h: Int): LogoArt? {
         cached(url, w, h)?.let { return it }
         val f = Px.screen
         val src = Art.load(ctx, url, (w * f).toInt(), (h * f).toInt()) ?: return null
         val out = withContext(Dispatchers.Default) {
-            val s = minOf(w * f / src.width, h * f / src.height)
-            val lw = maxOf(1, (src.width * s).toInt())
-            val lh = maxOf(1, (src.height * s).toInt())
-            val pad = (24 * f).toInt() + (6 * f).toInt()
-            val bw = lw + 2 * pad
-            val bh = lh + 2 * pad
-            // the shadow: the logo's own shape, darkened, blurred and set 6 px lower
-            val shadow = Bitmap.createBitmap(bw / 2, bh / 2, Bitmap.Config.ARGB_8888)
-            Canvas(shadow).drawBitmap(
-                src, null, RectF(pad / 2f, (pad + 6 * f) / 2f, (pad + lw) / 2f, (pad + lh + 6 * f) / 2f),
-                Paint(Paint.FILTER_BITMAP_FLAG).apply {
-                    colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(0f, 0f, 0f, 0f, 4f, 0f, 0f, 0f, 0f, 5f, 0f, 0f, 0f, 0f, 7f, 0f, 0f, 0f, 0.7f, 0f)))
-                },
-            )
-            val pix = IntArray(shadow.width * shadow.height)
-            shadow.getPixels(pix, 0, shadow.width, 0, 0, shadow.width, shadow.height)
-            val r = maxOf(1, (9 * f / 2).toInt()) // 18 px blur: a deviation of 9, at half size
-            repeat(3) { Art.boxBlur(pix, shadow.width, shadow.height, r) }
-            shadow.setPixels(pix, 0, shadow.width, 0, 0, shadow.width, shadow.height)
-            val out = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
-            val c = Canvas(out)
-            c.drawBitmap(shadow, null, RectF(0f, 0f, bw.toFloat(), bh.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
-            c.drawBitmap(src, null, RectF(pad.toFloat(), pad.toFloat(), (pad + lw).toFloat(), (pad + lh).toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
-            LogoArt(out, pad)
+            try {
+                val s = minOf(w * f / src.width, h * f / src.height)
+                val lw = maxOf(1, (src.width * s).toInt())
+                val lh = maxOf(1, (src.height * s).toInt())
+                val pad = (24 * f).toInt() + (6 * f).toInt()
+                val bw = lw + 2 * pad
+                val bh = lh + 2 * pad
+                // the shadow: the logo's own shape, darkened, blurred and set 6 px lower
+                val shadow = Bitmap.createBitmap(bw / 2, bh / 2, Bitmap.Config.ARGB_8888)
+                try {
+                    Canvas(shadow).drawBitmap(
+                        src, null, RectF(pad / 2f, (pad + 6 * f) / 2f, (pad + lw) / 2f, (pad + lh + 6 * f) / 2f),
+                        Paint(Paint.FILTER_BITMAP_FLAG).apply {
+                            colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(0f, 0f, 0f, 0f, 4f, 0f, 0f, 0f, 0f, 5f, 0f, 0f, 0f, 0f, 7f, 0f, 0f, 0f, 0.7f, 0f)))
+                        },
+                    )
+                    val pix = IntArray(shadow.width * shadow.height)
+                    shadow.getPixels(pix, 0, shadow.width, 0, 0, shadow.width, shadow.height)
+                    val r = maxOf(1, (9 * f / 2).toInt()) // 18 px blur: a deviation of 9, at half size
+                    repeat(3) { Art.boxBlur(pix, shadow.width, shadow.height, r) }
+                    shadow.setPixels(pix, 0, shadow.width, 0, 0, shadow.width, shadow.height)
+                    val out = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+                    val c = Canvas(out)
+                    c.drawBitmap(shadow, null, RectF(0f, 0f, bw.toFloat(), bh.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
+                    c.drawBitmap(src, null, RectF(pad.toFloat(), pad.toFloat(), (pad + lw).toFloat(), (pad + lh).toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
+                    LogoArt(out, pad)
+                } finally {
+                    shadow.recycle()
+                }
+            } finally {
+                src.recycle()
+            }
         }
         cache.put("$url/$w/$h", out)
         return out

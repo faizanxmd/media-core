@@ -113,6 +113,7 @@ object Api {
 
     private class Proved(val proof: Proof, val at: Long)
     private val proofs = java.util.concurrent.ConcurrentHashMap<String, Proved>()
+    private val proofLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
     /**
      * Whether the server at origin [o] knows [tok]. The answer is kept a few minutes (half a minute when it
@@ -122,7 +123,8 @@ object Api {
         fun fresh(p: Proved?) = p != null &&
             android.os.SystemClock.elapsedRealtime() - p.at < if (p.proof == Proof.FAILED) 30_000L else 300_000L
         proofs[o]?.let { if (fresh(it)) return it.proof }
-        synchronized(proofs) {
+        val lock = proofLocks.computeIfAbsent(o) { Any() }
+        synchronized(lock) {
             proofs[o]?.let { if (fresh(it)) return it.proof }
             val p = prove(o, tok)
             proofs[o] = Proved(p, android.os.SystemClock.elapsedRealtime())

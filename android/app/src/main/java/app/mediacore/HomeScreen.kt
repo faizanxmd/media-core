@@ -267,7 +267,13 @@ fun HomeScreen(nav: Nav, onUpdate: () -> Unit) {
         // the wordmark belongs to the top row: it leaves with the buttons when focus goes down into the rows
         val mark by animateFloatAsState(if (inRows) 0f else 1f, Move.fade(Move.Focus), label = "mark")
         Wordmark(Modifier.offset(LEFT.px, (TOP + 30 - MARK_H / 2).px).fadeBy { mark }, height = MARK_H.px)
-        TopRight(nav, onUpdate, fr("settings"), fr("update"), down = fr(if (hero?.download != null) firstCardKey(rows, nav) else "play")) { onFocus(it) }
+        val topDown = when {
+            hero?.download != null -> if (rows.isNotEmpty()) fr(firstCardKey(rows, nav)) else FocusRequester.Cancel
+            hero?.item != null -> fr("play")
+            rows.isNotEmpty() -> fr(firstCardKey(rows, nav))
+            else -> FocusRequester.Cancel
+        }
+        TopRight(nav, onUpdate, fr("settings"), fr("update"), down = topDown) { onFocus(it) }
 
         // the hero's words: logo, meta line, story. They fade out and in on their own, apart from the art
         // (out, then in, as Move.through; drawn fainter part by part, since a fading full-screen layer cost the TV a frame)
@@ -523,25 +529,30 @@ private fun CardRow(
     // a short row stays put, filling the screen from the left instead of leaving one card alone there
     val shift = rowShift(row, col)
     val firstShown = (shift + step - 1) / step
+    val visibleSlots = (1920 / step) + 2
+    val lo = (minOf(firstShown, col) - 1).coerceAtLeast(0)
+    val hi = (maxOf(firstShown + visibleSlots, col + 1)).coerceAtMost(row.cards.lastIndex)
     val x by animateFloatAsState(-shift * Px.screen, Move.slide(Move.Focus), label = "row-x")
-    Row(
+    Box(
         Modifier.padding(top = TITLE_TO_CARDS.px).requiredWidth((row.cards.size * step).px).graphicsLayer { translationX = x },
-        horizontalArrangement = Arrangement.spacedBy(GAP.px),
     ) {
-        row.cards.forEachIndexed { i, c ->
-            val keys = Modifier
-                .focusProperties {
-                    this.up = fr(up(i))
-                    down(i)?.let { k -> this.down = fr(k) }
-                    left = if (i > 0) fr(row.cards[i - 1].key) else FocusRequester.Cancel
-                    right = if (i < row.cards.lastIndex) fr(row.cards[i + 1].key) else FocusRequester.Cancel
+        for (i in lo..hi) {
+            val c = row.cards[i]
+            key(c.key) {
+                val keys = Modifier
+                    .focusProperties {
+                        this.up = fr(up(i))
+                        down(i)?.let { k -> this.down = fr(k) }
+                        left = if (i > lo) fr(row.cards[i - 1].key) else FocusRequester.Cancel
+                        right = if (i < hi) fr(row.cards[i + 1].key) else FocusRequester.Cancel
+                    }
+                val focused = { f: Boolean -> if (f) { onFocus(c.key); nav.homeCols[row.key] = i } }
+                // cards that have slid past the left edge go, rather than peek in half-cut at the screen's side
+                val gone by animateFloatAsState(if (i < firstShown) 0f else 1f, Move.fade(Move.Focus), label = "past")
+                Box(Modifier.offset(x = (i * step).px).fadeBy { gone }) {
+                    if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
+                    else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }
                 }
-            val focused = { f: Boolean -> if (f) { onFocus(c.key); nav.homeCols[row.key] = i } }
-            // cards that have slid past the left edge go, rather than peek in half-cut at the screen's side
-            val gone by animateFloatAsState(if (i < firstShown) 0f else 1f, Move.fade(Move.Focus), label = "past")
-            Box(Modifier.fadeBy { gone }) {
-                if (row.wide) WideCard(c, keys, fr(c.key), focused) { onClick(c) }
-                else PosterCard(c, keys, fr(c.key), focused) { onClick(c) }
             }
         }
     }
