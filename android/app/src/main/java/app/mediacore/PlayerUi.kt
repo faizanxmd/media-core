@@ -767,7 +767,7 @@ private fun TracksPanel(st: PlayerState, a: PlayerActions) {
             .drawBehind { drawRect(hairline, size = Size(size.width, 1 * Px.screen)) }
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = SIDE.px, top = 36.px, bottom = 36.px)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = SIDE.px, vertical = 36.px)) {
             val audio = st.audio.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val text = st.text.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val sizeFirst = st.tracksAt == 2 && text.isNotEmpty()
