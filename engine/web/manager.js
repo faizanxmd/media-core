@@ -26,8 +26,8 @@ const Manager = (() => {
     const hm = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
     if (s < 60) return "just now";
     if (d.toDateString() === now.toDateString()) return `Today, ${hm}`;
-    if (s < 2 * 86400 && new Date(now - 86400).toDateString() === d.toDateString()) return `Yesterday, ${hm}`;
-    if (s < 7 * 86400) return `${Math.round(s / 86400)} days ago`;
+    if (s < 2 * 86400 && new Date(now - 86400e3).toDateString() === d.toDateString()) return `Yesterday, ${hm}`;
+    if (s < 7 * 86400) return `${plural(Math.max(1, Math.round(s / 86400)), "day")} ago`;
     return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
   }
   const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -82,14 +82,15 @@ const Manager = (() => {
     if (!window.EventSource) { poll(); return; }
     es?.close();
     es = new EventSource("/api/events");
-    es.onmessage = e => { S = JSON.parse(e.data); online = true; changed(); };
+    es.onmessage = e => { clearTimeout(pollT); pollT = 0; S = JSON.parse(e.data); online = true; changed(); };
     es.onerror = () => { online = false; changed(); };
   }
   async function poll() {
     const r = await api("/api/jobs");
     if (!r.error) { S = r; online = true; } else online = false;
     changed();
-    clearTimeout(pollT); pollT = setTimeout(poll, 3000);
+    clearTimeout(pollT);
+    pollT = !window.EventSource || !es || es.readyState !== 1 ? setTimeout(poll, 3000) : 0;
   }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && es && es.readyState === 2) connect();

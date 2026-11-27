@@ -248,9 +248,12 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-open]");
   if (!b) return;
   const id = b.dataset.open;
-  const it = (await api(`/api/v1/item/${id}`)).item;
+  if (playsMap?.ready?.[id]) { location.hash = `#/play/${id}`; return; }
+  const key = route.key;
+  const [d, st] = await Promise.all([api(`/api/v1/item/${id}`), webAPI(`/api/v1/web/${id}`)]);
+  if (route.key !== key) return;
+  const it = d.item;
   if (!it) return;
-  const st = await webAPI(`/api/v1/web/${id}`);
   if (st.state === "ready" || st.state === "wait") { location.hash = `#/play/${id}`; return; }
   location.hash = `#/title/${it.show_id || id}`;
 });
@@ -367,7 +370,10 @@ async function title(id) {
     at("#pOver", () => { location.hash = `#/play/${target.id}/start`; });
     at("#pSeen", async () => {
       await api("/api/v1/watched", { id: main.id, watched: !allWatched() });
+      if (route.key !== key) return;
+      if (isShow) { title(id); return; }
       const r = await api(`/api/v1/item/${id}`);
+      if (route.key !== key) return;
       if (r.item) { Object.assign(main, r.item); $("#btns").innerHTML = buttons(); wireButtons(); }
     });
     at("#pInfo", () => details(target || main, main));
@@ -528,8 +534,10 @@ async function joinPage() {
 // an admin approves a waiting device: a TV showing a code, a phone, another browser
 async function approvePage(code) {
   if (!isAdmin()) { location.replace("#/"); return; }
+  const key = route.key;
   tabs("Settings");
   const r = await api(`/api/pair/${encodeURIComponent(code)}`);
+  if (route.key !== key) return;
   if (r.error) {
     show(`<div class="centre"><div class="title">No device is waiting with ${esc(code)}</div>
       <p class="mut keytext">Codes last 10 minutes. Check the code on the device, or ask it for a new one.</p>
@@ -557,8 +565,10 @@ async function approvePage(code) {
 // Settings, Devices: who has a key, who's waiting, and a box for a TV's code
 async function devicesPage() {
   if (!isAdmin()) { location.replace("#/settings"); return; }
+  const key = route.key;
   tabs("Settings");
   const r = await api("/api/devices");
+  if (route.key !== key) return;
   if (r.error) { errorPage(devicesPage); return; }
   const line = d => `<div class="setline"><div><div class="label">${esc(d.name)}${d.this ? ` <span class="mut">· this browser</span>` : ""}</div>
       <small>${esc(kindName(d.kind))} · ${d.role === "admin" ? "watch and manage" : "watch"} · ${esc(ago(d.seen))}</small></div>
@@ -581,8 +591,10 @@ async function devicesPage() {
 // Saving restarts the engine (about a second), then the page comes back.
 async function serverPage() {
   if (!isAdmin()) { location.replace("#/settings"); return; }
+  const key = route.key;
   tabs("Settings");
   const [c, t] = await Promise.all([api("/api/setup/config"), api("/api/tools")]);
+  if (route.key !== key) return;
   if (c.error || t.error) { errorPage(serverPage); return; }
   const missing = Object.entries(c.folders).filter(([, ok]) => !ok).map(([f]) => f);
   const toolLine = x => `<div class="setline"><div><div class="label">${esc(x.id)}</div><small>${esc(x.feature)}${x.note ? ` · ${esc(x.note)}` : ""}</small></div>

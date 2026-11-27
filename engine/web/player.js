@@ -50,11 +50,13 @@ const Link = (() => {
   async function pull(bytes) {
     const t0 = performance.now();
     const r = await fetch(`/api/v1/speedtest?bytes=${bytes}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
     const n = (await r.arrayBuffer()).byteLength, s = (performance.now() - t0) / 1000;
+    if (n < bytes / 2 || s <= 0) throw new Error("short read");
     return [n * 8 / 1e6 / s, s];
   }
   async function measure() {
-    if (busy) return;
+    if (busy || !me || document.getElementById("player")) return;
     busy = true;
     try {
       let [v, s] = await pull(2 << 20);
@@ -68,6 +70,19 @@ const Link = (() => {
   setTimeout(() => { if (!at || Date.now() - at > 600000) measure(); }, 4000);
   return { mbps: () => mbps, freshen() { if (Date.now() - at > 600000) measure(); } };
 })();
+
+let hlsLoadP = null;
+function loadHls() {
+  if (window.Hls) return Promise.resolve(true);
+  if (!hlsLoadP) hlsLoadP = new Promise(res => {
+    const s = document.createElement("script");
+    s.src = "/vendor/hls.min.js";
+    s.onload = () => res(!!window.Hls);
+    s.onerror = () => { hlsLoadP = null; res(false); };
+    document.head.appendChild(s);
+  });
+  return hlsLoadP;
+}
 
 const Player = (() => {
   const SPEEDS = [.75, 1, 1.25, 1.5, 2];
@@ -143,7 +158,8 @@ const Player = (() => {
   let skipped = 0, skippedT = 0, commitT = 0, hideT = 0, reportT = 0, tickT = 0, noteT = 0, firstFrame = false;
   let offer = null, dismissedNext = "", nextLeft = 10000, lastTick = 0, ended = false, retried = 0;
   let textCues = null, pgsTrack = null, subIndex = -1, speed = 1, opened = 0, errorShown = false, audioIdx = 0;
-  let lastGood = 0, recoveries = 0, cleanSince = 0, stallT = 0, clickT = 0, lastSub = -1, seekPicT = 0, airplay = false;
+  let lastGood = 0, recoveries = 0, cleanSince = 0, stallT = 0, recoverT = 0, hlsRetryT = 0, clickT = 0, lastSub = -1, seekPicT = 0, airplay = false;
+  let subsRaf = 0, lastSubT = -1, subsEl = null, pgsEl = null;
   let quality = "auto"; // auto | orig | light, for this visit
 
   const $p = s => el.querySelector(s);
@@ -194,6 +210,7 @@ const Player = (() => {
     if (manifest.state !== "ready") { showError("Can't play here", "This browser can't decode this title's picture. A Light copy, added in Manager, would play.", ""); return; }
     const resume = at > 0 ? at : !fromStart && !it.watch?.watched && it.watch?.pos > 0 ? it.watch.pos / 1000 : 0;
     lastGood = resume; cleanSince = 0;
+    audioIdx = chooseAudioIdx(manifest.audio || [], it);
     nowPlaying();
     // a stream the server makes while it plays (the file's picture untouched), or an old copy made ahead
     const src = manifest.hls || `/api/v1/web/${it.id}/master.m3u8`;
@@ -204,24 +221,28 @@ const Player = (() => {
       // Safari: Apple's own HLS player, which hls.js only imitates (with it, Safari played sound but no picture)
       v.src = src;
       v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true, signal: startAc.signal });
-    } else if (window.Hls && Hls.isSupported()) {
-      hls = new Hls({ startPosition: resume > 0 ? resume : -1, maxBufferLength: 60, maxMaxBufferLength: 180, backBufferLength: 60, renderTextTracksNatively: false, subtitleDisplay: false });
-      hls.on(Hls.Events.ERROR, (_, e) => {
-        if (!e.fatal) return;
-        if (e.type === Hls.ErrorTypes.NETWORK_ERROR && retried++ < 5) { setTimeout(() => hls?.startLoad(), 1500 * retried); return; }
-        if (e.type === Hls.ErrorTypes.MEDIA_ERROR && retried++ < 3) { hls.recoverMediaError(); return; }
+    } else if (await loadHls() && window.Hls && Hls.isSupported()) {
+      if (mine !== opened) return;
+      const cur = new Hls({ startPosition: resume > 0 ? resume : -1, maxBufferLength: 60, maxMaxBufferLength: 180, backBufferLength: 60, renderTextTracksNatively: false, subtitleDisplay: false });
+      hls = cur;
+      cur.on(Hls.Events.ERROR, (_, e) => {
+        if (!e.fatal || hls !== cur) return;
+        if (e.type === Hls.ErrorTypes.NETWORK_ERROR && retried++ < 5) { clearTimeout(hlsRetryT); hlsRetryT = setTimeout(() => { if (hls === cur) cur.startLoad(); }, 1500 * retried); return; }
+        if (e.type === Hls.ErrorTypes.MEDIA_ERROR && retried++ < 3) { cur.recoverMediaError(); return; }
         recover(e.details || "the stream stopped");
       });
-      hls.on(Hls.Events.FRAG_LOADED, () => { retried = 0; });
-      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, pickAudioPref);
-      hls.attachMedia(v);
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(src));
-      hls.on(Hls.Events.MANIFEST_PARSED, () => go());
-    } else if (v.canPlayType("application/vnd.apple.mpegurl")) {
+      cur.on(Hls.Events.FRAG_LOADED, () => { retried = 0; });
+      cur.on(Hls.Events.AUDIO_TRACKS_UPDATED, pickAudioPref);
+      cur.attachMedia(v);
+      cur.on(Hls.Events.MEDIA_ATTACHED, () => cur.loadSource(src));
+      cur.on(Hls.Events.MANIFEST_PARSED, () => go());
+    } else if (mine === opened && v.canPlayType("application/vnd.apple.mpegurl")) {
       v.src = src;
       v.addEventListener("loadedmetadata", () => { if (resume > 0) v.currentTime = resume; pickAudioPref(); go(); }, { once: true, signal: startAc.signal });
-    } else {
+    } else if (mine === opened) {
       showError("Can't play this", "This browser can't play the stream.", "");
+      return;
+    } else {
       return;
     }
     const pref = store.get("t:" + langKey(it));
@@ -239,13 +260,13 @@ const Player = (() => {
   // Something broke mid-film (the link dropped, a stream piece failed): load it again where it
   // was, quietly, three times before saying so. A stretch of clean playing earns the tries back.
   function recover(why) {
-    if (!item || !el || errorShown) return;
+    if (!item || !el || errorShown || recoverT) return;
     const at = Math.max(0, (v.currentTime > 1 ? v.currentTime : lastGood) - 1);
     wlog(`broke at ${Math.round(at)} s: ${why}; try ${recoveries + 1}`);
     if (recoveries++ >= 3) { showError("Can't play this", `It stopped and didn't come back. Check the connection to ${serverName}.`, String(why || "")); return; }
     busy(true);
     const it = item;
-    setTimeout(() => { if (item === it && el) start(it, false, null, at); }, 800 * recoveries);
+    recoverT = setTimeout(() => { recoverT = 0; if (item === it && el) start(it, false, null, at); }, 800 * recoveries);
   }
   // jump: go to a time, and until the film is there show that moment's scrub picture instead of the old frame
   function jump(sec) {
@@ -290,6 +311,9 @@ const Player = (() => {
   }
 
   function stopMedia() {
+    clearTimeout(recoverT); recoverT = 0;
+    clearTimeout(hlsRetryT); hlsRetryT = 0;
+    clearTimeout(busyT); busyT = 0;
     if (item && v && v.currentTime > 0 && !ended) report(false);
     if (hls) { hls.destroy(); hls = null; }
     if (v) { v.removeAttribute("src"); v.load(); }
@@ -310,18 +334,20 @@ const Player = (() => {
     if (item && v && v.currentTime > 0 && !ended) report(false);
     dropsEnd(); dropsEnd = () => {};
     clearInterval(reportT); clearInterval(tickT); clearTimeout(hideT); clearTimeout(commitT); clearTimeout(skippedT); clearTimeout(keyTimer);
-    clearTimeout(stallT); clearTimeout(clickT); clearTimeout(seekPicT);
+    clearTimeout(stallT); clearTimeout(recoverT); recoverT = 0; clearTimeout(hlsRetryT); hlsRetryT = 0; clearTimeout(busyT); busyT = 0;
+    clearTimeout(clickT); clearTimeout(seekPicT);
     if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
     if (navigator.mediaSession) try { navigator.mediaSession.metadata = null; } catch {}
-    cancelAnimationFrame(holdRaf);
-    item = null;
+    cancelAnimationFrame(holdRaf); holdRaf = 0;
+    cancelAnimationFrame(subsRaf); subsRaf = 0;
+    item = null; manifest = null; queue = []; textCues = null; pgsTrack = null; lastText = ""; lastSubT = -1;
     if (hls) { hls.destroy(); hls = null; }
     thumbs?.free(); thumbs = null;
     removeEventListener("keydown", onKeyDown, true); removeEventListener("keyup", onKeyUp, true);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     ac?.abort(); startAc?.abort(); ac = startAc = null;
     video.removeAttribute("src"); video.load();
-    el.remove(); el = null; v = null; menu = null; mode = "hidden"; scrub = null; document.body.style.overflow = "";
+    el.remove(); el = null; v = null; subsEl = null; pgsEl = null; menu = null; mode = "hidden"; scrub = null; document.body.style.overflow = "";
   }
   async function leave() {
     if (item && v && v.currentTime > 0 && !ended) await Promise.race([report(false), new Promise(r => setTimeout(r, 1500))]);
@@ -344,23 +370,26 @@ const Player = (() => {
     document.body.style.overflow = "hidden";
     $p(".vslot").replaceWith(video);
     v = video;
+    subsEl = $p(".subs");
+    pgsEl = $p("canvas.pgs");
     ac = new AbortController();
     const on = { signal: ac.signal };
     v.volume = +(store.get("volume") ?? 1); v.muted = store.get("muted") === "1";
     v.addEventListener("playing", () => {
       firstFrame = true; $p(".cover").style.opacity = 0; $p(".cover").style.pointerEvents = "none"; busy(false); drawIcons(); clearTimeout(stallT);
       if (!thumbs && item?.thumbs > 0) thumbs = new Thumbs(item.id); // after the film has started, so they don't compete with it
+      startSubsLoop();
     }, on);
-    v.addEventListener("pause", () => { drawIcons(); if (!ended && !holding && mode !== "scrub") { report(false); showFull(); } }, on);
-    v.addEventListener("play", drawIcons, on);
+    v.addEventListener("pause", () => { drawIcons(); stopSubsLoop(); if (!ended && !v.ended && !holding && mode !== "scrub") { report(false); showFull(); } }, on);
+    v.addEventListener("play", () => { drawIcons(); startSubsLoop(); }, on);
     v.addEventListener("waiting", () => {
       busy(true);
       clearTimeout(stallT); // stuck for half a minute: load it again from where it was
       stallT = setTimeout(() => { if (v && item && !v.paused && !ended && v.readyState < 3) recover("stuck waiting for data"); }, 30000);
     }, on);
     v.addEventListener("canplay", () => { busy(false); clearTimeout(stallT); }, on);
-    v.addEventListener("seeked", () => { pgsTrack && (pgsTrack.at = -1); busy(false); }, on);
-    v.addEventListener("timeupdate", () => { if (!v.seeking) seekPic(false); }, on);
+    v.addEventListener("seeked", () => { pgsTrack && (pgsTrack.at = -1); lastSubT = -1; drawSubs(); busy(false); }, on);
+    v.addEventListener("timeupdate", () => { if (!v.seeking) seekPic(false); if (v.paused) drawSubs(); }, on);
     v.addEventListener("webkitplaybacktargetavailabilitychanged", e => { airplay = e.availability === "available"; const b = $p('[data-a="airplay"]'); if (b) b.hidden = !airplay; }, on);
     v.addEventListener("ended", onEnded, on);
     v.addEventListener("error", () => { if (!hls && v.getAttribute("src")) recover(v.error?.message || `error ${v.error?.code}`); }, on);
@@ -381,13 +410,22 @@ const Player = (() => {
     v.addEventListener("stalled", () => wlog(`stalled at ${Math.round(v.currentTime)} s`), on);
     v.addEventListener("waiting", () => { if (++waits <= 3) wlog(`waiting at ${Math.round(v.currentTime)} s`); }, on);
     el.addEventListener("click", onClick);
-    el.addEventListener("dblclick", e => { if (e.target === v || e.target.classList.contains("seekpic")) { clearTimeout(clickT); toggleFull(); } });
+    el.addEventListener("dblclick", e => {
+      if (e.target.closest("[data-a], .offer, .menu, .ppanel, .eppanel, .bar, .vol, .perr")) return;
+      if (e.target === v || e.target.closest(".full, .seekpic")) { clearTimeout(clickT); toggleFull(); }
+    });
     mediaKeys();
     el.addEventListener("mousemove", onMove);
     addEventListener("keydown", onKeyDown, true); addEventListener("keyup", onKeyUp, true);
-    addEventListener("resize", placePGS);
+    addEventListener("resize", placePGS, on);
+    const onFullChange = () => {
+      const b = el && $p('[data-a="fullscreen"]');
+      if (b) b.innerHTML = icon(document.fullscreenElement || document.webkitFullscreenElement ? "Unfull" : "Full");
+      placePGS();
+    };
+    document.addEventListener("fullscreenchange", onFullChange, on);
+    document.addEventListener("webkitfullscreenchange", onFullChange, on);
     clearInterval(tickT); tickT = setInterval(tick, 250);
-    requestAnimationFrame(subsLoop);
     clearInterval(reportT); reportT = setInterval(() => { if (v && !v.paused && !ended) { report(false); drops(); } }, 10000);
   }
   function drawCover() {
@@ -476,8 +514,8 @@ const Player = (() => {
     };
     bar.onpointermove = e => { place(e); if (bar.classList.contains("drag")) { scrub = at(e); drawClock(); } };
     bar.onpointerleave = () => { if (!bar.classList.contains("drag")) pv.classList.remove("on"); };
-    bar.onpointerdown = e => { bar.setPointerCapture(e.pointerId); bar.classList.add("drag"); scrub = at(e); place(e); drawClock(); clearTimeout(hideT); };
-    bar.onpointerup = e => { bar.classList.remove("drag"); const t = at(e); scrub = null; jump(t / 1000); pv.classList.remove("on"); poke(); };
+    bar.onpointerdown = e => { if (e.pointerType === "mouse" && e.button !== 0) return; bar.setPointerCapture(e.pointerId); bar.classList.add("drag"); scrub = at(e); place(e); drawClock(); clearTimeout(hideT); };
+    bar.onpointerup = e => { if (!bar.classList.contains("drag")) return; bar.classList.remove("drag"); const t = at(e); scrub = null; jump(t / 1000); pv.classList.remove("on"); poke(); };
     bar.onpointercancel = () => { bar.classList.remove("drag"); scrub = null; pv.classList.remove("on"); };
   }
   function setMode(m) {
@@ -579,13 +617,20 @@ const Player = (() => {
   }
   // Safari fills its track list a moment after the video loads; applied again as each track arrives (build)
   function applyAudio() {
-    if (!v?.audioTracks || hls) return;
-    for (let k = 0; k < v.audioTracks.length; k++) { const on = k === audioIdx; if (v.audioTracks[k].enabled !== on) v.audioTracks[k].enabled = on; }
-  }
-  function pickAudioPref() {
+    if (!v?.audioTracks || !v.audioTracks.length || hls) return;
+    let target = audioIdx;
     const list = manifest?.audio || [];
-    if (!list.length) return;
-    const pref = store.get("a:" + langKey(item));
+    if (list.length && v.audioTracks.length !== list.length && list[audioIdx]) {
+      const want = list[audioIdx];
+      const byLang = [...v.audioTracks].findIndex(t => want.lang && t.language && t.language.toLowerCase() === want.lang.toLowerCase());
+      if (byLang >= 0) target = byLang;
+    }
+    if (target < 0 || target >= v.audioTracks.length) return;
+    for (let k = 0; k < v.audioTracks.length; k++) { const on = k === target; if (v.audioTracks[k].enabled !== on) v.audioTracks[k].enabled = on; }
+  }
+  function chooseAudioIdx(list, it) {
+    if (!list.length || !it) return 0;
+    const pref = store.get("a:" + langKey(it));
     const mine = (navigator.language || "en").slice(0, 2);
     const speaks = code => { try { return new Intl.Locale(code || "und").language === mine || langName(code).toLowerCase() === (LANG?.of(mine) || "").toLowerCase(); } catch { return false; } };
     const plays = a => a.plays !== false; // only tracks this browser can play
@@ -593,10 +638,16 @@ const Player = (() => {
     if (i < 0) i = list.findIndex(a => plays(a) && a.main); // the engine's pick: English, then the file's default
     if (i < 0) i = list.findIndex(a => plays(a) && speaks(a.lang) && !isCommentary(a.title));
     if (i < 0) i = list.findIndex(plays);
-    pickAudio(i < 0 ? 0 : i, false);
+    return i < 0 ? 0 : i;
+  }
+  function pickAudioPref() {
+    const list = manifest?.audio || [];
+    if (!list.length) return;
+    pickAudio(chooseAudioIdx(list, item), false);
   }
   async function pickSub(i, quiet) {
-    subIndex = i; textCues = null; pgsTrack = null; clearPGS(); $p(".subs").textContent = "";
+    subIndex = i; textCues = null; pgsTrack = null; lastText = ""; lastSubT = -1; clearPGS(); if (subsEl) subsEl.textContent = "";
+    stopSubsLoop();
     if (i >= 0) lastSub = i;
     const s = manifest?.subs?.[i];
     if (!quiet) store.set("t:" + langKey(item), s ? s.lang : "off");
@@ -606,10 +657,10 @@ const Player = (() => {
     if (!r?.ok) { pnote("Those subtitles didn't load."); return; }
     if (s.file.endsWith(".sup")) {
       const b = await r.arrayBuffer();
-      if (item?.id === mine && subIndex === i) { pgsTrack = new PGSTrack(b); $p("canvas.pgs").hidden = false; placePGS(); }
+      if (item?.id === mine && subIndex === i) { pgsTrack = new PGSTrack(b); if (pgsEl) pgsEl.hidden = false; placePGS(); drawSubs(); startSubsLoop(); }
     } else {
       const t = await r.text();
-      if (item?.id === mine && subIndex === i) textCues = parseVTT(t);
+      if (item?.id === mine && subIndex === i) { textCues = parseVTT(t); drawSubs(); startSubsLoop(); }
     }
   }
   // the file's own subtitles turn up a few minutes after it's first opened: ask the server again
@@ -628,15 +679,30 @@ const Player = (() => {
     Object.assign(c.style, { left: (W - w) / 2 + "px", top: (H - h) / 2 + "px", width: w + "px", height: h + "px" });
   }
   let lastText = "";
-  function subsLoop() {
-    if (!el) return;
-    requestAnimationFrame(subsLoop);
+  function drawSubs() {
+    if (!el || !v) return;
     const t = v.currentTime;
-    if (pgsTrack) pgsTrack.draw($p("canvas.pgs"), t);
-    if (textCues) {
+    if (t === lastSubT) return;
+    lastSubT = t;
+    if (pgsTrack && pgsEl) pgsTrack.draw(pgsEl, t);
+    if (textCues && subsEl) {
       const words = textCues.filter(c => t >= c.start && t < c.end).map(c => c.words).join("\n");
-      if (words !== lastText) { lastText = words; $p(".subs").textContent = words; }
-    } else if (lastText) { lastText = ""; $p(".subs").textContent = ""; }
+      if (words !== lastText) { lastText = words; subsEl.textContent = words; }
+    } else if (lastText && subsEl) { lastText = ""; subsEl.textContent = ""; }
+  }
+  function startSubsLoop() {
+    if (subsRaf || !el || !v || v.paused || (!pgsTrack && !textCues)) return;
+    subsRaf = requestAnimationFrame(subsLoop);
+  }
+  function stopSubsLoop() {
+    if (!subsRaf) return;
+    cancelAnimationFrame(subsRaf); subsRaf = 0;
+  }
+  function subsLoop() {
+    subsRaf = 0;
+    if (!el || !v || v.paused || (!pgsTrack && !textCues)) return;
+    drawSubs();
+    subsRaf = requestAnimationFrame(subsLoop);
   }
   function episodesPanel() {
     closeMenu(true);
@@ -698,9 +764,11 @@ const Player = (() => {
   }
   const nextOf = () => { const i = queue.findIndex(x => x.id === item?.id); const n = i >= 0 ? queue[i + 1] : null; return n && ready[n.id] ? n : null; };
   async function playNext(n) {
+    const mine = ++opened;
     closeMenu(true);
     if (location.hash !== `#/play/${n.id}`) history.replaceState(null, "", `#/play/${n.id}`);
     const fresh = (await api(`/api/v1/item/${n.id}`)).item || n;
+    if (mine !== opened || !el) return;
     queue = queue.map(x => x.id === n.id ? fresh : x);
     start(fresh, false);
   }
@@ -928,7 +996,12 @@ const Player = (() => {
       }
       case "p": eat(); if (canPip()) togglePip(); return;
       case "f": eat(); toggleFull(); return;
-      case "m": eat(); v.muted = !v.muted; store.set("muted", v.muted ? "1" : "0"); if ($p("#muteBtn")) $p("#muteBtn").innerHTML = icon(v.muted ? "Mute" : "Volume"); pnote(v.muted ? "Muted" : "Sound on"); return;
+      case "m": {
+        eat(); v.muted = !v.muted; store.set("muted", v.muted ? "1" : "0");
+        if ($p("#muteBtn")) $p("#muteBtn").innerHTML = icon(v.muted ? "Mute" : "Volume");
+        const vol = $p("#volume"); if (vol) { const val = v.muted ? 0 : v.volume; vol.value = val; vol.style.setProperty("--v", val * 100 + "%"); }
+        pnote(v.muted ? "Muted" : "Sound on"); return;
+      }
       case "n": { eat(); const n = nextOf(); if (n) playNext(n); return; }
     }
   }

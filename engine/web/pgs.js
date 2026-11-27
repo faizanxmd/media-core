@@ -41,6 +41,7 @@ function parsePGS(buf) {
 
 // Run-length data to ImageData.
 function pgsImage(obj, pal) {
+  if (!obj.w || !obj.h) return null;
   const out = new Uint32Array(obj.w * obj.h);
   let i = 0;
   for (const part of obj.parts) {
@@ -77,9 +78,20 @@ class PGSTrack {
     if (canvas.width !== ev.w || canvas.height !== ev.h) { canvas.width = ev.w; canvas.height = ev.h; }
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, ev.w, ev.h);
-    for (const it of ev.items) {
+    const jobs = ev.items.map(it => {
       const im = pgsImage(it.obj, it.pal);
-      createImageBitmap(im).then(bm => { if (this.at === n) ctx.drawImage(bm, it.x, it.y); bm.close(); });
-    }
+      return im ? createImageBitmap(im).then(bm => ({ bm, x: it.x, y: it.y })) : null;
+    }).filter(Boolean);
+    if (!jobs.length) return;
+    Promise.all(jobs).then(list => {
+      try {
+        if (this.at === n) {
+          ctx.clearRect(0, 0, ev.w, ev.h);
+          for (const { bm, x, y } of list) ctx.drawImage(bm, x, y);
+        }
+      } finally {
+        for (const { bm } of list) bm.close();
+      }
+    }).catch(() => {});
   }
 }

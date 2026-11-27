@@ -1,8 +1,8 @@
 // Keeps the app shell available so the installed app opens instantly (and
 // says "offline" instead of a browser error when the server is unreachable).
 // API calls always go to the network.
-const CACHE = "media-core-v12";
-const SHELL = ["/", "/app.js", "/app.css", "/icon.svg", "/manifest.webmanifest", "/fonts/source-sans.woff2", "/fonts/inter.woff2", "/wordmark.svg", "/player.js", "/pgs.js", "/manager.js", "/vendor/hls.min.js"];
+const CACHE = "media-core-v13";
+const SHELL = ["/", "/app.js", "/app.css", "/icon.svg", "/manifest.webmanifest", "/fonts/source-sans.woff2", "/fonts/inter.woff2", "/wordmark.svg", "/player.js", "/pgs.js", "/manager.js"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
