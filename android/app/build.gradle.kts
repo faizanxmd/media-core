@@ -71,7 +71,7 @@ dependencies {
     // when the TV can't (TV speakers only, no receiver)
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:$media3+1")
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
-    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.zxing:core:3.5.3") // the pairing screen's QR code
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
