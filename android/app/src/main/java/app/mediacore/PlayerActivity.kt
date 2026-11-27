@@ -3,6 +3,7 @@ package app.mediacore
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
@@ -617,6 +618,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        volumeControlStream = AudioManager.STREAM_MUSIC
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -1115,7 +1117,26 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
     }
 
+    /**
+     * Volume and mute go straight to the system, in every mode (the strip, sheets, errors), on the press
+     * and on every repeat of a held key. Nothing else on screen sees them, so they never reset a timer.
+     */
+    private fun volumeKeys(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        val how = when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> AudioManager.ADJUST_RAISE
+            KeyEvent.KEYCODE_VOLUME_DOWN -> AudioManager.ADJUST_LOWER
+            else -> if (event.repeatCount == 0) AudioManager.ADJUST_TOGGLE_MUTE else return true
+        }
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        audio.adjustSuggestedStreamVolume(how, AudioManager.STREAM_MUSIC, AudioManager.FLAG_SHOW_UI)
+        return true
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE -> return volumeKeys(event)
+        }
         if (tv && st.mode == Mode.Scrub) { scrubKeys(event); return true }
         val down = event.action == KeyEvent.ACTION_DOWN
         val first = down && event.repeatCount == 0

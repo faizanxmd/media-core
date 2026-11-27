@@ -26,7 +26,7 @@ import java.io.RandomAccessFile
 class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
     private val dir = File(ctx.cacheDir, "thumbs").apply { mkdirs() }
     private val reader = Dispatchers.IO.limitedParallelism(1)
-    private val cache = LruCache<Int, ImageBitmap>(24)
+    private val cache = LruCache<Int, ImageBitmap>(32)
     private val wanted = LinkedHashSet<Int>() // newest last
     private var decoding = false
     private var version by mutableIntStateOf(0) // a picture arrived
@@ -71,11 +71,23 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
         return null
     }
 
-    /** Pre-decodes the neighbor frames around [ms] so a 5-frame filmstrip never flashes empty. */
+    /** The closest picture to [ms] already in memory, up to 3 steps away; never reads the file. A stand-in while the exact one is read. */
+    fun near(ms: Long): ImageBitmap? {
+        version
+        if (!ready || thumbCount <= 0) return null
+        val i = (ms / 1000 / every).toInt().coerceIn(0, thumbCount - 1)
+        for (d in 1..3) {
+            cache.get(i - d)?.let { return it }
+            cache.get(i + d)?.let { return it }
+        }
+        return null
+    }
+
+    /** Pre-decodes the neighbor frames around [ms] so a 7-frame filmstrip never flashes empty. */
     fun prefetch(ms: Long) {
         if (!ready || thumbCount <= 0) return
         val center = (ms / 1000 / every).toInt().coerceIn(0, thumbCount - 1)
-        for (d in listOf(0, 1, -1, 2, -2)) {
+        for (d in listOf(-3, 3, -2, 2, -1, 1, 0)) { // newest is read first: the center, then its neighbors
             val i = center + d
             if (i in 0 until thumbCount && cache.get(i) == null) request(i)
         }
@@ -84,7 +96,7 @@ class ThumbStore(ctx: Context, private val scope: CoroutineScope) {
     private fun request(i: Int) {
         wanted.remove(i)
         wanted.add(i)
-        if (wanted.size > 8) wanted.remove(wanted.first()) // scrubbing outran us: skip the old ones
+        if (wanted.size > 12) wanted.remove(wanted.first()) // scrubbing outran us: skip the old ones
         if (decoding) return
         decoding = true
         scope.launch {
