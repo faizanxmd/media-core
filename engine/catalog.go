@@ -272,6 +272,15 @@ func (c *Catalog) scan() {
 
 	// picture/sound details and sidecar subtitles (ffprobe results are cached)
 	seen := map[string]bool{}
+	dirCache := map[string][]os.DirEntry{}
+	readDir := func(d string) []os.DirEntry {
+		if ents, ok := dirCache[d]; ok {
+			return ents
+		}
+		ents, _ := os.ReadDir(d)
+		dirCache[d] = ents
+		return ents
+	}
 	for _, it := range items {
 		if it.file == "" {
 			continue
@@ -280,8 +289,8 @@ func (c *Catalog) scan() {
 		if fi, err := os.Stat(it.file); err == nil {
 			it.Info = mediaInfo(it.file, fi)
 		}
-		it.Subs = sidecarSubs(it.file)
-		if lf := findLight(it.file); lf != "" {
+		it.Subs = sidecarSubsFrom(it.file, readDir(filepath.Dir(it.file)))
+		if lf := findLightFrom(it.file, readDir(lightDir(it.file))); lf != "" {
 			if fi, err := os.Stat(lf); err == nil {
 				seen[lf] = true
 				it.Light = &Light{Size: fi.Size(), Info: mediaInfo(lf, fi), file: lf}
@@ -357,9 +366,13 @@ var subMimes = map[string]string{"srt": "application/x-subrip", "ass": "text/x-s
 
 // sidecarSubs finds "<video base>[.lang][.forced].srt" files next to a video.
 func sidecarSubs(video string) []XSub {
+	ents, _ := os.ReadDir(filepath.Dir(video))
+	return sidecarSubsFrom(video, ents)
+}
+
+func sidecarSubsFrom(video string, ents []os.DirEntry) []XSub {
 	dir := filepath.Dir(video)
 	base := strings.TrimSuffix(filepath.Base(video), filepath.Ext(video))
-	ents, _ := os.ReadDir(dir)
 	var out []XSub
 	for _, e := range ents {
 		n := e.Name()

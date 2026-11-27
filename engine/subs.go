@@ -131,7 +131,7 @@ func runSubsFFmpeg(args []string) (string, error) {
 		return "", err
 	}
 	stop := make(chan struct{})
-	go pauseWithTimeout(cmd.Process.Pid, stop, 2*time.Hour, cancel)
+	go pauseWithTimeout(cmd.Process, stop, 2*time.Hour, cancel)
 	err := cmd.Wait()
 	close(stop)
 	return out.String(), err

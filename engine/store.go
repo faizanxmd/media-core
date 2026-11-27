@@ -137,6 +137,17 @@ func (s *Store) Add(j *Job) {
 	s.Notify()
 }
 
+func cloneJob(j *Job) Job {
+	cp := *j
+	if j.Log != nil {
+		cp.Log = append([]string(nil), j.Log...)
+	}
+	if j.Files != nil {
+		cp.Files = append([]string(nil), j.Files...)
+	}
+	return cp
+}
+
 // Update applies fn to a job. persist=false is for progress ticks.
 func (s *Store) Update(id string, persist bool, fn func(*Job)) (Job, bool) {
 	s.mu.Lock()
@@ -151,7 +162,7 @@ func (s *Store) Update(id string, persist bool, fn func(*Job)) (Job, bool) {
 	} else {
 		s.dirty[id] = true
 	}
-	cp := *j
+	cp := cloneJob(j)
 	s.mu.Unlock()
 	s.Notify()
 	return cp, true
@@ -173,7 +184,7 @@ func (s *Store) Get(id string) (Job, bool) {
 	if !ok {
 		return Job{}, false
 	}
-	return *j, true
+	return cloneJob(j), true
 }
 
 // List returns copies, newest first.
@@ -181,9 +192,7 @@ func (s *Store) List() []Job {
 	s.mu.Lock()
 	out := make([]Job, 0, len(s.jobs))
 	for _, j := range s.jobs {
-		cp := *j
-		cp.Log = append([]string(nil), j.Log...)
-		out = append(out, cp)
+		out = append(out, cloneJob(j))
 	}
 	s.mu.Unlock()
 	sort.Slice(out, func(a, b int) bool { return out[a].Created > out[b].Created })

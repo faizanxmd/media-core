@@ -117,25 +117,22 @@ func (t *Thumbs) due(it *Item) bool {
 	return !t.failed[p]
 }
 
-// Pending reports whether any video still needs pictures.
+// Pending reports whether any video still needs pictures, and prunes stale ones when idle.
 func (t *Thumbs) Pending(items map[string]*Item) bool {
 	for _, it := range items {
 		if t.due(it) {
 			return true
 		}
 	}
+	if t.run.TryLock() {
+		t.pruneLocked(items)
+		t.run.Unlock()
+	}
 	return false
 }
 
-// Generate makes what's missing, newest video first, one at a time.
-// onDone runs after each finished video.
-func (t *Thumbs) Generate(items map[string]*Item, onDone func()) {
-	if !t.run.TryLock() {
-		return
-	}
-	defer t.run.Unlock()
-	t.cleanTmp()
-	var todo []*Item
+// pruneLocked removes thumbnail files and cache entries for videos that are gone or replaced.
+func (t *Thumbs) pruneLocked(items map[string]*Item) {
 	want := map[string]bool{}
 	wantPaths := map[string]bool{}
 	for _, it := range items {
@@ -146,24 +143,6 @@ func (t *Thumbs) Generate(items map[string]*Item, onDone func()) {
 			want[filepath.Base(p)] = true
 			wantPaths[p] = true
 		}
-		if t.due(it) {
-			todo = append(todo, it)
-		}
-	}
-	sort.Slice(todo, func(a, b int) bool { return todo[a].Added > todo[b].Added })
-	for _, it := range todo {
-		start := time.Now()
-		if err := t.make(it); err != nil {
-			log.Printf("thumbs: %s: %v", rel(it.file), err)
-			if p, ok := t.path(it.file); ok {
-				t.mu.Lock()
-				t.failed[p] = true
-				t.mu.Unlock()
-			}
-			continue
-		}
-		log.Printf("thumbs: %s: %d pictures (%s)", rel(it.file), t.Count(it.file), time.Since(start).Round(time.Second))
-		onDone()
 	}
 	if len(want) == 0 {
 		return // library not mounted? keep everything
@@ -186,6 +165,41 @@ func (t *Thumbs) Generate(items map[string]*Item, onDone func()) {
 		}
 	}
 	t.mu.Unlock()
+}
+
+// Generate makes what's missing, newest video first, one at a time.
+// onDone runs after each finished video.
+func (t *Thumbs) Generate(items map[string]*Item, onDone func()) {
+	if !t.run.TryLock() {
+		return
+	}
+	defer t.run.Unlock()
+	t.cleanTmp()
+	var todo []*Item
+	for _, it := range items {
+		if it.file == "" {
+			continue
+		}
+		if t.due(it) {
+			todo = append(todo, it)
+		}
+	}
+	sort.Slice(todo, func(a, b int) bool { return todo[a].Added > todo[b].Added })
+	for _, it := range todo {
+		start := time.Now()
+		if err := t.make(it); err != nil {
+			log.Printf("thumbs: %s: %v", rel(it.file), err)
+			if p, ok := t.path(it.file); ok {
+				t.mu.Lock()
+				t.failed[p] = true
+				t.mu.Unlock()
+			}
+			continue
+		}
+		log.Printf("thumbs: %s: %d pictures (%s)", rel(it.file), t.Count(it.file), time.Since(start).Round(time.Second))
+		onDone()
+	}
+	t.pruneLocked(items)
 }
 
 func (t *Thumbs) make(it *Item) error {
@@ -217,7 +231,7 @@ func (t *Thumbs) make(it *Item) error {
 	}
 	stop := make(chan struct{})
 	defer close(stop)
-	go pauseWithTimeout(cmd.Process.Pid, stop, 3*time.Hour, cancel)
+	go pauseWithTimeout(cmd.Process, stop, 3*time.Hour, cancel)
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(errOut.String()))
 	}
@@ -276,9 +290,12 @@ var pauseTick atomic.Int64 // ns between checks; a var so tests can shorten it
 
 func init() { pauseTick.Store(int64(3 * time.Second)) }
 
-// pauseWithTimeout freezes pid while streaming and cancels after activeLimit of
+// pauseWithTimeout freezes proc while streaming and cancels after activeLimit of
 // unpaused runtime (when > 0), so paused time doesn't count toward timeouts.
-func pauseWithTimeout(pid int, stop <-chan struct{}, activeLimit time.Duration, cancel context.CancelFunc) {
+func pauseWithTimeout(proc *os.Process, stop <-chan struct{}, activeLimit time.Duration, cancel context.CancelFunc) {
+	if proc == nil {
+		return
+	}
 	frozen := false
 	var active time.Duration
 	last := time.Now()
@@ -288,7 +305,7 @@ func pauseWithTimeout(pid int, stop <-chan struct{}, activeLimit time.Duration, 
 		select {
 		case <-stop:
 			if frozen {
-				syscall.Kill(pid, syscall.SIGCONT)
+				proc.Signal(syscall.SIGCONT)
 			}
 			return
 		case <-tick.C:
@@ -299,7 +316,7 @@ func pauseWithTimeout(pid int, stop <-chan struct{}, activeLimit time.Duration, 
 			last = now
 			if activeLimit > 0 && active >= activeLimit && cancel != nil {
 				if frozen {
-					syscall.Kill(pid, syscall.SIGCONT)
+					proc.Signal(syscall.SIGCONT)
 					frozen = false
 				}
 				cancel()
@@ -311,7 +328,7 @@ func pauseWithTimeout(pid int, stop <-chan struct{}, activeLimit time.Duration, 
 				if busy {
 					sig = syscall.SIGSTOP
 				}
-				syscall.Kill(pid, sig)
+				proc.Signal(sig)
 				frozen = busy
 			}
 		}

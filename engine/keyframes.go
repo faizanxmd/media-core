@@ -113,6 +113,10 @@ func keyframes(path string) ([]float64, error) {
 		}
 	}
 	keyMu.Lock()
+	if keyBusy[path] {
+		keyMu.Unlock()
+		return nil, errKeysPending
+	}
 	keyBusy[path] = true
 	keyMu.Unlock()
 	go func() {
@@ -132,7 +136,10 @@ func keyframes(path string) ([]float64, error) {
 		keep(keys)
 		os.MkdirAll(filepath.Dir(saved), 0o755)
 		if b, err := json.Marshal(keyEntry{Size: size, Mtime: mtime, Keys: keys}); err == nil {
-			os.WriteFile(saved, b, 0o644)
+			tmp := saved + ".tmp"
+			if os.WriteFile(tmp, b, 0o644) == nil {
+				os.Rename(tmp, saved)
+			}
 		}
 	}()
 	return nil, errKeysPending

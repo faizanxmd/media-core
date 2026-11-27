@@ -287,7 +287,7 @@ func fingerprint(file string) []uint32 {
 		return nil
 	}
 	stop := make(chan struct{})
-	go pauseWithTimeout(cmd.Process.Pid, stop, 4*time.Minute, cancel)
+	go pauseWithTimeout(cmd.Process, stop, 4*time.Minute, cancel)
 	err := cmd.Wait()
 	close(stop)
 	out := outBuf.Bytes()

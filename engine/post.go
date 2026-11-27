@@ -478,7 +478,7 @@ func (pl *placer) moveOne(ctx context.Context, from, to string) error {
 		return fail(err)
 	}
 	pl.trackNewDirs(filepath.Dir(to))
-	if err := move(from, to); err != nil {
+	if err := moveCtx(ctx, from, to); err != nil {
 		return fail(err)
 	}
 	pl.moved = append(pl.moved, movePair{from, to})

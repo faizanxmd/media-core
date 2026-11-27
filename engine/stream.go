@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -110,9 +111,10 @@ type streamCall struct {
 }
 
 var (
-	streamsMu   sync.Mutex
-	streams     = map[string]*liveStream{} // by file path
-	streamInits = map[string]*streamCall{} // in-flight per-file initialization
+	streamsMu       sync.Mutex
+	streams         = map[string]*liveStream{} // by file path
+	streamInits     = map[string]*streamCall{} // in-flight per-file initialization
+	streamJanitorOn bool
 
 	streamKeyframes = keyframes
 	streamProbe     = probeStreams
@@ -156,7 +158,8 @@ func streamFor(file string, info *MInfo) (*liveStream, error) {
 	} else if err != nil {
 		c.err = err
 	} else {
-		if len(streams) == 0 {
+		if !streamJanitorOn {
+			streamJanitorOn = true
 			go streamJanitor()
 		}
 		streams[file] = s
@@ -221,6 +224,8 @@ func streamJanitor() {
 			if idle > streamIdle {
 				for _, t := range s.tracks {
 					t.stop()
+					clear(t.pieces)
+					t.bytes = 0
 				}
 			}
 			s.mu.Unlock()
@@ -229,10 +234,38 @@ func streamJanitor() {
 			}
 		}
 		n := len(streams)
-		streamsMu.Unlock()
 		if n == 0 {
+			streamJanitorOn = false
+			streamsMu.Unlock()
 			return
 		}
+		streamsMu.Unlock()
+	}
+}
+
+// stopAllStreams ends every active ffmpeg stream process (called on server shutdown).
+func stopAllStreams() {
+	streamsMu.Lock()
+	list := make([]*liveStream, 0, len(streams))
+	for _, s := range streams {
+		list = append(list, s)
+	}
+	clear(streams)
+	for file, c := range streamInits {
+		c.dropped = true
+		delete(streamInits, file)
+	}
+	streamsMu.Unlock()
+	for _, s := range list {
+		s.mu.Lock()
+		s.dropped = true
+		for _, t := range s.tracks {
+			t.stop()
+			clear(t.pieces)
+			t.bytes = 0
+			t.cond.Broadcast()
+		}
+		s.mu.Unlock()
 	}
 }
 
@@ -329,7 +362,7 @@ func (t *liveTrack) stop() {
 	if r := t.run; r != nil && !r.done {
 		if r.cmd != nil && r.cmd.Process != nil {
 			if r.held {
-				syscall.Kill(r.cmd.Process.Pid, syscall.SIGCONT)
+				r.cmd.Process.Signal(syscall.SIGCONT)
 				r.held = false
 			}
 			r.cmd.Process.Kill()
@@ -471,6 +504,8 @@ func (t *liveTrack) read(r *liveRun, out io.Reader, errOut *strings.Builder) {
 		cur = nil
 	}
 	fail := ""
+	var moofBuf []byte
+readLoop:
 	for {
 		var h [16]byte
 		if _, err := io.ReadFull(br, h[:8]); err != nil {
@@ -488,29 +523,39 @@ func (t *liveTrack) read(r *liveRun, out io.Reader, errOut *strings.Builder) {
 			fail = "ffmpeg sent something that isn't MP4"
 			break
 		}
-		box := make([]byte, size)
-		copy(box, h[:hl])
-		if _, err := io.ReadFull(br, box[hl:]); err != nil {
-			break
-		}
 		switch kind {
-		case "ftyp":
-			head = append(head, box...)
-		case "moov":
-			head = append(head, box...)
-			scale = moovTimescale(box[hl:])
-			s.mu.Lock()
-			if t.init == nil {
-				t.init = head
+		case "ftyp", "moov":
+			box := make([]byte, size)
+			copy(box, h[:hl])
+			if _, err := io.ReadFull(br, box[hl:]); err != nil {
+				break readLoop
 			}
-			t.cond.Broadcast()
-			s.mu.Unlock()
+			head = append(head, box...)
+			if kind == "moov" {
+				scale = moovTimescale(box[hl:])
+				s.mu.Lock()
+				if t.init == nil {
+					t.init = head
+				}
+				t.cond.Broadcast()
+				s.mu.Unlock()
+			}
 		case "moof":
+			n := int(size)
+			if cap(moofBuf) < n {
+				moofBuf = make([]byte, n)
+			} else {
+				moofBuf = moofBuf[:n]
+			}
+			copy(moofBuf, h[:hl])
+			if _, err := io.ReadFull(br, moofBuf[hl:]); err != nil {
+				break readLoop
+			}
 			if scale == 0 {
 				fail = "no timescale in ffmpeg's header"
-				break
+				break readLoop
 			}
-			at := moofTime(box[hl:], scale) - streamBase
+			at := moofTime(moofBuf[hl:], scale) - streamBase
 			p := t.pieceAt(at)
 			if p != curPiece {
 				file()
@@ -529,15 +574,27 @@ func (t *liveTrack) read(r *liveRun, out io.Reader, errOut *strings.Builder) {
 				}
 				s.mu.Unlock()
 				if stale {
-					return
+					break readLoop
 				}
 			}
 			first = false
-			cur = append(cur, box...)
+			cur = append(cur, moofBuf...)
 		case "mfra":
+			if _, err := io.CopyN(io.Discard, br, size-int64(hl)); err != nil {
+				break readLoop
+			}
 		default:
 			if curPiece >= 0 {
-				cur = append(cur, box...)
+				n := len(cur)
+				cur = slices.Grow(cur, int(size))
+				cur = cur[:n+int(size)]
+				copy(cur[n:], h[:hl])
+				if _, err := io.ReadFull(br, cur[n+hl:]); err != nil {
+					cur = cur[:n]
+					break readLoop
+				}
+			} else if _, err := io.CopyN(io.Discard, br, size-int64(hl)); err != nil {
+				break readLoop
 			}
 		}
 		if fail != "" {
@@ -571,7 +628,7 @@ func (t *liveTrack) read(r *liveRun, out io.Reader, errOut *strings.Builder) {
 // hold stops ffmpeg once it's far enough ahead of the player, and lets it go
 // again when the player catches up. Call with the stream locked.
 func (t *liveTrack) hold(r *liveRun) {
-	if r.done {
+	if r.done || r.cmd == nil || r.cmd.Process == nil {
 		return
 	}
 	at, _ := t.span(r.at)
@@ -579,10 +636,10 @@ func (t *liveTrack) hold(r *liveRun) {
 	ahead := at-want > t.s.ahead
 	if ahead && !r.held {
 		r.held = true
-		syscall.Kill(r.cmd.Process.Pid, syscall.SIGSTOP)
+		r.cmd.Process.Signal(syscall.SIGSTOP)
 	} else if !ahead && r.held {
 		r.held = false
-		syscall.Kill(r.cmd.Process.Pid, syscall.SIGCONT)
+		r.cmd.Process.Signal(syscall.SIGCONT)
 	}
 }
 
@@ -697,6 +754,9 @@ func (t *liveTrack) wait(ctx context.Context, i int) ([]byte, error) {
 			t.begin(start)
 		case i < 0:
 			if r == nil || r.done {
+				if tries++; tries > 2 {
+					return nil, errors.New("the stream produced no header")
+				}
 				t.begin(max(t.want, 0))
 			}
 		case r == nil || r.done || i < r.at || i > r.at+t.nearAt(r.at):

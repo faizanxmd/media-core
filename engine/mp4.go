@@ -42,8 +42,12 @@ func baseName(p string) string { return strings.TrimSuffix(filepath.Base(p), fil
 
 // findLight returns the Light copy of a video, or "".
 func findLight(video string) string {
-	base := baseName(video)
 	ents, _ := os.ReadDir(lightDir(video))
+	return findLightFrom(video, ents)
+}
+
+func findLightFrom(video string, ents []os.DirEntry) string {
+	base := baseName(video)
 	for _, e := range ents {
 		if !e.IsDir() && VideoExt[ext(e.Name())] && baseName(e.Name()) == base {
 			return filepath.Join(lightDir(video), e.Name())

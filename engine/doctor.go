@@ -74,7 +74,11 @@ func runDoctor(online bool) doctorReport {
 	for _, t := range toolStates() {
 		switch {
 		case t.Found && t.Note != "":
-			add("tool:"+t.ID, "warn", t.ID+": "+t.Note, t.Install)
+			fix := t.Install
+			if fix == "" {
+				fix = installHint(t.ID)
+			}
+			add("tool:"+t.ID, "warn", t.ID+": "+t.Note, fix)
 		case t.Found:
 			add("tool:"+t.ID, "ok", t.ID+" at "+t.Path, "")
 		case t.Needed:

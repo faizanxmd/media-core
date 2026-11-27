@@ -35,7 +35,7 @@ func TestPauseWithTimeoutIgnoresPausedTime(t *testing.T) {
 
 	stop := make(chan struct{})
 	defer close(stop)
-	go pauseWithTimeout(cmd.Process.Pid, stop, 100*time.Millisecond, cancel)
+	go pauseWithTimeout(cmd.Process, stop, 100*time.Millisecond, cancel)
 
 	// Wait 3x longer than activeLimit while streaming is active: must NOT time out.
 	time.Sleep(300 * time.Millisecond)

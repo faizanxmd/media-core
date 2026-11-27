@@ -517,6 +517,7 @@ func serve(o serveOpts) {
 	go func() {
 		<-stop
 		log.Print("stopping")
+		stopAllStreams()
 		store.Flush()
 		watch.Flush()
 		dev.flushSeen()

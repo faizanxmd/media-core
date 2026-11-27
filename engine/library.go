@@ -134,8 +134,12 @@ func libraryTarget(p string) (abs, section string, err error) {
 		return "", "", errors.New("already gone")
 	}
 	// the folder holding it must really live in the library (no symlinked escapes)
+	realMedia, err := filepath.EvalSymlinks(Media)
+	if err != nil {
+		realMedia = filepath.Clean(Media)
+	}
 	real, err := filepath.EvalSymlinks(filepath.Dir(abs))
-	if err != nil || !strings.HasPrefix(real+"/", Media+"/") {
+	if err != nil || !within(real, realMedia) {
 		return "", "", errors.New("path leaves the media library")
 	}
 	return abs, parts[0], nil
