@@ -1317,7 +1317,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
         fun play(ctx: Context, queue: List<Item>, index: Int, fromStart: Boolean = false, logo: String? = null) {
             val start = queue.getOrNull(index) ?: return
-            val pos = if (!fromStart && !start.watched) start.pos else 0L
+            // resuming part-way: back up 2.5 s so the scene or sentence picks up from its start, not mid-word
+            val pos = if (!fromStart && !start.watched && start.pos > 5_000L) (start.pos - 2_500L).coerceAtLeast(0L)
+            else if (!fromStart && !start.watched) start.pos else 0L
             val json = JSONArray(queue.map { it.raw }).toString()
             // a show with hundreds of episodes is too big to hand over in the Intent (TransactionTooLargeException)
             val big = json.length > 200_000

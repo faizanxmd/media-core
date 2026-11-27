@@ -15,6 +15,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -73,7 +75,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -189,6 +190,7 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Flo
     // subtitles rise above whatever is showing (a fraction of the screen's height)
     val lift = when {
         st.error != null -> 0f
+        st.sheet == Sheet.Tracks -> 0.42f // clear of the drawer, so size changes show on live subtitles
         st.sheet != null -> 0.40f
         st.mode == Mode.Full -> 0.22f
         st.mode == Mode.Seek -> 0.14f
@@ -202,7 +204,11 @@ fun PlayerOverlay(st: PlayerState, a: PlayerActions, tv: Boolean, onChrome: (Flo
         SkipMark(st)
 
         AnimatedVisibility(chrome, enter = fadeIn(Move.fade(Move.Focus)), exit = fadeOut(Move.fade(Move.Screen))) { Chrome(st, a, tv) }
-        AnimatedVisibility(st.sheet == Sheet.Tracks, enter = fadeIn(Move.fade(Move.Screen)), exit = fadeOut(Move.fade(Move.Focus))) { TracksPanel(st, a) }
+        AnimatedVisibility(
+            st.sheet == Sheet.Tracks, Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(Move.slide(Move.Screen)) { it / 4 } + fadeIn(Move.fade(Move.Screen)),
+            exit = slideOutVertically(Move.slide(Move.Focus)) { it / 4 } + fadeOut(Move.fade(Move.Focus)),
+        ) { TracksPanel(st, a) }
         AnimatedVisibility(st.sheet == Sheet.Episodes, enter = fadeIn(Move.fade(Move.Screen)), exit = fadeOut(Move.fade(Move.Focus))) { EpisodesPanel(st) }
 
         val offer = st.offer
@@ -465,32 +471,50 @@ private fun Chrome(st: PlayerState, a: PlayerActions, tv: Boolean) {
     }
 }
 
-/** The title's own logo art, left-aligned over the bar; its name in type when there is none or it won't load. */
+/** The title's own logo art, left-aligned over the bar; its name in type while the art loads, or when there is none. */
 @Composable
 private fun HeaderTitle(st: PlayerState) {
     val logo = st.logo?.takeIf { it.isNotBlank() }
+    var loaded by remember(logo) { mutableStateOf(false) }
     var failed by remember(logo) { mutableStateOf(false) }
-    if (logo != null && !failed) {
-        Box(Modifier.heightIn(max = 68.px).widthIn(max = 560.px), contentAlignment = Alignment.BottomStart) {
+    val art by animateFloatAsState(if (loaded) 1f else 0f, Move.fade(Move.Focus), label = "logo")
+    Box(contentAlignment = Alignment.BottomStart) {
+        // the name holds the space until the art is in, then gives way to it; never a blank gap
+        if (logo == null || failed || art < 1f) {
+            Text(
+                st.title,
+                style = ts(40, 48, 700, track = -0.015f).copy(shadow = ChromeShadow),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayer { alpha = 1f - art },
+            )
+        }
+        if (logo != null && !failed) {
             AsyncImage(
                 logo, st.title,
-                Modifier.heightIn(max = 68.px).widthIn(max = 560.px),
+                Modifier.heightIn(max = 68.px).widthIn(max = 560.px).graphicsLayer { alpha = art },
                 alignment = Alignment.BottomStart,
                 contentScale = ContentScale.Fit,
+                onSuccess = { loaded = true },
                 onError = { failed = true },
             )
         }
-    } else {
-        Text(
-            st.title,
-            style = ts(40, 48, 700, track = -0.015f).copy(shadow = ChromeShadow),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
 private val KeyMetal = Color(0xFF272C37)
+private val KeyDim = Color(0xDC12151C) // the quieter key over the film, for what OK won't do
+
+/** The matte key's surface: fill, a hairline edge and, on a lit key, a faint highlight along its top. */
+private fun Modifier.metalKey(fill: Color, edge: Color, width: Float = 1.5f, glint: Float = 0f): Modifier {
+    val shape = RoundedCornerShape(10.px)
+    return clip(shape).background(fill).border(width.px, edge, shape).drawBehind {
+        if (glint > 0f) drawLine(
+            Pal.Ink.copy(alpha = glint), Offset(12 * Px.screen, 1.5f * Px.screen),
+            Offset(size.width - 12 * Px.screen, 1.5f * Px.screen), 1.5f * Px.screen,
+        )
+    }
+}
 
 /**
  * A matte dark-metal key under the bar: bare at rest, charcoal with a hairline edge and the icon in the accent when
@@ -503,13 +527,8 @@ private fun DockAction(icon: ImageVector, word: String, labelled: Boolean, fr: F
     val edge = focusFill(focused, Color.Transparent, Pal.Ink.copy(alpha = 0.20f))
     val ink = focusFill(focused, Pal.Ink.copy(alpha = 0.56f), Pal.Ink)
     val tint = focusFill(focused, Pal.Ink.copy(alpha = 0.56f), Pal.AccentText)
-    val shape = RoundedCornerShape(10.px)
     Row(
-        modifier.height(ACTION_H.px).clip(shape).background(fill).border(1.5.px, edge, shape)
-            .drawBehind {
-                // a crisp top-edge highlight, only on the lit key
-                if (edge.alpha > 0f) drawLine(Pal.Ink.copy(alpha = edge.alpha * 0.6f), Offset(12 * Px.screen, 1.5f * Px.screen), Offset(size.width - 12 * Px.screen, 1.5f * Px.screen), 1.5f * Px.screen)
-            }
+        modifier.height(ACTION_H.px).metalKey(fill, edge, glint = edge.alpha * 0.6f) // the highlight only on the lit key
             .control(fr, { focused = it; if (it) onFocus() }, onClick)
             .padding(horizontal = 20.px),
         verticalAlignment = Alignment.CenterVertically,
@@ -734,41 +753,73 @@ private fun ThumbPicture(store: ThumbStore, ms: Long) {
 
 private class Choice(val title: String, val detail: String, val selected: Boolean, val pick: () -> Unit)
 
-/** Audio, subtitles and their size in three plain columns over the darkened film, which plays on behind. */
+/**
+ * Audio, subtitles and their size in a matte drawer across the bottom. The film and its subtitles, lifted clear,
+ * play on above, so a size change shows at once. Left/Right moves between columns, Up/Down stays in one.
+ */
 @Composable
 private fun TracksPanel(st: PlayerState, a: PlayerActions) {
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) { delay(32); runCatching { fr.requestFocus() } }
-    Box(Modifier.fillMaxSize().background(Pal.BaseDeep.copy(alpha = 0.86f)).pointerInput(Unit) { detectTapGestures { } }) {
-        Row(
-            Modifier.padding(start = 160.px, end = 160.px, top = 200.px),
-            horizontalArrangement = Arrangement.spacedBy(72.px),
-        ) {
+    val hairline = Pal.Ink.copy(alpha = 0.12f)
+    Box(
+        Modifier.fillMaxWidth().height(416.px).background(Color(0xF00D0F14))
+            .drawBehind { drawRect(hairline, size = Size(size.width, 1 * Px.screen)) }
+            .pointerInput(Unit) { detectTapGestures { } },
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = SIDE.px, top = 36.px, bottom = 36.px)) {
             val audio = st.audio.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val text = st.text.map { Choice(it.title, it.detail, it.selected, it.pick) }
             val sizeFirst = st.tracksAt == 2 && text.isNotEmpty()
-            TrackColumn("Audio", audio, 520, if (audio.isNotEmpty() && !sizeFirst) fr else null)
-            TrackColumn("Subtitles", text, 520, if (audio.isEmpty() && !sizeFirst) fr else null, empty = "None in this file")
-            if (text.isNotEmpty()) TrackColumn("Subtitle size", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } }, 400, if (sizeFirst) fr else null)
+            TrackColumn("AUDIO", audio, Modifier.weight(1.15f), if (audio.isNotEmpty() && !sizeFirst) fr else null, first = true)
+            TrackDivider()
+            TrackColumn(
+                "SUBTITLES", text, Modifier.weight(1.15f), if (audio.isEmpty() && !sizeFirst) fr else null,
+                empty = "None in this file", last = text.isEmpty(),
+            )
+            if (text.isNotEmpty()) {
+                TrackDivider()
+                TrackColumn(
+                    "SUBTITLE SIZE", SubSizes.mapIndexed { i, s -> Choice(s, "", st.subSize == i) { a.subSize(i) } },
+                    Modifier.weight(0.65f), if (sizeFirst) fr else null, last = true,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun TrackColumn(title: String, options: List<Choice>, width: Int, fr: FocusRequester?, empty: String = "") {
+private fun TrackDivider() {
+    Box(Modifier.padding(horizontal = 28.px).width(1.px).height((4 * ROW_H + 18 + 42).px).background(Pal.Ink.copy(alpha = 0.08f)))
+}
+
+@Composable
+private fun TrackColumn(
+    title: String, options: List<Choice>, modifier: Modifier, fr: FocusRequester?,
+    empty: String = "", first: Boolean = false, last: Boolean = false,
+) {
     val sel = options.indexOfFirst { it.selected }.coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (sel - 3).coerceAtLeast(0))
     // the detail ("5.1 surround") only when it tells the rows apart; the same words on every row are noise
     val details = options.map { it.detail }.distinct().size > 1
-    Column(Modifier.width(width.px)) {
-        Text(title, style = ts(30, 36, 700, Pal.Muted, track = 0.02f), modifier = Modifier.padding(start = 28.px, bottom = 22.px))
-        if (options.isEmpty()) Text(empty, style = ts(30, 36, 600, Pal.Muted), modifier = Modifier.padding(start = 28.px))
-        LazyColumn(Modifier.heightIn(max = (8 * ROW_H).px), state = state) {
+    Column(modifier) {
+        Text(title, style = ts(20, 24, 700, Pal.Ink.copy(alpha = 0.44f), track = 0.12f), modifier = Modifier.padding(start = 20.px, bottom = 18.px))
+        if (options.isEmpty()) Text(empty, style = ts(26, 32, 600, Pal.Ink.copy(alpha = 0.44f)), modifier = Modifier.padding(start = 20.px))
+        LazyColumn(
+            Modifier.heightIn(max = (4 * ROW_H + 18).px), state = state,
+            verticalArrangement = Arrangement.spacedBy(6.px),
+        ) {
             itemsIndexed(options) { i, o ->
                 TrackRow(
                     o, details, if (i == sel) fr else null,
-                    Modifier.onPreviewKeyEvent { e -> // Up and Down stay inside the list
-                        e.type == KeyEventType.KeyDown && ((e.key == Key.DirectionUp && i == 0) || (e.key == Key.DirectionDown && i == options.lastIndex))
+                    Modifier.onPreviewKeyEvent { e -> // Up and Down stay inside the list; Left/Right stay inside the drawer
+                        e.type == KeyEventType.KeyDown && when (e.key) {
+                            Key.DirectionUp -> i == 0
+                            Key.DirectionDown -> i == options.lastIndex
+                            Key.DirectionLeft -> first
+                            Key.DirectionRight -> last
+                            else -> false
+                        }
                     },
                 )
             }
@@ -776,23 +827,27 @@ private fun TrackColumn(title: String, options: List<Choice>, width: Int, fr: Fo
     }
 }
 
-private const val ROW_H = 72
+private const val ROW_H = 60
 
-/** A row: a tick if it's what plays now, the name, and what tells it apart. Focused, it turns white. */
+/** A row: a tick if it's what plays now, the name, and what tells it apart. Focused, it's the matte dark key. */
 @Composable
 private fun TrackRow(o: Choice, details: Boolean, fr: FocusRequester?, modifier: Modifier) {
     var focused by remember { mutableStateOf(false) }
-    val fill = focusFill(focused, Pal.Ink.copy(alpha = 0f), Pal.Ink)
-    val ink = focusFill(focused, if (o.selected) Pal.Ink else Pal.InkSoft, Pal.OnInk)
-    val soft = focusFill(focused, Pal.Muted, Pal.OnInkSoft)
+    val fill = focusFill(focused, Color.Transparent, KeyMetal)
+    val edge = focusFill(focused, Color.Transparent, Pal.Ink.copy(alpha = 0.20f))
+    val ink = focusFill(focused, Pal.Ink.copy(alpha = if (o.selected) 0.92f else 0.56f), Pal.Ink)
+    val soft = focusFill(focused, Pal.Ink.copy(alpha = 0.40f), Pal.Ink.copy(alpha = 0.64f))
     Row(
-        modifier.fillMaxWidth().height(ROW_H.px).clip(Corner).background(fill)
-            .control(fr, { focused = it }, o.pick).padding(start = 28.px, end = 24.px),
+        modifier.fillMaxWidth().height(ROW_H.px).metalKey(fill, edge, glint = edge.alpha * 0.6f)
+            .control(fr, { focused = it }, o.pick).padding(start = 20.px, end = 20.px),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(52.px)) { if (o.selected) Icon(AppIcons.Check, null, tint = ink, modifier = Modifier.size(32.px)) }
-        Text(o.title, style = ts(36, 42, if (o.selected) 700 else 600, ink), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-        if (details && o.detail.isNotEmpty()) Text(o.detail, style = ts(24, 30, 600, soft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.px))
+        Box(Modifier.width(44.px)) { if (o.selected) Icon(AppIcons.Check, null, tint = Pal.AccentText, modifier = Modifier.size(28.px)) }
+        Text(
+            o.title, style = ts(28, 34, if (focused) 700 else if (o.selected) 600 else 500, ink),
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+        )
+        if (details && o.detail.isNotEmpty()) Text(o.detail, style = ts(22, 28, 600, soft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 14.px))
     }
 }
 
@@ -853,20 +908,23 @@ private fun EpisodeCard(p: TrackOption, fr: FocusRequester?, first: Boolean, las
 
 // ---------- offers: skip the intro, the next episode ----------
 
-/** "Skip intro": lit while it's what OK would do, otherwise glass that lights when focused. */
+/** "Skip intro": the matte dark key, lit while it's what OK would do or focused, a quieter one otherwise. */
 @Composable
 private fun OfferPill(word: String, icon: ImageVector?, armed: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val lit = armed || focused
-    val fill = focusFill(lit, Pal.Glass, Pal.Ink)
-    val ink = focusFill(lit, Pal.Ink, Pal.OnInk)
+    val fill = focusFill(lit, KeyDim, KeyMetal)
+    val edge = focusFill(lit, Pal.Ink.copy(alpha = 0.10f), Pal.Ink.copy(alpha = 0.22f))
+    val ink = focusFill(lit, Pal.Ink.copy(alpha = 0.68f), Pal.Ink)
+    val tint = focusFill(lit, Pal.Ink.copy(alpha = 0.68f), Pal.AccentText)
     Row(
-        modifier.softShadow(ShadowKind.Button).clip(Corner).background(fill).control(null, { focused = it }, onClick)
-            .height(BUTTONS.px).padding(start = 26.px, end = 30.px),
+        modifier.height(BUTTONS.px).metalKey(fill, edge, width = if (lit) 1.5f else 1f, glint = if (lit) 0.13f else 0f)
+            .control(null, { focused = it }, onClick)
+            .padding(start = 24.px, end = 28.px),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, null, tint = ink, modifier = Modifier.size(26.px))
+            Icon(icon, null, tint = tint, modifier = Modifier.size(26.px))
             Spacer(Modifier.width(14.px))
         }
         Text(word, style = ts(27, 34, 700, ink), maxLines = 1)
@@ -874,7 +932,7 @@ private fun OfferPill(word: String, icon: ImageVector?, armed: Boolean, modifier
 }
 
 /**
- * In the credits: "Watch credits" beside "Next episode", which fills with white as the countdown runs.
+ * In the credits: "Watch credits" beside "Next episode", whose thin accent line runs along its foot as the countdown runs.
  * OK takes the next episode, Back stays for the credits.
  */
 @Composable
@@ -886,29 +944,32 @@ private fun NextUp(st: PlayerState, o: Offer, armed: Boolean, a: PlayerActions) 
         Row(horizontalArrangement = Arrangement.spacedBy(16.px), verticalAlignment = Alignment.CenterVertically) {
             OfferPill("Watch credits", null, armed = false, onClick = a::dismissOffer)
             var focused by remember { mutableStateOf(false) }
-            val t = ringOf(focused || armed)
-            Box(
-                Modifier.graphicsLayer { val s = 1f + 0.04f * t.value; scaleX = s; scaleY = s }
-                    .softShadow(ShadowKind.Button).clip(Corner).background(Pal.Glass)
+            val lit = focused || armed
+            val fill = focusFill(lit, KeyDim, KeyMetal)
+            val edge = focusFill(lit, Pal.Ink.copy(alpha = 0.10f), Pal.Ink.copy(alpha = 0.22f))
+            val ink = focusFill(lit, Pal.Ink.copy(alpha = 0.68f), Pal.Ink)
+            val tint = focusFill(lit, Pal.Ink.copy(alpha = 0.68f), Pal.AccentText)
+            val track = Pal.Ink.copy(alpha = 0.12f)
+            val accent = Pal.Accent
+            Row(
+                Modifier.height(BUTTONS.px).metalKey(fill, edge, width = if (lit) 1.5f else 1f, glint = if (lit) 0.13f else 0f)
+                    .drawWithContent {
+                        drawContent()
+                        // the countdown: a crisp line along the key's foot, filling left to right over the 10 s
+                        val h = 4 * Px.screen
+                        val y = size.height - h
+                        drawRect(track, Offset(0f, y), Size(size.width, h))
+                        drawRect(accent, Offset(0f, y), Size(size.width * p, h))
+                    }
                     .control(null, { focused = it }, a::takeOffer)
-                    .drawBehind { drawRect(Pal.Ink, size = Size(size.width * p, size.height)) }
-                    .height(BUTTONS.px),
-                contentAlignment = Alignment.CenterStart,
+                    .padding(start = 24.px, end = 28.px),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                NextWords(Pal.Ink)
-                // the same words in dark, shown only where the white has reached
-                Box(Modifier.drawWithContent { clipRect(right = size.width * p) { this@drawWithContent.drawContent() } }) { NextWords(Pal.OnInk) }
+                Icon(AppIcons.SkipNext, null, tint = tint, modifier = Modifier.size(26.px))
+                Spacer(Modifier.width(14.px))
+                Text("Next episode", style = ts(27, 34, 700, ink), maxLines = 1)
             }
         }
-    }
-}
-
-@Composable
-private fun NextWords(ink: Color) {
-    Row(Modifier.padding(start = 26.px, end = 30.px), verticalAlignment = Alignment.CenterVertically) {
-        Icon(AppIcons.SkipNext, null, tint = ink, modifier = Modifier.size(26.px))
-        Spacer(Modifier.width(14.px))
-        Text("Next episode", style = ts(27, 34, 700, ink), maxLines = 1)
     }
 }
 
