@@ -51,7 +51,7 @@ type Plan struct {
 var (
 	reSep     = regexp.MustCompile(`[._]`)
 	reBracket = regexp.MustCompile(`\[[^\]]*\]`)
-	reSE      = regexp.MustCompile(`(?i)\bS(\d{1,2})[ ._-]?E(\d{1,3})\b`)
+	reSE      = regexp.MustCompile(`(?i)\bS(\d{1,3})[ ._-]?(?:EP|E)[ ._-]?(\d{1,3})\b`)
 	reSeason  = regexp.MustCompile(`(?i)\b(?:S(\d{1,2})(?:P(?:art)? ?\d{1,2})?|Season ?(\d{1,2}))\b`)
 	reYear    = regexp.MustCompile(`\(?\b(19[2-9]\d|20[0-4]\d)\b\)?`)
 	reQuality = regexp.MustCompile(`(?i)\b(2160p|1080p|720p|480p|WEB|WEB-?DL|BluRay|REMUX|HDR|DV|x26[45]|H ?26[45])\b`)
@@ -79,7 +79,11 @@ func guess(filename string) Plan {
 	}
 	if m := reSE.FindStringSubmatchIndex(s); m != nil {
 		p.Kind, p.Title = "tv", clean(s[:m[0]])
-		p.Season, p.Episode = num(s[m[2]:m[3]]), num(s[m[4]:m[5]])
+		sn, _ := strconv.Atoi(s[m[2]:m[3]])
+		if sn >= 100 {
+			sn /= 100
+		}
+		p.Season, p.Episode = Flex(strconv.Itoa(sn)), num(s[m[4]:m[5]])
 		return p
 	}
 	if m := reSeason.FindStringSubmatchIndex(s); m != nil {
@@ -227,16 +231,27 @@ func preview(p Plan) Preview {
 }
 
 var (
-	reEpSE   = regexp.MustCompile(`(?i)S(\d{1,2})[ -]?E(\d{1,3})`)
-	reEpX    = regexp.MustCompile(`\b(\d{1,2})x(\d{2})\b`)
-	reEpOnly = regexp.MustCompile(`(?i)\b(?:E|Ep|Episode) ?(\d{1,3})\b`)
+	reEpSE     = regexp.MustCompile(`(?i)\bS(\d{1,3})[ -]?(?:EP|E)[ -]?(\d{1,3})`)
+	reEpSeason = regexp.MustCompile(`(?i)\bSeason[ -]+(\d{1,2})[ -]+(?:Episode|Ep|E)[ -]?(\d{1,3})\b`)
+	reEpX      = regexp.MustCompile(`\b(\d{1,2})x(\d{1,3})\b`)
+	reEpOnly   = regexp.MustCompile(`(?i)\b(?:Episode|Ep|E)[ -]?(\d{1,3})\b`)
 )
 
 // epParts reads season/episode from a file name; named is true when the season
-// came from the name (including S00 specials).
+// came from the name (including S00 specials). Three-digit streaming season
+// codes like Amazon's S101E01 return season/100 with named=false so the
+// download plan or Season folder wins when available.
 func epParts(name string) (season, episode int, named bool) {
 	s := reSep.ReplaceAllString(name, " ")
 	if m := reEpSE.FindStringSubmatch(s); m != nil {
+		a, _ := strconv.Atoi(m[1])
+		b, _ := strconv.Atoi(m[2])
+		if a >= 100 {
+			return a / 100, b, false
+		}
+		return a, b, true
+	}
+	if m := reEpSeason.FindStringSubmatch(s); m != nil {
 		a, _ := strconv.Atoi(m[1])
 		b, _ := strconv.Atoi(m[2])
 		return a, b, true

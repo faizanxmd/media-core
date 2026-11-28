@@ -206,6 +206,7 @@ func (c *Catalog) scan() {
 		title, year := splitTitleYear(d.Name)
 		show := &Item{ID: pathID(d.Path), Type: "show", Title: title, Year: year, folder: d.Path}
 		seasons := map[int]*Item{}
+		unnumbered := map[int][]*LNode{}
 		var walk func(n *LNode, seasonHint int)
 		walk = func(n *LNode, hint int) {
 			for _, ch := range n.Children {
@@ -227,6 +228,10 @@ func (c *Catalog) scan() {
 					s = hint
 				}
 				if e == 0 {
+					if s == 0 {
+						s = 1
+					}
+					unnumbered[s] = append(unnumbered[s], ch)
 					continue
 				}
 				sn := seasons[s]
@@ -243,6 +248,36 @@ func (c *Catalog) scan() {
 			}
 		}
 		walk(d, 0)
+		// Never silently drop video files inside a TV show folder whose episode
+		// number couldn't be parsed: place them after any numbered episodes.
+		for s, nodes := range unnumbered {
+			sort.Slice(nodes, func(a, b int) bool { return nodes[a].Name < nodes[b].Name })
+			sn := seasons[s]
+			if sn == nil {
+				sn = &Item{ID: pathID(d.Path + "#s" + strconv.Itoa(s)), Type: "season", Title: seasonName(s),
+					ShowID: show.ID, Show: title, Season: s}
+				seasons[s] = sn
+			}
+			nextEp := 0
+			for _, ep := range sn.Eps {
+				if ep.Episode > nextEp {
+					nextEp = ep.Episode
+				}
+			}
+			for _, ch := range nodes {
+				nextEp++
+				stem := clean(strings.TrimSuffix(ch.Name, filepath.Ext(ch.Name)))
+				if stem == "" {
+					stem = "Episode " + strconv.Itoa(nextEp)
+				}
+				log.Printf("catalog: unnumbered episode %s -> S%02dE%02d", ch.Path, s, nextEp)
+				ep := &Item{ID: pathID(ch.Path), Type: "episode", Title: stem,
+					ShowID: show.ID, Show: title, Season: s, Episode: nextEp, Added: int64(ch.Added), Size: ch.Size,
+					file: filepath.Join(Media, ch.Path)}
+				sn.Eps = append(sn.Eps, ep)
+				items[ep.ID] = ep
+			}
+		}
 		if len(seasons) == 0 {
 			continue
 		}

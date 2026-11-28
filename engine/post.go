@@ -542,17 +542,24 @@ func placeCtx(ctx context.Context, c jobCtx, p Plan, final, src string) ([]strin
 	case "tv":
 		show := clean(p.Title)
 		def, _ := atoi(p.Season, 1)
+		defEp, _ := atoi(p.Episode, 0)
 		var videoMoves []movePair
 		seen := map[string]bool{}
+		unnumbered := 0
 		for _, v := range videos {
 			s, e, named := epParts(filepath.Base(v))
 			if !named {
 				s = def
 			}
+			if e == 0 && len(videos) == 1 && defEp > 0 {
+				e = defEp
+			}
 			sdir := filepath.Join(Media, "TV Shows", show, fmt.Sprintf("Season %02d", s))
 			name := filepath.Base(v)
 			if e > 0 {
 				name = fmt.Sprintf("%s - S%02dE%02d.%s", show, s, e, ext(v))
+			} else {
+				unnumbered++
 			}
 			dst := filepath.Join(sdir, name)
 			if _, err := os.Lstat(dst); err == nil || seen[dst] {
@@ -569,6 +576,9 @@ func placeCtx(ctx context.Context, c jobCtx, p Plan, final, src string) ([]strin
 				return nil, err
 			}
 			placed = append(placed, m.dst)
+		}
+		if unnumbered > 0 {
+			c.log(fmt.Sprintf("Warning: could not read episode number from %d file%s (kept original names)", unnumbered, plural(unnumbered)))
 		}
 		// subtitles that name an episode: "Show - S01E02.en.srt"
 		for _, sub := range filesWith(src, SubExt) {

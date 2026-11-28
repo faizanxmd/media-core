@@ -6,6 +6,8 @@ What changed for people using Media Core, newest first. The format follows [Keep
 
 ### Fixed
 
+- Engine: recognize 3-digit streaming season codes (e.g. `S101E01`), `S01EP01`, `Season X Episode Y`, `Ep-01`, and 3-digit `1x105` episode names when unpacking and scanning TV shows; fall back to `Plan.Episode` for single-episode downloads, warn in the job log when episode numbers can't be parsed, and never silently drop unnumbered videos inside TV show folders during library scans.
+
 - TV app and Phone app: coalesce rapid 10-second skips into a single seek (350 ms debounce) so multi-tap skips don't flood hardware video decoders on high-bitrate 4K/Dolby Vision files; trim back-buffer to 12 s and size the video buffer to 25% of `largeHeap` (64–192 MB).
 - Engine: fix zombie `ffmpeg` processes on stale HLS runs, PID-reuse signal races in `SIGSTOP`/`SIGCONT` handling, `Store` slice data races, duplicate `ffprobe` keyframe scans, unbounded init-header retries, and orphaned stream processes on shutdown; free idle HLS piece caches after 2 min, cut MP4 box double-allocations in `stream.go`, cache `os.ReadDir` in catalog scans, prune stale thumbnails when idle, and support symlinked media roots.
 - Site / Safari: fix Safari `audioTracks` startup race and missing-track silence, double-click fullscreen while controls are visible, `pause`/`ended` watch-progress race, uncancelled recovery/HLS retry timers, `playNext` post-close race, PGS buffer leaks and z-order drawing, Manager polling leak, and missing Settings icon; lazy-load `hls.js` so Safari skips 542 KB of render-blocking JS, and pause the subtitle loop when idle.

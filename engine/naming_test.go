@@ -63,14 +63,27 @@ func TestEpPartsNamesSeason(t *testing.T) {
 	}{
 		{"S00E01", 0, 1, true},
 		{"S02E05", 2, 5, true},
+		{"Just.Add.Magic.S101E01.1080p.mkv", 1, 1, false},
+		{"Show.S201E12.1080p.mkv", 2, 12, false},
+		{"Show.S01EP05.1080p.mkv", 1, 5, true},
+		{"Show Season 2 Episode 3.mkv", 2, 3, true},
 		{"3x07", 3, 7, true},
+		{"1x105", 1, 105, true},
 		{"Show Episode 12", 0, 12, false},
 		{"Show.E04.720p", 0, 4, false},
+		{"Show Ep-04.mkv", 0, 4, false},
 		{"Movie.1920x1080.mkv", 0, 0, false},
 	} {
 		if s, e, named := epParts(tc.name); s != tc.s || e != tc.e || named != tc.named {
 			t.Errorf("%q: got (%d,%d,%v) want (%d,%d,%v)", tc.name, s, e, named, tc.s, tc.e, tc.named)
 		}
+	}
+}
+
+func TestGuessThreeDigitSeason(t *testing.T) {
+	p := guess("Just.Add.Magic.S101E05.1080p.x264.mkv")
+	if p.Kind != "tv" || p.Title != "Just Add Magic" || string(p.Season) != "1" || string(p.Episode) != "5" {
+		t.Errorf("got %+v", p)
 	}
 }
 
