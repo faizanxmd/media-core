@@ -3,8 +3,13 @@
 What changed for people using Media Core, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/): the server, the apps and the API version (`"api"` in `/api/v1/hello`) move together in each release.
 
 ## [Unreleased]
+### Changed
+
+- Relicensed Media Core from GPL-3.0 to MIT (compiled Android APKs still bundle Jellyfin's GPL-3.0 `media3-ffmpeg-decoder`).
 
 ### Fixed
+
+- TV app and Phone app: stop long-GOP 4K/Dolby Vision seeks from freezing video while audio keeps playing — raise the `MediaCodecVideoRenderer` keyframe-drop threshold from 500 ms to 2.5 s so a brief post-seek decoder hiccup doesn't skip an entire 10 s GOP, increase `DefaultLoadControl` cushions (`bufferForPlaybackMs` 500 ms → 1.5 s, `minBufferMs` 8 s → 15 s, `bufferForPlaybackAfterRebufferMs` 2 s → 3 s), add a video-frame freeze detector in the TV watchdog (recovering when audio advances without video frames for >3.5 s), and switch phone scrubs/skips from `SeekParameters.EXACT` to `CLOSEST_SYNC`.
 
 - Engine: recognize 3-digit streaming season codes (e.g. `S101E01`), `S01EP01`, `Season X Episode Y`, `Ep-01`, and 3-digit `1x105` episode names when unpacking and scanning TV shows; fall back to `Plan.Episode` for single-episode downloads, warn in the job log when episode numbers can't be parsed, and never silently drop unnumbered videos inside TV show folders during library scans.
 

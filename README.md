@@ -55,4 +55,4 @@ Each [release](https://github.com/faizanxmd/media-core/releases/latest) has the 
 
 ## License
 
-Media Core is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE). Code and assets from other projects keep their own licences.
+Media Core is licensed under the [MIT License](LICENSE). Code and assets from other projects keep their own licences; in particular, the compiled Android APKs bundle Jellyfin's `media3-ffmpeg-decoder`, which is licensed under GPL-3.0.

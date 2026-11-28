@@ -26,7 +26,7 @@ Read [AGENTS.md](AGENTS.md) for the full list of codebase rules and invariants (
 
 One change per pull request, with a short description of what it changes for someone using Media Core and how you checked it. CI must pass: engine tests, the app compile, the install test on Debian, Fedora and Arch, and the private-data checks.
 
-By contributing you agree that your work is licensed under the [GPL-3.0](LICENSE), like the rest of the project.
+By contributing you agree that your work is licensed under the [MIT License](LICENSE), like the rest of the project.
 
 ## Using an AI agent
 
